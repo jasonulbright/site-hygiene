@@ -1,5 +1,10 @@
 # Site Hygiene
 
+[![Latest release](https://img.shields.io/github/v/release/jasonulbright/site-hygiene?label=release)](https://github.com/jasonulbright/site-hygiene/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/jasonulbright/site-hygiene/total?label=downloads)](https://github.com/jasonulbright/site-hygiene/releases)
+[![Platform](https://img.shields.io/badge/platform-Windows-0078D4)](#requirements)
+[![License](https://img.shields.io/github/license/jasonulbright/site-hygiene)](LICENSE)
+
 A MahApps.Metro WPF scanner for MECM site clutter and drift: unused
 applications and packages, dead collections, stale and failing
 deployments. A scan is read-only, every finding carries the evidence that
