@@ -60,6 +60,8 @@ function Get-HygieneDefaultThresholds {
     .SYNOPSIS
         Default tunables for the checks that take one.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Returns the full thresholds hashtable by design.')]
+    param()
     return @{
         AppUnusedMinAgeDays       = 30
         IncrementalCeiling        = 200
@@ -74,6 +76,7 @@ function New-HygieneFinding {
     .SYNOPSIS
         Uniform finding object every check returns.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification='Constructs an in-memory finding object; changes no system state.')]
     param(
         [Parameter(Mandatory)][string]$CheckId,
         [Parameter(Mandatory)][ValidateSet('Error', 'Warning', 'Info')][string]$Severity,
@@ -287,6 +290,7 @@ function Test-HygAppNoReferences {
         APP-01: applications with no deployments, no task sequence
         references, no supersedence role, and no dependency targeting.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Named for the reference-absence condition it tests.')]
     param(
         [Parameter(Mandatory)]$Data,
         [hashtable]$Thresholds = (Get-HygieneDefaultThresholds)
@@ -515,6 +519,7 @@ function Test-HygDeploymentPastDeadlineFailures {
         DPL-02: required deployments past their enforcement deadline with a
         failure rate over the threshold.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Named for the failure condition it tests.')]
     param(
         [Parameter(Mandatory)]$Data,
         [hashtable]$Thresholds = (Get-HygieneDefaultThresholds)
@@ -587,15 +592,17 @@ function Invoke-HygieneScan {
         [hashtable]$Thresholds = (Get-HygieneDefaultThresholds)
     )
 
+    # Threshold-less checks take only $d; the runner still passes both
+    # arguments and the extra lands in $args, keeping one invocation shape.
     $checks = @(
         @{ Id = 'APP-01'; Run = { param($d, $t) Test-HygAppNoReferences -Data $d -Thresholds $t } }
-        @{ Id = 'APP-02'; Run = { param($d, $t) Test-HygAppRetiredDeployed -Data $d } }
-        @{ Id = 'APP-03'; Run = { param($d, $t) Test-HygAppSupersededDeployed -Data $d } }
-        @{ Id = 'PKG-01'; Run = { param($d, $t) Test-HygPackageUnused -Data $d } }
-        @{ Id = 'COL-01'; Run = { param($d, $t) Test-HygCollectionEmptyUnused -Data $d } }
-        @{ Id = 'COL-02'; Run = { param($d, $t) Test-HygDeploymentEmptyCollection -Data $d } }
+        @{ Id = 'APP-02'; Run = { param($d) Test-HygAppRetiredDeployed -Data $d } }
+        @{ Id = 'APP-03'; Run = { param($d) Test-HygAppSupersededDeployed -Data $d } }
+        @{ Id = 'PKG-01'; Run = { param($d) Test-HygPackageUnused -Data $d } }
+        @{ Id = 'COL-01'; Run = { param($d) Test-HygCollectionEmptyUnused -Data $d } }
+        @{ Id = 'COL-02'; Run = { param($d) Test-HygDeploymentEmptyCollection -Data $d } }
         @{ Id = 'COL-03'; Run = { param($d, $t) Test-HygIncrementalCeiling -Data $d -Thresholds $t } }
-        @{ Id = 'DPL-01'; Run = { param($d, $t) Test-HygDeploymentExpired -Data $d } }
+        @{ Id = 'DPL-01'; Run = { param($d) Test-HygDeploymentExpired -Data $d } }
         @{ Id = 'DPL-02'; Run = { param($d, $t) Test-HygDeploymentPastDeadlineFailures -Data $d -Thresholds $t } }
         @{ Id = 'DPL-03'; Run = { param($d, $t) Test-HygDeploymentAvailableUnused -Data $d -Thresholds $t } }
     )
@@ -749,6 +756,7 @@ function New-HygieneSummaryText {
     .SYNOPSIS
         Plain-text scan summary for clipboard or log.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification='Builds a string; changes no system state.')]
     param(
         [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Findings,
         [string[]]$DatasetNotes = @()

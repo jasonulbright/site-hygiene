@@ -605,6 +605,7 @@ $btnExportHtml.Add_Click({
 
 # === Themed dialogs ===
 function Set-DialogTheme {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification='In-window theme brushes only.')]
     param([Parameter(Mandatory)][System.Windows.Window]$Dialog)
     $isDark = [bool]$global:Prefs['DarkMode']
     if ($isDark) { [void][ControlzEx.Theming.ThemeManager]::Current.ChangeTheme($Dialog, 'Dark.Steel') }
