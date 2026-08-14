@@ -36,6 +36,7 @@
         'Find-HygCircularEdges'
         'Test-HygRelationshipChecks'
         'Test-HygAppContentPath'
+        'Build-HygRelationshipTree'
 
         # Orchestration
         'Invoke-HygieneScan'

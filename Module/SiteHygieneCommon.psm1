@@ -766,8 +766,25 @@ function Get-HygieneRelationshipData {
 
         $parsed = ConvertTo-HygRelationships -Applications $apps
 
+        # The lookup drops SDMPackageXML: consumers need flags and names
+        # only, and the XML blobs would otherwise ride along through the
+        # background-runspace state transfer.
         $lookup = @{}
-        foreach ($a in $apps) { $lookup[[int]$a.CI_ID] = $a }
+        foreach ($a in $apps) {
+            $lookup[[int]$a.CI_ID] = [pscustomobject]@{
+                CI_ID                   = $a.CI_ID
+                ModelName               = $a.ModelName
+                Name                    = $a.Name
+                SoftwareVersion         = $a.SoftwareVersion
+                Manufacturer            = $a.Manufacturer
+                IsEnabled               = $a.IsEnabled
+                IsExpired               = $a.IsExpired
+                IsSuperseded            = $a.IsSuperseded
+                IsSuperseding           = $a.IsSuperseding
+                HasContent              = $a.HasContent
+                NumberOfDeploymentTypes = $a.NumberOfDeploymentTypes
+            }
+        }
 
         Write-Log ("Resolved {0} relationships and {1} content locations from {2} applications" -f @($parsed.Relationships).Count, @($parsed.ContentLocations).Count, $apps.Count)
 
@@ -947,6 +964,92 @@ function Test-HygRelationshipChecks {
                 -FixScript ("Set-CMApplication -Name '{0}' -Publisher '<manufacturer>'" -f ($app.Name -replace "'", "''"))
         }
     }
+}
+
+function Build-HygRelationshipTree {
+    <#
+    .SYNOPSIS
+        Builds a nested node tree for one relationship kind, rooted at
+        applications nothing of that kind points to. Pure over its input.
+
+    .DESCRIPTION
+        Node shape: Label, Glyph, AppCIID, Children[]. Glyphs: check for
+        healthy, warn for disabled or content-less, x for missing or
+        retired. A path-local visited set stops circular chains; MaxDepth
+        bounds pathological graphs.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Named for the tree it builds.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'MaxDepth', Justification='Consumed inside the nested New-Node function via dynamic scope.')]
+    param(
+        [Parameter(Mandatory)]$RelationshipData,
+        [Parameter(Mandatory)][ValidateSet('Supersedence', 'Dependency')][string]$Kind,
+        [int]$MaxDepth = 12
+    )
+
+    $apps  = $RelationshipData.Apps
+    $edges = @($RelationshipData.Relationships | Where-Object { $_.Kind -eq $Kind })
+
+    $adj = @{}
+    $targets = New-Object 'System.Collections.Generic.HashSet[int]'
+    foreach ($e in $edges) {
+        $k = [int]$e.FromAppCIID
+        if (-not $adj.ContainsKey($k)) { $adj[$k] = New-Object System.Collections.Generic.List[object] }
+        $adj[$k].Add($e)
+        if ([int]$e.ToAppCIID -ne 0) { [void]$targets.Add([int]$e.ToAppCIID) }
+    }
+
+    function Get-NodeGlyph {
+        param($App, [bool]$Exists)
+        if (-not $Exists -or -not $App) { return [char]0x2717 }
+        if ($App.IsExpired) { return [char]0x2717 }
+        if (-not $App.IsEnabled) { return [char]0x26A0 }
+        if (-not $App.HasContent) { return [char]0x26A0 }
+        return [char]0x2713
+    }
+
+    function New-Node {
+        [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification='Constructs an in-memory tree node; changes no system state.')]
+        param([int]$CIID, [string]$FallbackLabel, [bool]$Exists, [int]$Depth, $Path)
+        $app = if ($Exists) { $apps[[int]$CIID] } else { $null }
+        $label = if ($app) {
+            if ($app.SoftwareVersion) { '{0} ({1})' -f $app.Name, $app.SoftwareVersion } else { [string]$app.Name }
+        } else { $FallbackLabel }
+
+        $children = @()
+        if ($Exists -and $Depth -lt $MaxDepth -and $adj.ContainsKey($CIID) -and -not $Path.Contains($CIID)) {
+            [void]$Path.Add($CIID)
+            foreach ($e in $adj[$CIID]) {
+                if ([int]$e.ToAppCIID -ne 0 -and $Path.Contains([int]$e.ToAppCIID)) {
+                    $children += [pscustomobject]@{
+                        Label = ('{0} (circular reference)' -f $e.ToAppName)
+                        Glyph = [char]0x2717
+                        AppCIID = [int]$e.ToAppCIID
+                        Children = @()
+                    }
+                    continue
+                }
+                $children += New-Node -CIID ([int]$e.ToAppCIID) -FallbackLabel ([string]$e.ToAppName) -Exists $e.ToAppExists -Depth ($Depth + 1) -Path $Path
+            }
+            [void]$Path.Remove($CIID)
+        }
+
+        return [pscustomobject]@{
+            Label    = $label
+            Glyph    = Get-NodeGlyph -App $app -Exists $Exists
+            AppCIID  = [int]$CIID
+            Children = @($children)
+        }
+    }
+
+    $roots = @($adj.Keys | Where-Object { -not $targets.Contains([int]$_) } | Sort-Object { $apps[[int]$_].Name })
+    # In a pure cycle every node is also a target; fall back to every edge
+    # source so the loop still renders.
+    if ($roots.Count -eq 0 -and $adj.Keys.Count -gt 0) { $roots = @($adj.Keys) }
+
+    $nodes = foreach ($r in $roots) {
+        New-Node -CIID ([int]$r) -FallbackLabel 'Unknown' -Exists $true -Depth 0 -Path (New-Object System.Collections.Generic.List[int])
+    }
+    return @($nodes)
 }
 
 function Test-HygAppContentPath {

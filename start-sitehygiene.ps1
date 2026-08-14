@@ -101,9 +101,10 @@ $txtVersion         = $window.FindName('txtVersion')
 $txtThemeLabel      = $window.FindName('txtThemeLabel')
 $toggleTheme        = $window.FindName('toggleTheme')
 
-$btnViewFindings = $window.FindName('btnViewFindings')
-$btnViewSummary  = $window.FindName('btnViewSummary')
-$btnOptions      = $window.FindName('btnOptions')
+$btnViewFindings      = $window.FindName('btnViewFindings')
+$btnViewRelationships = $window.FindName('btnViewRelationships')
+$btnViewSummary       = $window.FindName('btnViewSummary')
+$btnOptions           = $window.FindName('btnOptions')
 
 $txtModuleTitle    = $window.FindName('txtModuleTitle')
 $txtModuleSubtitle = $window.FindName('txtModuleSubtitle')
@@ -119,12 +120,15 @@ $cboSeverity   = $window.FindName('cboSeverity')
 $btnExportCsv  = $window.FindName('btnExportCsv')
 $btnExportHtml = $window.FindName('btnExportHtml')
 
-$viewFindings     = $window.FindName('viewFindings')
-$viewSummary      = $window.FindName('viewSummary')
-$gridFindings     = $window.FindName('gridFindings')
-$txtFindingDetail = $window.FindName('txtFindingDetail')
-$gridSummary      = $window.FindName('gridSummary')
-$txtDatasetNotes  = $window.FindName('txtDatasetNotes')
+$viewFindings      = $window.FindName('viewFindings')
+$viewRelationships = $window.FindName('viewRelationships')
+$viewSummary       = $window.FindName('viewSummary')
+$gridFindings      = $window.FindName('gridFindings')
+$txtFindingDetail  = $window.FindName('txtFindingDetail')
+$treeRelationships     = $window.FindName('treeRelationships')
+$txtRelationshipDetail = $window.FindName('txtRelationshipDetail')
+$gridSummary       = $window.FindName('gridSummary')
+$txtDatasetNotes   = $window.FindName('txtDatasetNotes')
 
 $progressOverlay  = $window.FindName('progressOverlay')
 $txtProgressTitle = $window.FindName('txtProgressTitle')
@@ -267,8 +271,9 @@ $script:LogLabelDark  = [System.Windows.Media.BrushConverter]::new().ConvertFrom
 $script:LogLabelLight = [System.Windows.Media.BrushConverter]::new().ConvertFrom('#595959')
 
 $script:ViewButtons = @(
-    @{ Name = 'Findings'; Button = $btnViewFindings }
-    @{ Name = 'Summary';  Button = $btnViewSummary }
+    @{ Name = 'Findings';      Button = $btnViewFindings }
+    @{ Name = 'Relationships'; Button = $btnViewRelationships }
+    @{ Name = 'Summary';       Button = $btnViewSummary }
 )
 $script:ActiveView = 'Findings'
 
@@ -329,15 +334,17 @@ $toggleTheme.Add_Toggled({
 
 # === View switching ===
 $script:ViewMeta = @{
-    'Findings' = @{ Title = 'Findings'; Subtitle = 'Every hygiene finding from the last scan. Select a row for evidence, recommendation, and the fix script.' }
-    'Summary'  = @{ Title = 'Summary';  Subtitle = 'Per-check counts for the last scan, plus notes about datasets the scan could not read.' }
+    'Findings'      = @{ Title = 'Findings';      Subtitle = 'Every hygiene finding from the last scan. Select a row for evidence, recommendation, and the fix script.' }
+    'Relationships' = @{ Title = 'Relationships'; Subtitle = 'Supersedence chains and dependency trees resolved from SDMPackageXML. Select a node for the application detail.' }
+    'Summary'       = @{ Title = 'Summary';       Subtitle = 'Per-check counts for the last scan, plus notes about datasets the scan could not read.' }
 }
 function Set-ActiveView {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification='In-window Visibility + header text only.')]
-    param([Parameter(Mandatory)][ValidateSet('Findings','Summary')][string]$View)
+    param([Parameter(Mandatory)][ValidateSet('Findings','Relationships','Summary')][string]$View)
     $script:ActiveView = $View
-    $viewFindings.Visibility = if ($View -eq 'Findings') { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
-    $viewSummary.Visibility  = if ($View -eq 'Summary')  { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
+    $viewFindings.Visibility      = if ($View -eq 'Findings')      { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
+    $viewRelationships.Visibility = if ($View -eq 'Relationships') { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
+    $viewSummary.Visibility       = if ($View -eq 'Summary')       { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
     $meta = $script:ViewMeta[$View]
     if ($meta) {
         $txtModuleTitle.Text    = $meta.Title
@@ -346,8 +353,9 @@ function Set-ActiveView {
     Update-SidebarButtonTheme
     Update-StatusBarSummary
 }
-$btnViewFindings.Add_Click({ Set-ActiveView -View 'Findings' })
-$btnViewSummary.Add_Click({  Set-ActiveView -View 'Summary'  })
+$btnViewFindings.Add_Click({      Set-ActiveView -View 'Findings'      })
+$btnViewRelationships.Add_Click({ Set-ActiveView -View 'Relationships' })
+$btnViewSummary.Add_Click({       Set-ActiveView -View 'Summary'       })
 
 # === Crash handlers ===
 $global:__crashLog = Join-Path $__txDir ('SiteHygiene-crash-{0}.txt' -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
@@ -369,6 +377,49 @@ $script:AllFindings    = @()
 $script:SummaryRows    = @()
 $script:DatasetNotes   = @()
 $script:LastScanTime   = $null
+$script:RelData        = $null
+
+function Add-RelationshipTreeNodes {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification='Builds in-window TreeViewItems.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Adds the full node set by design.')]
+    param(
+        [Parameter(Mandatory)]$Parent,
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Nodes
+    )
+    foreach ($n in $Nodes) {
+        $item = New-Object System.Windows.Controls.TreeViewItem
+        $item.Header = ('{0}  {1}' -f $n.Glyph, $n.Label)
+        $item.Tag = [int]$n.AppCIID
+        [void]$Parent.Items.Add($item)
+        if (@($n.Children).Count -gt 0) {
+            Add-RelationshipTreeNodes -Parent $item -Nodes @($n.Children)
+        }
+    }
+}
+
+function Update-RelationshipTree {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification='Rebuilds the in-window TreeView.')]
+    param()
+    $treeRelationships.Items.Clear()
+    if (-not $script:RelData) {
+        $txtRelationshipDetail.Text = 'Relationship data was not collected on the last scan.'
+        return
+    }
+    $supNodes = @(Build-HygRelationshipTree -RelationshipData $script:RelData -Kind Supersedence)
+    $depNodes = @(Build-HygRelationshipTree -RelationshipData $script:RelData -Kind Dependency)
+
+    $supRoot = New-Object System.Windows.Controls.TreeViewItem
+    $supRoot.Header = ('Supersedence Chains ({0})' -f $supNodes.Count)
+    $supRoot.IsExpanded = $true
+    [void]$treeRelationships.Items.Add($supRoot)
+    Add-RelationshipTreeNodes -Parent $supRoot -Nodes $supNodes
+
+    $depRoot = New-Object System.Windows.Controls.TreeViewItem
+    $depRoot.Header = ('Dependency Trees ({0})' -f $depNodes.Count)
+    $depRoot.IsExpanded = $true
+    [void]$treeRelationships.Items.Add($depRoot)
+    Add-RelationshipTreeNodes -Parent $depRoot -Nodes $depNodes
+}
 
 function Get-SeverityGlyph {
     param([string]$Severity)
@@ -546,7 +597,7 @@ function Invoke-Scan {
     }
     Initialize-BgRunspace
     Dispose-BgWork
-    $script:BgState = [hashtable]::Synchronized(@{ Step = 'Connecting...'; Done = $false; Findings = $null; Summary = $null; Notes = $null; ErrorMsg = $null })
+    $script:BgState = [hashtable]::Synchronized(@{ Step = 'Connecting...'; Done = $false; Findings = $null; Summary = $null; Notes = $null; RelData = $null; ErrorMsg = $null })
     $btnScan.IsEnabled = $false
     $txtProgressStep.Text  = 'Connecting...'
     $progressOverlay.Visibility = [System.Windows.Visibility]::Visible
@@ -582,6 +633,7 @@ function Invoke-Scan {
             $State.Findings = $findings
             $State.Summary  = @(Get-HygieneScanSummary -Findings $findings)
             $State.Notes    = $notes
+            $State.RelData  = $relData
         }
         catch { $State.ErrorMsg = $_.Exception.Message }
         finally { $State.Done = $true }
@@ -625,6 +677,8 @@ function Invoke-Scan {
             })
             $script:SummaryRows  = @($script:BgState.Summary)
             $script:DatasetNotes = @($script:BgState.Notes)
+            $script:RelData      = $script:BgState.RelData
+            Update-RelationshipTree
 
             $gridSummary.ItemsSource = $script:SummaryRows
             $txtDatasetNotes.Text = if ($script:DatasetNotes.Count -gt 0) {
@@ -847,7 +901,7 @@ function Restore-WindowState {
             $window.Left = $left; $window.Top = $top
             $window.Width = [Math]::Max($window.MinWidth, $w); $window.Height = [Math]::Max($window.MinHeight, $h)
         }
-        if ($s.ActiveView -in @('Findings','Summary')) { Set-ActiveView -View ([string]$s.ActiveView) }
+        if ($s.ActiveView -in @('Findings','Relationships','Summary')) { Set-ActiveView -View ([string]$s.ActiveView) }
     } catch { $null = $_ }
 }
 
@@ -858,6 +912,33 @@ $window.Add_Closing({
     # can hold the closing window on a hung provider call. The process ends
     # when the dialog returns; a lingering stuck call dies with it.
     if ($script:BgRunspace) { try { $script:BgRunspace.CloseAsync() } catch { $null = $_ } }
+})
+
+$treeRelationships.Add_SelectedItemChanged({
+    $item = $treeRelationships.SelectedItem
+    if (-not $item -or -not $script:RelData -or $null -eq $item.Tag) {
+        return
+    }
+    $ciid = 0
+    try { $ciid = [int]$item.Tag } catch { return }
+    if ($ciid -eq 0) {
+        $txtRelationshipDetail.Text = 'This node references an application that no longer exists in the site.'
+        return
+    }
+    $app = $script:RelData.Apps[$ciid]
+    if (-not $app) { return }
+    $out = @($script:RelData.Relationships | Where-Object { [int]$_.FromAppCIID -eq $ciid })
+    $in  = @($script:RelData.Relationships | Where-Object { [int]$_.ToAppCIID -eq $ciid })
+    $lines = @(
+        ('{0}  (CI_ID {1})' -f $app.Name, $app.CI_ID),
+        ('Version:        {0}' -f $app.SoftwareVersion),
+        ('Manufacturer:   {0}' -f $(if ($app.Manufacturer) { $app.Manufacturer } else { '(not set)' })),
+        ('Enabled:        {0}    Retired: {1}    Has content: {2}' -f $app.IsEnabled, $app.IsExpired, $app.HasContent),
+        '',
+        ('Outgoing:       {0} supersedence, {1} dependency' -f @($out | Where-Object { $_.Kind -eq 'Supersedence' }).Count, @($out | Where-Object { $_.Kind -eq 'Dependency' }).Count),
+        ('Incoming:       {0} supersedence, {1} dependency' -f @($in | Where-Object { $_.Kind -eq 'Supersedence' }).Count, @($in | Where-Object { $_.Kind -eq 'Dependency' }).Count)
+    )
+    $txtRelationshipDetail.Text = $lines -join [Environment]::NewLine
 })
 
 $window.Add_Loaded({

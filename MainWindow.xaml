@@ -169,6 +169,8 @@
                     <StackPanel>
                         <Button x:Name="btnViewFindings" Content="Findings" Style="{StaticResource ViewButtonStyle}"
                                 ToolTip="Every hygiene finding from the last scan, filterable by category and severity"/>
+                        <Button x:Name="btnViewRelationships" Content="Relationships" Style="{StaticResource ViewButtonStyle}"
+                                ToolTip="Supersedence chains and dependency trees from the last scan"/>
                         <Button x:Name="btnViewSummary"  Content="Summary"  Style="{StaticResource ViewButtonStyle}"
                                 ToolTip="Per-check counts for the last scan, plus dataset notes"/>
 
@@ -313,6 +315,31 @@
 
                     <TextBox x:Name="txtFindingDetail" Grid.Row="3" Style="{StaticResource DetailTextStyle}"
                              Text="Select a finding to see its evidence, recommendation, and the fix script it would take."/>
+                </Grid>
+
+                <!-- ============================================================ -->
+                <!-- View: Relationships                                          -->
+                <!-- ============================================================ -->
+                <Grid x:Name="viewRelationships" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="5"/>
+                        <RowDefinition Height="180"/>
+                    </Grid.RowDefinitions>
+
+                    <TreeView x:Name="treeRelationships"
+                              Grid.Row="0"
+                              FontSize="12"
+                              BorderThickness="0"
+                              Background="{DynamicResource MahApps.Brushes.ThemeBackground}"
+                              Foreground="{DynamicResource MahApps.Brushes.ThemeForeground}"/>
+
+                    <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch"
+                                  Background="{DynamicResource MahApps.Brushes.Gray8}"
+                                  ResizeDirection="Rows"/>
+
+                    <TextBox x:Name="txtRelationshipDetail" Grid.Row="2" Style="{StaticResource DetailTextStyle}"
+                             Text="Run a scan, then select a node to see the application's relationship standing."/>
                 </Grid>
 
                 <!-- ============================================================ -->
