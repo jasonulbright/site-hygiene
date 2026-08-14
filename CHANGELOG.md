@@ -2,6 +2,29 @@
 
 All notable changes to Site Hygiene are documented in this file.
 
+## [0.3.0] - 2026-08-14
+
+### Added
+
+- **The remaining five check families, completing the 24-check register.**
+  Devices: `DEV-01` inactive clients beyond threshold (severity depends
+  on whether discovery cleanup tasks would purge them), `DEV-02`
+  duplicate records by name and by cross-name SMBIOS GUID collision,
+  `DEV-03` clients behind the newest client version. Boundaries:
+  `BND-01` boundaries in no group, `BND-02` groups with no site systems,
+  `BND-03` overlapping IP-range boundaries. Task sequences: `TSQ-01`
+  references to deleted content, `TSQ-02` custom boot images and driver
+  packages nothing references (default boot images excluded). Updates:
+  `UPD-01` update groups over the expired/superseded ratio threshold,
+  `UPD-02` update deployment packages no deployment references, `UPD-03`
+  ADRs erroring (Error), disabled (Info), or enabled-but-stale
+  (Warning). Site: `MNT-01` recommended cleanup tasks disabled, `MNT-02`
+  the Backup Site Server task disabled. New thresholds:
+  `InactiveDeviceDays` (90), `SugExpiredPctThreshold` (30),
+  `AdrStaleDays` (45).
+- **Category filter** gains Devices, Boundaries, Task Sequences,
+  Updates, and Site.
+
 ## [0.2.0] - 2026-08-14
 
 ### Added
@@ -22,6 +45,12 @@ All notable changes to Site Hygiene are documented in this file.
   view hide accepted findings from future scans (multi-select
   supported); a "Show suppressed" toggle brings them back. Keys persist
   in `SiteHygiene.suppressions.json` beside the tool.
+- **Relationships view.** Supersedence chains and dependency trees
+  rendered as a tree with per-node health glyphs (missing or retired
+  targets, disabled or content-less applications, circular references
+  annotated in place). Selecting a node shows the application's
+  relationship standing. This completes the absorption of the standalone
+  supersedence-auditor tool's surface.
 
 ### Changed
 

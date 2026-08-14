@@ -18,7 +18,7 @@
 
 .NOTES
     ScriptName : start-sitehygiene.ps1
-    Version    : 0.2.0
+    Version    : 0.3.0
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', '', Justification='PS51-WPF-001..003: $global: survives closure scope-strip.')]
@@ -815,7 +815,7 @@ function Show-OptionsDialog {
             </StackPanel>
             <StackPanel x:Name="paneAbout" Visibility="Collapsed">
                 <TextBlock Text="About" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,10"/>
-                <TextBlock Text="Site Hygiene v0.2.0" FontSize="13" FontWeight="SemiBold"/>
+                <TextBlock Text="Site Hygiene v0.3.0" FontSize="13" FontWeight="SemiBold"/>
                 <TextBlock Text="Read-only MECM hygiene scanning: unused applications and packages, dead collections, stale and failing deployments. Every finding carries its evidence and the PowerShell a fix would take - shown, never executed."
                            FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0"/>
                 <TextBlock Text="Author: Jason Ulbright. License: MIT."

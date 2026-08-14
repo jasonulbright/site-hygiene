@@ -57,6 +57,19 @@ function Get-HygieneCheckCatalog {
         [pscustomobject]@{ Id = 'DEP-04'; Category = 'Relationships'; Severity = 'Warning'; Title = 'Dependency target retired or expired' }
         [pscustomobject]@{ Id = 'DEP-05'; Category = 'Relationships'; Severity = 'Error';   Title = 'Dependency target with no distributed content' }
         [pscustomobject]@{ Id = 'REL-01'; Category = 'Relationships'; Severity = 'Info';    Title = 'Application relationships without manufacturer metadata' }
+        [pscustomobject]@{ Id = 'DEV-01'; Category = 'Devices';      Severity = 'Warning'; Title = 'Inactive devices beyond threshold' }
+        [pscustomobject]@{ Id = 'DEV-02'; Category = 'Devices';      Severity = 'Warning'; Title = 'Duplicate device records' }
+        [pscustomobject]@{ Id = 'DEV-03'; Category = 'Devices';      Severity = 'Info';    Title = 'Clients below the newest client version' }
+        [pscustomobject]@{ Id = 'BND-01'; Category = 'Boundaries';   Severity = 'Warning'; Title = 'Boundary in no boundary group' }
+        [pscustomobject]@{ Id = 'BND-02'; Category = 'Boundaries';   Severity = 'Warning'; Title = 'Boundary group with no site systems' }
+        [pscustomobject]@{ Id = 'BND-03'; Category = 'Boundaries';   Severity = 'Info';    Title = 'Overlapping IP-range boundaries' }
+        [pscustomobject]@{ Id = 'TSQ-01'; Category = 'Task Sequences'; Severity = 'Error';   Title = 'Task sequence referencing deleted content' }
+        [pscustomobject]@{ Id = 'TSQ-02'; Category = 'Task Sequences'; Severity = 'Warning'; Title = 'Boot image or driver package referenced by nothing' }
+        [pscustomobject]@{ Id = 'UPD-01'; Category = 'Updates';      Severity = 'Warning'; Title = 'Update group with high expired/superseded ratio' }
+        [pscustomobject]@{ Id = 'UPD-02'; Category = 'Updates';      Severity = 'Info';    Title = 'Update deployment package referenced by no deployment' }
+        [pscustomobject]@{ Id = 'UPD-03'; Category = 'Updates';      Severity = 'Warning'; Title = 'Automatic deployment rule disabled, stale, or erroring' }
+        [pscustomobject]@{ Id = 'MNT-01'; Category = 'Site';         Severity = 'Info';    Title = 'Recommended maintenance tasks disabled' }
+        [pscustomobject]@{ Id = 'MNT-02'; Category = 'Site';         Severity = 'Warning'; Title = 'Site backup task disabled' }
         [pscustomobject]@{ Id = 'COL-01'; Category = 'Collections';  Severity = 'Info';    Title = 'Empty collection nothing references' }
         [pscustomobject]@{ Id = 'COL-02'; Category = 'Collections';  Severity = 'Warning'; Title = 'Deployment targeting an empty collection' }
         [pscustomobject]@{ Id = 'COL-03'; Category = 'Collections';  Severity = 'Warning'; Title = 'Incremental-evaluation collection count over ceiling' }
@@ -79,6 +92,9 @@ function Get-HygieneDefaultThresholds {
         DeadlineGraceDays         = 7
         FailurePctThreshold       = 20
         AvailableUnusedMinAgeDays = 30
+        InactiveDeviceDays        = 90
+        SugExpiredPctThreshold    = 30
+        AdrStaleDays              = 45
     }
 }
 
@@ -172,10 +188,114 @@ function Get-HygieneData {
         $taskSequences = @(Get-CMTaskSequence -ErrorAction Stop | ForEach-Object {
             $refs = @()
             if ($_.References) { $refs = @($_.References | ForEach-Object { [string]$_.Package }) }
-            [pscustomobject]@{ PackageID = [string]$_.PackageID; Name = [string]$_.Name; ReferencedIDs = $refs }
+            $bootImage = ''
+            $p = $_.PSObject.Properties['BootImageID']
+            if ($p) { $bootImage = [string]$p.Value }
+            [pscustomobject]@{ PackageID = [string]$_.PackageID; Name = [string]$_.Name; ReferencedIDs = $refs; BootImageID = $bootImage }
         })
         Write-Log "Loaded $($taskSequences.Count) task sequences"
     } catch { $notes.Add("Task sequences unavailable: $($_.Exception.Message)"); Write-Log "Task sequences unavailable: $($_.Exception.Message)" -Level WARN }
+
+    $devices = @()
+    try {
+        $devices = @(Get-CMDevice -Fast -ErrorAction Stop | ForEach-Object {
+            $smbios = ''
+            $p = $_.PSObject.Properties['SMBIOSGUID']
+            if ($p) { $smbios = [string]$p.Value }
+            $lastActive = $null
+            $p = $_.PSObject.Properties['LastActiveTime']
+            if ($p) { $lastActive = $p.Value }
+            [pscustomobject]@{
+                ResourceID     = [int]$_.ResourceID
+                Name           = [string]$_.Name
+                IsClient       = [bool]$_.IsClient
+                ClientVersion  = [string]$_.ClientVersion
+                LastActiveTime = $lastActive
+                SMBIOSGUID     = $smbios
+            }
+        })
+        Write-Log "Loaded $($devices.Count) devices"
+    } catch { $notes.Add("Devices unavailable: $($_.Exception.Message)"); Write-Log "Devices unavailable: $($_.Exception.Message)" -Level WARN }
+
+    $boundaries = @()
+    try {
+        $boundaries = @(Get-CMBoundary -ErrorAction Stop | ForEach-Object {
+            [pscustomobject]@{
+                DisplayName  = [string]$_.DisplayName
+                Value        = [string]$_.Value
+                BoundaryType = [int]$_.BoundaryType
+                GroupCount   = [int]$_.GroupCount
+            }
+        })
+        Write-Log "Loaded $($boundaries.Count) boundaries"
+    } catch { $notes.Add("Boundaries unavailable: $($_.Exception.Message)"); Write-Log "Boundaries unavailable: $($_.Exception.Message)" -Level WARN }
+
+    $boundaryGroups = @()
+    try {
+        $boundaryGroups = @(Get-CMBoundaryGroup -ErrorAction Stop | ForEach-Object {
+            $ssCount = -1
+            $p = $_.PSObject.Properties['SiteSystemCount']
+            if ($p) { $ssCount = [int]$p.Value }
+            [pscustomobject]@{ GroupID = [int]$_.GroupID; Name = [string]$_.Name; SiteSystemCount = $ssCount }
+        })
+        Write-Log "Loaded $($boundaryGroups.Count) boundary groups"
+    } catch { $notes.Add("Boundary groups unavailable: $($_.Exception.Message)"); Write-Log "Boundary groups unavailable: $($_.Exception.Message)" -Level WARN }
+
+    $bootImages = @()
+    try {
+        $bootImages = @(Get-CMBootImage -ErrorAction Stop | ForEach-Object {
+            [pscustomobject]@{ PackageID = [string]$_.PackageID; Name = [string]$_.Name }
+        })
+        Write-Log "Loaded $($bootImages.Count) boot images"
+    } catch { $notes.Add("Boot images unavailable: $($_.Exception.Message)"); Write-Log "Boot images unavailable: $($_.Exception.Message)" -Level WARN }
+
+    $driverPackages = @()
+    try {
+        $driverPackages = @(Get-CMDriverPackage -Fast -ErrorAction Stop | ForEach-Object {
+            [pscustomobject]@{ PackageID = [string]$_.PackageID; Name = [string]$_.Name }
+        })
+        Write-Log "Loaded $($driverPackages.Count) driver packages"
+    } catch { $notes.Add("Driver packages unavailable: $($_.Exception.Message)"); Write-Log "Driver packages unavailable: $($_.Exception.Message)" -Level WARN }
+
+    $updateGroups = @()
+    try {
+        $updateGroups = @(Get-CMSoftwareUpdateGroup -ErrorAction Stop | ForEach-Object {
+            $n = 0; $e = 0; $s = 0
+            $p = $_.PSObject.Properties['NumberOfUpdates'];           if ($p) { $n = [int]$p.Value }
+            $p = $_.PSObject.Properties['NumberOfExpiredUpdates'];    if ($p) { $e = [int]$p.Value }
+            $p = $_.PSObject.Properties['NumberOfSupersededUpdates']; if ($p) { $s = [int]$p.Value }
+            [pscustomobject]@{ Name = [string]$_.LocalizedDisplayName; CI_ID = [int]$_.CI_ID; NumberOfUpdates = $n; NumberOfExpiredUpdates = $e; NumberOfSupersededUpdates = $s }
+        })
+        Write-Log "Loaded $($updateGroups.Count) software update groups"
+    } catch { $notes.Add("Software update groups unavailable: $($_.Exception.Message)"); Write-Log "Software update groups unavailable: $($_.Exception.Message)" -Level WARN }
+
+    $updatePackages = @()
+    try {
+        $updatePackages = @(Get-CMSoftwareUpdateDeploymentPackage -ErrorAction Stop | ForEach-Object {
+            [pscustomobject]@{ PackageID = [string]$_.PackageID; Name = [string]$_.Name }
+        })
+        Write-Log "Loaded $($updatePackages.Count) update deployment packages"
+    } catch { $notes.Add("Update deployment packages unavailable: $($_.Exception.Message)"); Write-Log "Update deployment packages unavailable: $($_.Exception.Message)" -Level WARN }
+
+    $adrs = @()
+    try {
+        $adrs = @(Get-CMAutoDeploymentRule -Fast -ErrorAction Stop | ForEach-Object {
+            $lastRun = $null; $lastError = 0; $enabled = $true
+            $p = $_.PSObject.Properties['LastRunTime'];           if ($p) { $lastRun = $p.Value }
+            $p = $_.PSObject.Properties['LastErrorCode'];         if ($p) { $lastError = [int]$p.Value }
+            $p = $_.PSObject.Properties['AutoDeploymentEnabled']; if ($p) { $enabled = [bool]$p.Value }
+            [pscustomobject]@{ Name = [string]$_.Name; AutoDeploymentEnabled = $enabled; LastRunTime = $lastRun; LastErrorCode = $lastError }
+        })
+        Write-Log "Loaded $($adrs.Count) automatic deployment rules"
+    } catch { $notes.Add("Automatic deployment rules unavailable: $($_.Exception.Message)"); Write-Log "Automatic deployment rules unavailable: $($_.Exception.Message)" -Level WARN }
+
+    $maintTasks = @()
+    try {
+        $maintTasks = @(Get-CMSiteMaintenanceTask -ErrorAction Stop | ForEach-Object {
+            [pscustomobject]@{ TaskName = [string]$_.TaskName; Enabled = [bool]$_.Enabled }
+        })
+        Write-Log "Loaded $($maintTasks.Count) site maintenance tasks"
+    } catch { $notes.Add("Site maintenance tasks unavailable: $($_.Exception.Message)"); Write-Log "Site maintenance tasks unavailable: $($_.Exception.Message)" -Level WARN }
 
     $collections = @()
     try {
@@ -293,6 +413,15 @@ function Get-HygieneData {
         AppDeployments          = $appDeployments
         CollectionsWithSettings = $collectionsWithSettings
         DependencyTargetCIIDs   = $dependencyTargetCIIDs
+        Devices                 = $devices
+        Boundaries              = $boundaries
+        BoundaryGroups          = $boundaryGroups
+        BootImages              = $bootImages
+        DriverPackages          = $driverPackages
+        UpdateGroups            = $updateGroups
+        UpdatePackages          = $updatePackages
+        AutoDeploymentRules     = $adrs
+        MaintenanceTasks        = $maintTasks
         DatasetNotes            = $notes.ToArray()
         CollectedAt             = Get-Date
     }
@@ -587,6 +716,339 @@ function Test-HygDeploymentAvailableUnused {
             -Evidence ("Available deployment created {0} (over {1} days ago) targets {2} clients with zero installs and nothing in progress." -f $d.CreationTime, $minAge, $d.NumberTargeted) `
             -Recommendation 'Nobody is opting in; remove the deployment or rethink how it is offered.' `
             -FixScript ("# Review: deployment of '{0}' to '{1}'" -f $d.SoftwareName, $d.CollectionName)
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Checks: Devices
+# ---------------------------------------------------------------------------
+
+function Test-HygDeviceInactive {
+    <#
+    .SYNOPSIS
+        DEV-01: one aggregated finding for clients inactive beyond the
+        threshold. Severity depends on whether the discovery cleanup tasks
+        are enabled to eventually purge them.
+    #>
+    param(
+        [Parameter(Mandatory)]$Data,
+        [hashtable]$Thresholds = (Get-HygieneDefaultThresholds)
+    )
+
+    $days = [int]$Thresholds.InactiveDeviceDays
+    $cutoff = (Get-Date).AddDays(-$days)
+    $inactive = @($Data.Devices | Where-Object {
+        $_.IsClient -and $_.LastActiveTime -and $_.LastActiveTime -lt $cutoff
+    })
+    if ($inactive.Count -eq 0) { return }
+
+    $cleanupTasks = @('Delete Inactive Client Discovery Data', 'Delete Aged Discovery Data')
+    $cleanupEnabled = @($Data.MaintenanceTasks | Where-Object { $_.TaskName -in $cleanupTasks -and $_.Enabled }).Count -gt 0
+    $sample = @($inactive | Sort-Object Name | Select-Object -First 15 | ForEach-Object { $_.Name }) -join ', '
+
+    $severity = if ($cleanupEnabled) { 'Info' } else { 'Warning' }
+    $cleanupNote = if ($cleanupEnabled) { 'discovery cleanup tasks are enabled and will eventually purge them' } else { 'no discovery cleanup task is enabled, so they accumulate forever' }
+
+    New-HygieneFinding -CheckId 'DEV-01' -Severity $severity -Category 'Devices' `
+        -ObjectType 'Site' -ObjectId '' -ObjectName 'Inactive clients' `
+        -Evidence ("{0} clients have been inactive for over {1} days; {2}. First 15 by name: {3}" -f $inactive.Count, $days, $cleanupNote, $sample) `
+        -Recommendation 'Verify the machines are really gone, then let cleanup tasks purge them or delete the records.' `
+        -FixScript "# Per device: Remove-CMDevice -Name '<name>' -Force  # verify first"
+}
+
+function Test-HygDeviceDuplicates {
+    <#
+    .SYNOPSIS
+        DEV-02: device records sharing a name (and, when present, SMBIOS
+        GUID collisions across different names).
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Named for the duplicate condition it tests.')]
+    param([Parameter(Mandatory)]$Data)
+
+    foreach ($group in ($Data.Devices | Group-Object { ([string]$_.Name).ToLowerInvariant() } | Where-Object { $_.Count -gt 1 })) {
+        $ids = @($group.Group | ForEach-Object { $_.ResourceID }) -join ', '
+        New-HygieneFinding -CheckId 'DEV-02' -Severity Warning -Category 'Devices' `
+            -ObjectType 'Device' -ObjectId $ids -ObjectName $group.Group[0].Name `
+            -Evidence ("{0} device records share the name '{1}' (ResourceIDs {2}); deployments and reports split across them." -f $group.Count, $group.Group[0].Name, $ids) `
+            -Recommendation 'Keep the active record and delete the stale duplicates.' `
+            -FixScript ("# Review each: Get-CMDevice -Name '{0}' | Select-Object ResourceID, LastActiveTime, ClientVersion" -f ($group.Group[0].Name -replace "'", "''"))
+    }
+
+    $withGuid = @($Data.Devices | Where-Object { -not [string]::IsNullOrWhiteSpace($_.SMBIOSGUID) })
+    foreach ($group in ($withGuid | Group-Object SMBIOSGUID | Where-Object { $_.Count -gt 1 })) {
+        $names = @($group.Group | ForEach-Object { $_.Name } | Select-Object -Unique)
+        if ($names.Count -lt 2) { continue }  # same-name duplicates already covered
+        New-HygieneFinding -CheckId 'DEV-02' -Severity Warning -Category 'Devices' `
+            -ObjectType 'Device' -ObjectId ([string]$group.Name) -ObjectName ($names -join ' / ') `
+            -Evidence ("{0} device records with different names share SMBIOS GUID {1}: {2}. Usually a renamed or re-imaged machine leaving a stale record." -f $group.Count, $group.Name, ($names -join ', ')) `
+            -Recommendation 'Delete the record for the name the machine no longer uses.' `
+            -FixScript "# Review each record's LastActiveTime before deleting"
+    }
+}
+
+function Test-HygClientVersions {
+    <#
+    .SYNOPSIS
+        DEV-03: one aggregated finding for clients below the newest client
+        version observed in the site data.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Named for the version census it tests.')]
+    param([Parameter(Mandatory)]$Data)
+
+    $clients = @($Data.Devices | Where-Object { $_.IsClient -and $_.ClientVersion })
+    if ($clients.Count -eq 0) { return }
+
+    $versions = @($clients | ForEach-Object { try { [version]$_.ClientVersion } catch { $null } } | Where-Object { $_ })
+    if ($versions.Count -eq 0) { return }
+    $newest = ($versions | Sort-Object -Descending)[0]
+
+    $behind = @($clients | Where-Object { try { [version]$_.ClientVersion -lt $newest } catch { $false } })
+    if ($behind.Count -eq 0) { return }
+
+    $sample = @($behind | Sort-Object Name | Select-Object -First 15 | ForEach-Object { "{0} ({1})" -f $_.Name, $_.ClientVersion }) -join ', '
+    New-HygieneFinding -CheckId 'DEV-03' -Severity Info -Category 'Devices' `
+        -ObjectType 'Site' -ObjectId '' -ObjectName 'Client version drift' `
+        -Evidence ("{0} of {1} clients run a client version below the newest seen ({2}). First 15: {3}" -f $behind.Count, $clients.Count, $newest, $sample) `
+        -Recommendation 'Check automatic client upgrade settings; long-tail old clients usually mean the upgrade never reaches them.' `
+        -FixScript '# Console: Administration > Site Configuration > Sites > Hierarchy Settings > Client Upgrade'
+}
+
+# ---------------------------------------------------------------------------
+# Checks: Boundaries
+# ---------------------------------------------------------------------------
+
+function Test-HygBoundaryChecks {
+    <#
+    .SYNOPSIS
+        BND-01 boundaries in no group, BND-02 groups with no site systems,
+        BND-03 overlapping IP-range boundaries.
+
+    .DESCRIPTION
+        Overlap detection covers IP-range boundaries only (BoundaryType 3,
+        value 'start-end'); subnet and AD-site overlap is not computable
+        from the value strings alone.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Runs the full boundary check family by design.')]
+    param([Parameter(Mandatory)]$Data)
+
+    foreach ($b in @($Data.Boundaries | Where-Object { $_.GroupCount -eq 0 })) {
+        New-HygieneFinding -CheckId 'BND-01' -Severity Warning -Category 'Boundaries' `
+            -ObjectType 'Boundary' -ObjectId ([string]$b.Value) -ObjectName ($(if ($b.DisplayName) { $b.DisplayName } else { $b.Value })) `
+            -Evidence ("Boundary '{0}' belongs to no boundary group; clients inside it get no content location or site assignment from it." -f $b.Value) `
+            -Recommendation 'Add the boundary to the appropriate boundary group or delete it.' `
+            -FixScript '# Console: Administration > Hierarchy Configuration > Boundary Groups - add the boundary'
+    }
+
+    foreach ($g in @($Data.BoundaryGroups | Where-Object { $_.SiteSystemCount -eq 0 })) {
+        New-HygieneFinding -CheckId 'BND-02' -Severity Warning -Category 'Boundaries' `
+            -ObjectType 'BoundaryGroup' -ObjectId ([string]$g.GroupID) -ObjectName $g.Name `
+            -Evidence ("Boundary group '{0}' references no site systems; clients in it fall back to other groups for content, adding latency, unless it exists for site assignment only." -f $g.Name) `
+            -Recommendation 'Add the serving DP/MP site systems, or leave as-is if the group is assignment-only by design.' `
+            -FixScript ("# Console: Boundary Group '{0}' Properties > References - add site systems" -f $g.Name)
+    }
+
+    $ranges = @()
+    foreach ($b in @($Data.Boundaries | Where-Object { $_.BoundaryType -eq 3 })) {
+        $parts = ([string]$b.Value) -split '-'
+        if ($parts.Count -ne 2) { continue }
+        try {
+            $start = [System.Net.IPAddress]::Parse($parts[0].Trim())
+            $end   = [System.Net.IPAddress]::Parse($parts[1].Trim())
+            $ranges += [pscustomobject]@{
+                Boundary = $b
+                Start    = [uint32]([System.BitConverter]::ToUInt32(([byte[]]$start.GetAddressBytes())[3..0], 0))
+                End      = [uint32]([System.BitConverter]::ToUInt32(([byte[]]$end.GetAddressBytes())[3..0], 0))
+            }
+        } catch { continue }
+    }
+    for ($i = 0; $i -lt $ranges.Count; $i++) {
+        for ($j = $i + 1; $j -lt $ranges.Count; $j++) {
+            $a = $ranges[$i]; $b2 = $ranges[$j]
+            if ($a.Start -le $b2.End -and $b2.Start -le $a.End) {
+                New-HygieneFinding -CheckId 'BND-03' -Severity Info -Category 'Boundaries' `
+                    -ObjectType 'Boundary' -ObjectId ([string]$a.Boundary.Value) -ObjectName ("{0} overlaps {1}" -f $a.Boundary.Value, $b2.Boundary.Value) `
+                    -Evidence ("IP ranges '{0}' and '{1}' overlap. Fine for content location, a problem for automatic site assignment if the overlapping groups assign different sites." -f $a.Boundary.Value, $b2.Boundary.Value) `
+                    -Recommendation 'Verify the overlap is intentional and both ranges route to compatible boundary groups.' `
+                    -FixScript '# Console: Administration > Hierarchy Configuration > Boundaries'
+            }
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Checks: Task sequences
+# ---------------------------------------------------------------------------
+
+function Test-HygTaskSequenceRefs {
+    <#
+    .SYNOPSIS
+        TSQ-01 task sequences referencing deleted content; TSQ-02 boot
+        images and driver packages nothing references.
+
+    .DESCRIPTION
+        The known-content universe is packages, boot images, driver
+        packages, update deployment packages, and applications (by content
+        PackageID or ModelName). Default boot images ship with the site
+        and are excluded from TSQ-02.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Runs the full task sequence reference family by design.')]
+    param([Parameter(Mandatory)]$Data)
+
+    $known = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($x in @($Data.Packages))       { [void]$known.Add([string]$x.PackageID) }
+    foreach ($x in @($Data.BootImages))     { [void]$known.Add([string]$x.PackageID) }
+    foreach ($x in @($Data.DriverPackages)) { [void]$known.Add([string]$x.PackageID) }
+    foreach ($x in @($Data.UpdatePackages)) { [void]$known.Add([string]$x.PackageID) }
+    foreach ($x in @($Data.TaskSequences))  { [void]$known.Add([string]$x.PackageID) }
+    foreach ($x in @($Data.Applications)) {
+        if ($x.PackageID) { [void]$known.Add([string]$x.PackageID) }
+        if ($x.ModelName) { [void]$known.Add([string]$x.ModelName) }
+    }
+
+    foreach ($ts in @($Data.TaskSequences)) {
+        $missing = @($ts.ReferencedIDs | Where-Object { $_ -and -not $known.Contains([string]$_) } | Select-Object -Unique)
+        if ($missing.Count -eq 0) { continue }
+        New-HygieneFinding -CheckId 'TSQ-01' -Severity Error -Category 'Task Sequences' `
+            -ObjectType 'TaskSequence' -ObjectId ([string]$ts.PackageID) -ObjectName $ts.Name `
+            -Evidence ("Task sequence references {0} content id(s) that no longer exist: {1}. Runs fail at those steps." -f $missing.Count, ($missing -join ', ')) `
+            -Recommendation 'Open the task sequence editor and fix or remove the steps referencing deleted content.' `
+            -FixScript ("# Console: edit task sequence '{0}' and repair the broken references" -f $ts.Name)
+    }
+
+    $referenced = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($ts in @($Data.TaskSequences)) {
+        foreach ($r in @($ts.ReferencedIDs)) { [void]$referenced.Add([string]$r) }
+        if ($ts.BootImageID) { [void]$referenced.Add([string]$ts.BootImageID) }
+    }
+
+    # Default boot images ship with the site and stay unreferenced until
+    # OSD is in use; flagging them is noise.
+    foreach ($bi in @($Data.BootImages | Where-Object { $_.Name -notmatch '^Boot image \((x64|x86|arm64)\)$' })) {
+        if ($referenced.Contains([string]$bi.PackageID)) { continue }
+        New-HygieneFinding -CheckId 'TSQ-02' -Severity Warning -Category 'Task Sequences' `
+            -ObjectType 'BootImage' -ObjectId ([string]$bi.PackageID) -ObjectName $bi.Name `
+            -Evidence 'Custom boot image is referenced by no task sequence.' `
+            -Recommendation 'Delete it if the task sequences that used it are gone; its content still occupies DPs.' `
+            -FixScript ("Remove-CMBootImage -Id '{0}' -Force" -f $bi.PackageID)
+    }
+    foreach ($dp in @($Data.DriverPackages)) {
+        if ($referenced.Contains([string]$dp.PackageID)) { continue }
+        New-HygieneFinding -CheckId 'TSQ-02' -Severity Warning -Category 'Task Sequences' `
+            -ObjectType 'DriverPackage' -ObjectId ([string]$dp.PackageID) -ObjectName $dp.Name `
+            -Evidence 'Driver package is referenced by no task sequence.' `
+            -Recommendation 'Delete it if the hardware model is retired; driver packages are among the largest content on DPs.' `
+            -FixScript ("Remove-CMDriverPackage -Id '{0}' -Force" -f $dp.PackageID)
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Checks: Updates
+# ---------------------------------------------------------------------------
+
+function Test-HygUpdateChecks {
+    <#
+    .SYNOPSIS
+        UPD-01 update groups with a high expired/superseded ratio, UPD-02
+        update deployment packages no deployment references, UPD-03 ADRs
+        disabled, stale, or erroring.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Runs the full software update check family by design.')]
+    param(
+        [Parameter(Mandatory)]$Data,
+        [hashtable]$Thresholds = (Get-HygieneDefaultThresholds)
+    )
+
+    $pctThreshold = [int]$Thresholds.SugExpiredPctThreshold
+    foreach ($sug in @($Data.UpdateGroups)) {
+        if ($sug.NumberOfUpdates -le 0) { continue }
+        $dead = $sug.NumberOfExpiredUpdates + $sug.NumberOfSupersededUpdates
+        $pct = [math]::Round(($dead / $sug.NumberOfUpdates) * 100, 1)
+        if ($pct -lt $pctThreshold) { continue }
+        New-HygieneFinding -CheckId 'UPD-01' -Severity Warning -Category 'Updates' `
+            -ObjectType 'UpdateGroup' -ObjectId ([string]$sug.CI_ID) -ObjectName $sug.Name `
+            -Evidence ("{0} of {1} updates in the group are expired or superseded ({2}%); compliance numbers computed from it are misleading." -f $dead, $sug.NumberOfUpdates, $pct) `
+            -Recommendation 'Clean the expired/superseded updates out of the group or rebuild it from a current search.' `
+            -FixScript ("# Console: Software Library > Software Update Groups > '{0}' - remove expired/superseded members" -f $sug.Name)
+    }
+
+    $deployedPkgs = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($d in @($Data.Deployments)) { if ($d.PackageID) { [void]$deployedPkgs.Add([string]$d.PackageID) } }
+    foreach ($pkg in @($Data.UpdatePackages)) {
+        if ($deployedPkgs.Contains([string]$pkg.PackageID)) { continue }
+        New-HygieneFinding -CheckId 'UPD-02' -Severity Info -Category 'Updates' `
+            -ObjectType 'UpdatePackage' -ObjectId ([string]$pkg.PackageID) -ObjectName $pkg.Name `
+            -Evidence 'No deployment references this update deployment package id; its content may be dead weight on the DPs. Update deployments bind to update groups, so verify before deleting.' `
+            -Recommendation 'Check which ADR or deployment fills this package; delete it when nothing does.' `
+            -FixScript ("# Verify first, then: Remove-CMSoftwareUpdateDeploymentPackage -Id '{0}' -Force" -f $pkg.PackageID)
+    }
+
+    $staleDays = [int]$Thresholds.AdrStaleDays
+    $staleCutoff = (Get-Date).AddDays(-$staleDays)
+    foreach ($adr in @($Data.AutoDeploymentRules)) {
+        if ($adr.LastErrorCode -ne 0) {
+            New-HygieneFinding -CheckId 'UPD-03' -Severity Error -Category 'Updates' `
+                -ObjectType 'ADR' -ObjectId '' -ObjectName $adr.Name `
+                -Evidence ("Automatic deployment rule's last run ended with error code {0}; new updates are not being deployed by it." -f $adr.LastErrorCode) `
+                -Recommendation 'Open the ADR run history (ruleengine.log on the site server) and fix the failure.' `
+                -FixScript ("# Rerun after fixing: Invoke-CMAutoDeploymentRule -Name '{0}'" -f ($adr.Name -replace "'", "''"))
+        }
+        elseif (-not $adr.AutoDeploymentEnabled) {
+            New-HygieneFinding -CheckId 'UPD-03' -Severity Info -Category 'Updates' `
+                -ObjectType 'ADR' -ObjectId '' -ObjectName $adr.Name `
+                -Evidence 'Automatic deployment rule is disabled.' `
+                -Recommendation 'Delete it if retired, or re-enable it if it should still run.' `
+                -FixScript ("Get-CMAutoDeploymentRule -Name '{0}' -Fast | Remove-CMAutoDeploymentRule -Force  # or re-enable in console" -f ($adr.Name -replace "'", "''"))
+        }
+        elseif ($adr.LastRunTime -and $adr.LastRunTime -lt $staleCutoff) {
+            New-HygieneFinding -CheckId 'UPD-03' -Severity Warning -Category 'Updates' `
+                -ObjectType 'ADR' -ObjectId '' -ObjectName $adr.Name `
+                -Evidence ("Automatic deployment rule is enabled but last ran {0} (over {1} days ago); its schedule may be broken." -f $adr.LastRunTime, $staleDays) `
+                -Recommendation 'Check the ADR schedule and the last evaluation in ruleengine.log.' `
+                -FixScript ("Invoke-CMAutoDeploymentRule -Name '{0}'" -f ($adr.Name -replace "'", "''"))
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Checks: Site maintenance
+# ---------------------------------------------------------------------------
+
+function Test-HygMaintenanceTasks {
+    <#
+    .SYNOPSIS
+        MNT-01 recommended cleanup tasks that exist but are disabled;
+        MNT-02 the site backup task disabled.
+
+    .DESCRIPTION
+        The recommended set is conservative cleanup-only tasks; index
+        rebuild is deliberately excluded because sites with external SQL
+        maintenance disable it on purpose.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Runs the full maintenance-task family by design.')]
+    param([Parameter(Mandatory)]$Data)
+
+    $recommended = @(
+        'Delete Aged Inventory History',
+        'Delete Aged Discovery Data',
+        'Delete Obsolete Client Discovery Data',
+        'Delete Aged Client Operations',
+        'Delete Aged Log Data'
+    )
+    foreach ($t in @($Data.MaintenanceTasks | Where-Object { $_.TaskName -in $recommended -and -not $_.Enabled })) {
+        New-HygieneFinding -CheckId 'MNT-01' -Severity Info -Category 'Site' `
+            -ObjectType 'MaintenanceTask' -ObjectId '' -ObjectName $t.TaskName `
+            -Evidence ("Cleanup task '{0}' is disabled; the data it would prune accumulates in the site database." -f $t.TaskName) `
+            -Recommendation 'Enable it unless a deliberate retention policy keeps it off.' `
+            -FixScript ("Set-CMSiteMaintenanceTask -MaintenanceTaskName '{0}' -Enabled `$true -SiteCode '<site>'" -f $t.TaskName)
+    }
+
+    $backup = @($Data.MaintenanceTasks | Where-Object { $_.TaskName -eq 'Backup Site Server' }) | Select-Object -First 1
+    if ($backup -and -not $backup.Enabled) {
+        New-HygieneFinding -CheckId 'MNT-02' -Severity Warning -Category 'Site' `
+            -ObjectType 'MaintenanceTask' -ObjectId '' -ObjectName 'Backup Site Server' `
+            -Evidence 'The Backup Site Server maintenance task is disabled.' `
+            -Recommendation 'Enable it, or confirm an SQL-level backup of the site database (plus CD.Latest) covers recovery instead.' `
+            -FixScript "Set-CMSiteMaintenanceTask -MaintenanceTaskName 'Backup Site Server' -Enabled `$true -SiteCode '<site>'"
     }
 }
 
@@ -1119,6 +1581,13 @@ function Invoke-HygieneScan {
         @{ Id = 'DPL-01'; Run = { param($d) Test-HygDeploymentExpired -Data $d } }
         @{ Id = 'DPL-02'; Run = { param($d, $t) Test-HygDeploymentPastDeadlineFailures -Data $d -Thresholds $t } }
         @{ Id = 'DPL-03'; Run = { param($d, $t) Test-HygDeploymentAvailableUnused -Data $d -Thresholds $t } }
+        @{ Id = 'DEV-01'; Run = { param($d, $t) Test-HygDeviceInactive -Data $d -Thresholds $t } }
+        @{ Id = 'DEV-02'; Run = { param($d) Test-HygDeviceDuplicates -Data $d } }
+        @{ Id = 'DEV-03'; Run = { param($d) Test-HygClientVersions -Data $d } }
+        @{ Id = 'BND';    Run = { param($d) Test-HygBoundaryChecks -Data $d } }
+        @{ Id = 'TSQ';    Run = { param($d) Test-HygTaskSequenceRefs -Data $d } }
+        @{ Id = 'UPD';    Run = { param($d, $t) Test-HygUpdateChecks -Data $d -Thresholds $t } }
+        @{ Id = 'MNT';    Run = { param($d) Test-HygMaintenanceTasks -Data $d } }
     )
     if ($RelationshipData) {
         # $args-based: these only consume the third runner argument.

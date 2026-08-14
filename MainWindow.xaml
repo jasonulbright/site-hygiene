@@ -146,7 +146,7 @@
                 <StackPanel DockPanel.Dock="Top" Margin="14,14,14,12">
                     <TextBlock x:Name="txtAppTitle" Text="Site Hygiene"
                                FontSize="20" FontWeight="Bold" TextWrapping="Wrap"/>
-                    <TextBlock x:Name="txtVersion" Text="v0.2.0" FontSize="10"
+                    <TextBlock x:Name="txtVersion" Text="v0.3.0" FontSize="10"
                                Foreground="{DynamicResource MahApps.Brushes.Gray1}"
                                Margin="0,2,0,0"/>
                 </StackPanel>
@@ -244,6 +244,11 @@
                         <ComboBoxItem Content="Collections"/>
                         <ComboBoxItem Content="Deployments"/>
                         <ComboBoxItem Content="Relationships"/>
+                        <ComboBoxItem Content="Devices"/>
+                        <ComboBoxItem Content="Boundaries"/>
+                        <ComboBoxItem Content="Task Sequences"/>
+                        <ComboBoxItem Content="Updates"/>
+                        <ComboBoxItem Content="Site"/>
                         <ComboBoxItem Content="Scan"/>
                     </ComboBox>
 
