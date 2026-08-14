@@ -220,11 +220,17 @@ function Get-HygieneData {
     $boundaries = @()
     try {
         $boundaries = @(Get-CMBoundary -ErrorAction Stop | ForEach-Object {
+            # -1 sentinel: GroupCount is a provider-computed count that may
+            # be absent; [int]$null would read as 0 and BND-01 would flag
+            # every boundary in the site.
+            $groupCount = -1
+            $p = $_.PSObject.Properties['GroupCount']
+            if ($p -and $null -ne $p.Value) { $groupCount = [int]$p.Value }
             [pscustomobject]@{
                 DisplayName  = [string]$_.DisplayName
                 Value        = [string]$_.Value
                 BoundaryType = [int]$_.BoundaryType
-                GroupCount   = [int]$_.GroupCount
+                GroupCount   = $groupCount
             }
         })
         Write-Log "Loaded $($boundaries.Count) boundaries"
@@ -774,7 +780,17 @@ function Test-HygDeviceDuplicates {
             -FixScript ("# Review each: Get-CMDevice -Name '{0}' | Select-Object ResourceID, LastActiveTime, ClientVersion" -f ($group.Group[0].Name -replace "'", "''"))
     }
 
-    $withGuid = @($Data.Devices | Where-Object { -not [string]::IsNullOrWhiteSpace($_.SMBIOSGUID) })
+    # Placeholder GUIDs (unset firmware identifiers on cloned VMs and some
+    # OEM batches) are shared by distinct machines - grouping them would
+    # report machines-with-no-identifier as duplicates.
+    $placeholderGuids = @(
+        '00000000-0000-0000-0000-000000000000',
+        'FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF'
+    )
+    $withGuid = @($Data.Devices | Where-Object {
+        -not [string]::IsNullOrWhiteSpace($_.SMBIOSGUID) -and
+        ([string]$_.SMBIOSGUID).Trim('{}') -notin $placeholderGuids
+    })
     foreach ($group in ($withGuid | Group-Object SMBIOSGUID | Where-Object { $_.Count -gt 1 })) {
         $names = @($group.Group | ForEach-Object { $_.Name } | Select-Object -Unique)
         if ($names.Count -lt 2) { continue }  # same-name duplicates already covered
@@ -831,6 +847,8 @@ function Test-HygBoundaryChecks {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Runs the full boundary check family by design.')]
     param([Parameter(Mandatory)]$Data)
 
+    # GroupCount -1 means the provider did not surface the count; unknown
+    # is not zero, so those boundaries are skipped rather than flagged.
     foreach ($b in @($Data.Boundaries | Where-Object { $_.GroupCount -eq 0 })) {
         New-HygieneFinding -CheckId 'BND-01' -Severity Warning -Category 'Boundaries' `
             -ObjectType 'Boundary' -ObjectId ([string]$b.Value) -ObjectName ($(if ($b.DisplayName) { $b.DisplayName } else { $b.Value })) `
