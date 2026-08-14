@@ -438,6 +438,7 @@ $script:BgPowerShell   = $null
 $script:BgInvokeHandle = $null
 $script:BgState        = $null
 $script:BgTimer        = $null
+$script:BgGraveyard    = @()
 
 function Initialize-BgRunspace {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification='Lazy-init; idempotent.')]
@@ -465,11 +466,22 @@ function Dispose-BgWork {
     param()
     if ($script:BgTimer) { try { $script:BgTimer.Stop() } catch { $null = $_ } ; $script:BgTimer = $null }
     if ($script:BgPowerShell) {
-        try { [void]$script:BgPowerShell.Stop() } catch { $null = $_ }
-        try { $script:BgPowerShell.Dispose() }   catch { $null = $_ }
+        # BeginStop, not Stop: a synchronous Stop() blocks the UI thread for
+        # as long as the pipeline is stuck inside a CM/CIM call against an
+        # unresponsive provider. The stopping pipeline is parked and reaped
+        # on a later teardown pass once it has actually stopped.
+        try { [void]$script:BgPowerShell.BeginStop($null, $null) } catch { $null = $_ }
+        $script:BgGraveyard += ,$script:BgPowerShell
         $script:BgPowerShell = $null
     }
     $script:BgInvokeHandle = $null
+    $script:BgGraveyard = @($script:BgGraveyard | Where-Object {
+        if ($_.InvocationStateInfo.State -in @('Stopped', 'Completed', 'Failed')) {
+            try { $_.Dispose() } catch { $null = $_ }
+            $false
+        }
+        else { $true }
+    })
 }
 
 function Invoke-Scan {
@@ -732,7 +744,7 @@ function Show-OptionsDialog {
         Save-ShPreferences -Prefs $global:Prefs
         if ($changed) {
             Dispose-BgWork
-            if ($script:BgRunspace) { try { $script:BgRunspace.Close() } catch { $null = $_ } ; try { $script:BgRunspace.Dispose() } catch { $null = $_ } ; $script:BgRunspace = $null }
+            if ($script:BgRunspace) { try { $script:BgRunspace.CloseAsync() } catch { $null = $_ } ; $script:BgRunspace = $null }
             $script:BgState = $null
             $progressOverlay.Visibility = [System.Windows.Visibility]::Collapsed
             $btnScan.IsEnabled = $true
@@ -782,7 +794,10 @@ function Restore-WindowState {
 $window.Add_Closing({
     Save-WindowState
     Dispose-BgWork
-    if ($script:BgRunspace) { try { $script:BgRunspace.Close() } catch { $null = $_ } ; try { $script:BgRunspace.Dispose() } catch { $null = $_ } }
+    # CloseAsync: a blocking Close() waits for a still-stopping pipeline and
+    # can hold the closing window on a hung provider call. The process ends
+    # when the dialog returns; a lingering stuck call dies with it.
+    if ($script:BgRunspace) { try { $script:BgRunspace.CloseAsync() } catch { $null = $_ } }
 })
 
 $window.Add_Loaded({

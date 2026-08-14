@@ -173,7 +173,14 @@ function Get-HygieneData {
             $excludeIds = @()
             if ($_.CollectionRules) {
                 foreach ($rule in $_.CollectionRules) {
-                    $typeName = [string]$rule.SmsProviderObjectPath
+                    # Embedded rule objects frequently carry an empty
+                    # SmsProviderObjectPath; the .NET type name is the
+                    # reliable discriminator. Without the fallback no rule
+                    # ever classifies and COL-01 flags collections that
+                    # include/exclude rules still reference.
+                    $typeName = $null
+                    try { $typeName = [string]$rule.SmsProviderObjectPath } catch { $typeName = $null }
+                    if (-not $typeName) { try { $typeName = $rule.GetType().Name } catch { continue } }
                     if ($typeName -match 'IncludeCollection') { $includeIds += [string]$rule.IncludeCollectionID }
                     elseif ($typeName -match 'ExcludeCollection') { $excludeIds += [string]$rule.ExcludeCollectionID }
                 }
