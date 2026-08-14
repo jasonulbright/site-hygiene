@@ -2,6 +2,34 @@
 
 All notable changes to Site Hygiene are documented in this file.
 
+## [0.2.0] - 2026-08-14
+
+### Added
+
+- **Relationship checks, absorbed from the supersedence-auditor tool.**
+  A second bulk application pass parses each app's `SDMPackageXML`
+  in-memory — one provider call for the whole site, no per-app
+  round-trips — and eleven new checks run over the result: `SUP-01..04`
+  (orphaned, circular, disabled-source, retired-target supersedence),
+  `DEP-01..05` (orphaned, circular, disabled, retired, and
+  content-less dependency targets), `REL-01` (relationship participants
+  without manufacturer metadata), and `APP-04` (deployment-type content
+  source folders missing or unreachable). This reaches full parity with
+  the standalone auditor's Broken Rules coverage. Supersedence and
+  dependency rules have no removal cmdlet, so those fix scripts are
+  console guidance.
+- **Suppression list.** Suppress and Unsuppress buttons on the Findings
+  view hide accepted findings from future scans (multi-select
+  supported); a "Show suppressed" toggle brings them back. Keys persist
+  in `SiteHygiene.suppressions.json` beside the tool.
+
+### Changed
+
+- Scan flow gains the relationship collection step; if it fails, the
+  relationship checks are skipped with a Summary-view note instead of
+  failing the scan.
+- Findings grid allows multi-select for bulk suppression.
+
 ## [0.1.0] - 2026-08-14
 
 First release: a read-only MECM hygiene scanner.

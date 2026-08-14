@@ -18,7 +18,7 @@
 
 .NOTES
     ScriptName : start-sitehygiene.ps1
-    Version    : 0.1.0
+    Version    : 0.2.0
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', '', Justification='PS51-WPF-001..003: $global: survives closure scope-strip.')]
@@ -69,6 +69,25 @@ function Save-ShPreferences {
 }
 $global:Prefs = Get-ShPreferences
 
+$global:SuppressPath = Join-Path $PSScriptRoot 'SiteHygiene.suppressions.json'
+function Get-ShSuppressedKeys {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Returns the full suppression key set by design.')]
+    param()
+    $stored = Read-SuiteSettings -Path $global:SuppressPath -Defaults @{ Keys = @() }
+    $set = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($k in @($stored.Keys)) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$k)) { [void]$set.Add([string]$k) }
+    }
+    # Comma-wrapped: a bare return would unroll the HashSet into strings.
+    return ,$set
+}
+function Save-ShSuppressedKeys {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Writes the full suppression key set by design.')]
+    param([Parameter(Mandatory)]$KeySet)
+    $null = Save-SuiteSettings -Path $global:SuppressPath -Settings @{ Keys = @($KeySet) }
+}
+$script:SuppressedKeys = Get-ShSuppressedKeys
+
 $script:ToolLogPath = Join-Path $__txDir ('SiteHygiene-{0}.log' -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
 Initialize-Logging -LogPath $script:ToolLogPath
 
@@ -90,6 +109,10 @@ $txtModuleTitle    = $window.FindName('txtModuleTitle')
 $txtModuleSubtitle = $window.FindName('txtModuleSubtitle')
 
 $btnScan       = $window.FindName('btnScan')
+$btnSuppress        = $window.FindName('btnSuppress')
+$btnUnsuppress      = $window.FindName('btnUnsuppress')
+$chkShowSuppressed  = $window.FindName('chkShowSuppressed')
+$txtSuppressCount   = $window.FindName('txtSuppressCount')
 $txtFilter     = $window.FindName('txtFilter')
 $cboCategory   = $window.FindName('cboCategory')
 $cboSeverity   = $window.FindName('cboSeverity')
@@ -397,7 +420,15 @@ function Get-FilteredFindings {
     if ($category -ne 'All') { $rows = @($rows | Where-Object { $_.Category -eq $category }) }
     $severity = Get-ComboValue -Combo $cboSeverity
     if ($severity -ne 'All') { $rows = @($rows | Where-Object { $_.Severity -eq $severity }) }
+    if (-not [bool]$chkShowSuppressed.IsChecked) {
+        $rows = @($rows | Where-Object { -not $script:SuppressedKeys.Contains([string]$_.SuppressKey) })
+    }
     return $rows
+}
+function Update-SuppressCount {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification='In-window TextBlock update.')]
+    param()
+    $txtSuppressCount.Text = ('{0} key(s) suppressed' -f $script:SuppressedKeys.Count)
 }
 function Update-Filter {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification='Recomputes ItemsSource on the findings grid.')]
@@ -407,6 +438,27 @@ function Update-Filter {
 $txtFilter.Add_TextChanged({ Update-Filter })
 $cboCategory.Add_SelectionChanged({ Update-Filter })
 $cboSeverity.Add_SelectionChanged({ Update-Filter })
+$chkShowSuppressed.Add_Click({ Update-Filter })
+
+$btnSuppress.Add_Click({
+    $sel = @($gridFindings.SelectedItems)
+    if ($sel.Count -eq 0) { Add-LogLine 'Suppress: select one or more findings first.'; return }
+    foreach ($row in $sel) { [void]$script:SuppressedKeys.Add([string]$row.SuppressKey) }
+    Save-ShSuppressedKeys -KeySet $script:SuppressedKeys
+    Add-LogLine ('Suppressed {0} finding(s).' -f $sel.Count)
+    Update-SuppressCount
+    Update-Filter
+})
+
+$btnUnsuppress.Add_Click({
+    $sel = @($gridFindings.SelectedItems)
+    if ($sel.Count -eq 0) { Add-LogLine 'Unsuppress: select one or more findings first (enable Show suppressed to see them).'; return }
+    foreach ($row in $sel) { [void]$script:SuppressedKeys.Remove([string]$row.SuppressKey) }
+    Save-ShSuppressedKeys -KeySet $script:SuppressedKeys
+    Add-LogLine ('Unsuppressed {0} finding(s).' -f $sel.Count)
+    Update-SuppressCount
+    Update-Filter
+})
 
 # === Detail panel ===
 $gridFindings.Add_SelectionChanged({
@@ -517,12 +569,19 @@ function Invoke-Scan {
             $State.Step = 'Collecting site data (applications, packages, collections, deployments)...'
             $data = Get-HygieneData
 
+            $State.Step = 'Parsing application relationships (SDMPackageXML)...'
+            $relData = Get-HygieneRelationshipData
+
             $State.Step = 'Running hygiene checks...'
-            $findings = @(Invoke-HygieneScan -Data $data)
+            $findings = @(Invoke-HygieneScan -Data $data -RelationshipData $relData)
+
+            $notes = @($data.DatasetNotes)
+            if ($relData) { $notes += @($relData.DatasetNotes) }
+            else { $notes += 'Relationship data unavailable; SUP/DEP/REL and APP-04 checks were skipped.' }
 
             $State.Findings = $findings
             $State.Summary  = @(Get-HygieneScanSummary -Findings $findings)
-            $State.Notes    = @($data.DatasetNotes)
+            $State.Notes    = $notes
         }
         catch { $State.ErrorMsg = $_.Exception.Message }
         finally { $State.Done = $true }
@@ -561,6 +620,7 @@ function Invoke-Scan {
                     Evidence       = $_.Evidence
                     Recommendation = $_.Recommendation
                     FixScript      = $_.FixScript
+                    SuppressKey    = Get-HygieneSuppressionKey -Finding $_
                 }
             })
             $script:SummaryRows  = @($script:BgState.Summary)
@@ -701,7 +761,7 @@ function Show-OptionsDialog {
             </StackPanel>
             <StackPanel x:Name="paneAbout" Visibility="Collapsed">
                 <TextBlock Text="About" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,10"/>
-                <TextBlock Text="Site Hygiene v0.1.0" FontSize="13" FontWeight="SemiBold"/>
+                <TextBlock Text="Site Hygiene v0.2.0" FontSize="13" FontWeight="SemiBold"/>
                 <TextBlock Text="Read-only MECM hygiene scanning: unused applications and packages, dead collections, stale and failing deployments. Every finding carries its evidence and the PowerShell a fix would take - shown, never executed."
                            FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0"/>
                 <TextBlock Text="Author: Jason Ulbright. License: MIT."
@@ -806,6 +866,7 @@ $window.Add_Loaded({
     if (-not $isDark) { [void][ControlzEx.Theming.ThemeManager]::Current.ChangeTheme($window, 'Light.Blue') }
     Update-TitleBarBrushes
     Update-StatusBarSummary
+    Update-SuppressCount
     $gridSummary.ItemsSource = @(Get-HygieneScanSummary -Findings @())
     Add-LogLine 'Site Hygiene ready. Configure Site / Provider in Options, then click Scan.'
 })

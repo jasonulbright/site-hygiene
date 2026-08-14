@@ -43,6 +43,22 @@ Stable check IDs so findings and reports stay comparable across scans:
 | DPL-01 | Info | Application deployments past their expiration time |
 | DPL-02 | Error | Required deployments past deadline with a failure rate over threshold |
 | DPL-03 | Info | Available deployments old enough to judge with zero installs and nothing in progress |
+| APP-04 | Warning | Deployment-type content source folders missing or unreachable |
+| SUP-01 | Error | Supersedence referencing a deleted application |
+| SUP-02 | Error | Circular supersedence chain |
+| SUP-03 | Warning | Superseding application disabled |
+| SUP-04 | Warning | Supersedence target retired or expired |
+| DEP-01 | Error | Dependency referencing a deleted application |
+| DEP-02 | Error | Circular dependency |
+| DEP-03 | Warning | Dependency target disabled |
+| DEP-04 | Warning | Dependency target retired or expired |
+| DEP-05 | Error | Dependency target with no distributed content |
+| REL-01 | Info | Relationship participants without manufacturer metadata |
+
+The relationship families come from one additional bulk application pass
+that parses each app's `SDMPackageXML` in-memory — the technique absorbed
+from the standalone supersedence-auditor tool, with full parity to its
+Broken Rules coverage.
 
 Thresholds (age windows, incremental ceiling, failure percentage) have
 sensible defaults in `Get-HygieneDefaultThresholds`.
@@ -60,7 +76,10 @@ check may over- or under-report because of it.
 
 - **Findings** — every finding from the last scan with severity glyphs,
   filterable by text, category, and severity. Selecting a row shows the
-  full evidence, the recommendation, and the fix script.
+  full evidence, the recommendation, and the fix script. Suppress and
+  Unsuppress (multi-select) hide accepted findings from future scans;
+  keys persist in `SiteHygiene.suppressions.json` and a toggle shows the
+  suppressed set.
 - **Summary** — per-check counts plus dataset notes.
 
 ## Export

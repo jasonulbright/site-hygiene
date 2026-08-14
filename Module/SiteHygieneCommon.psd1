@@ -1,6 +1,6 @@
 @{
     RootModule        = 'SiteHygieneCommon.psm1'
-    ModuleVersion     = '0.1.0'
+    ModuleVersion     = '0.2.0'
     GUID              = 'e94b7c15-2f6a-4d38-8b0c-51a9d3e6f284'
     Author            = 'Jason Ulbright'
     Description       = 'Read-only MECM site hygiene scanning: unused applications and packages, dead collections, stale and failing deployments.'
@@ -30,9 +30,17 @@
         'Test-HygDeploymentPastDeadlineFailures'
         'Test-HygDeploymentAvailableUnused'
 
+        # Relationships (absorbed from the supersedence-auditor tool)
+        'ConvertTo-HygRelationships'
+        'Get-HygieneRelationshipData'
+        'Find-HygCircularEdges'
+        'Test-HygRelationshipChecks'
+        'Test-HygAppContentPath'
+
         # Orchestration
         'Invoke-HygieneScan'
         'Get-HygieneScanSummary'
+        'Get-HygieneSuppressionKey'
 
         # Export
         'Export-HygieneCsv'

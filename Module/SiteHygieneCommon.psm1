@@ -45,7 +45,18 @@ function Get-HygieneCheckCatalog {
         [pscustomobject]@{ Id = 'APP-01'; Category = 'Applications'; Severity = 'Warning'; Title = 'Application with no deployments or references' }
         [pscustomobject]@{ Id = 'APP-02'; Category = 'Applications'; Severity = 'Error';   Title = 'Retired application still deployed' }
         [pscustomobject]@{ Id = 'APP-03'; Category = 'Applications'; Severity = 'Warning'; Title = 'Superseded application still deployed' }
+        [pscustomobject]@{ Id = 'APP-04'; Category = 'Applications'; Severity = 'Warning'; Title = 'Deployment type content source missing or unreachable' }
         [pscustomobject]@{ Id = 'PKG-01'; Category = 'Packages';     Severity = 'Warning'; Title = 'Package with no programs and no references' }
+        [pscustomobject]@{ Id = 'SUP-01'; Category = 'Relationships'; Severity = 'Error';   Title = 'Supersedence referencing a deleted application' }
+        [pscustomobject]@{ Id = 'SUP-02'; Category = 'Relationships'; Severity = 'Error';   Title = 'Circular supersedence chain' }
+        [pscustomobject]@{ Id = 'SUP-03'; Category = 'Relationships'; Severity = 'Warning'; Title = 'Superseding application disabled' }
+        [pscustomobject]@{ Id = 'SUP-04'; Category = 'Relationships'; Severity = 'Warning'; Title = 'Supersedence target retired or expired' }
+        [pscustomobject]@{ Id = 'DEP-01'; Category = 'Relationships'; Severity = 'Error';   Title = 'Dependency referencing a deleted application' }
+        [pscustomobject]@{ Id = 'DEP-02'; Category = 'Relationships'; Severity = 'Error';   Title = 'Circular dependency' }
+        [pscustomobject]@{ Id = 'DEP-03'; Category = 'Relationships'; Severity = 'Warning'; Title = 'Dependency target disabled' }
+        [pscustomobject]@{ Id = 'DEP-04'; Category = 'Relationships'; Severity = 'Warning'; Title = 'Dependency target retired or expired' }
+        [pscustomobject]@{ Id = 'DEP-05'; Category = 'Relationships'; Severity = 'Error';   Title = 'Dependency target with no distributed content' }
+        [pscustomobject]@{ Id = 'REL-01'; Category = 'Relationships'; Severity = 'Info';    Title = 'Application relationships without manufacturer metadata' }
         [pscustomobject]@{ Id = 'COL-01'; Category = 'Collections';  Severity = 'Info';    Title = 'Empty collection nothing references' }
         [pscustomobject]@{ Id = 'COL-02'; Category = 'Collections';  Severity = 'Warning'; Title = 'Deployment targeting an empty collection' }
         [pscustomobject]@{ Id = 'COL-03'; Category = 'Collections';  Severity = 'Warning'; Title = 'Incremental-evaluation collection count over ceiling' }
@@ -282,7 +293,7 @@ function Get-HygieneData {
         AppDeployments          = $appDeployments
         CollectionsWithSettings = $collectionsWithSettings
         DependencyTargetCIIDs   = $dependencyTargetCIIDs
-        DatasetNotes            = @($notes)
+        DatasetNotes            = $notes.ToArray()
         CollectedAt             = Get-Date
     }
 }
@@ -580,6 +591,398 @@ function Test-HygDeploymentAvailableUnused {
 }
 
 # ---------------------------------------------------------------------------
+# Application relationships (absorbed from the supersedence-auditor tool)
+# ---------------------------------------------------------------------------
+
+function ConvertTo-HygRelationships {
+    <#
+    .SYNOPSIS
+        Parses SDMPackageXML into supersedence/dependency relationship
+        records and deployment-type content locations. Pure over its input.
+
+    .DESCRIPTION
+        One in-memory XPath pass replaces per-app cmdlet round-trips. The
+        XML shape: /AppMgmtDigest/DeploymentType (digest namespace) with
+        Supersedes and Dependencies rule blocks in the Rules namespace;
+        each DeploymentTypeIntentExpression carries the referenced
+        application's AuthoringScopeId/LogicalName (its ModelName) and,
+        for dependencies, a DesiredState of Required or Optional.
+
+    .PARAMETER Applications
+        Objects with CI_ID, ModelName, Name, SoftwareVersion, IsSuperseding,
+        NumberOfDeploymentTypes, SDMPackageXML.
+
+    .OUTPUTS
+        [pscustomobject] Relationships (FromAppCIID/FromAppName/FromDTName/
+        ToAppCIID/ToAppName/ToModelName/ToAppExists/Kind/DependencyState),
+        ContentLocations (AppCIID/AppName/DTName/Location), ParseNotes.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Converts to the full relationship set by design.')]
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Applications
+    )
+
+    $modelToApp = @{}
+    foreach ($app in $Applications) {
+        if ($app.ModelName) { $modelToApp[[string]$app.ModelName] = $app }
+    }
+
+    $relationships = New-Object System.Collections.Generic.List[object]
+    $contentLocations = New-Object System.Collections.Generic.List[object]
+    $notes = New-Object System.Collections.Generic.List[string]
+
+    $nsDigest = 'http://schemas.microsoft.com/SystemCenterConfigurationManager/2009/AppMgmtDigest'
+    $nsRules  = 'https://schemas.microsoft.com/SystemsCenterConfigurationManager/2009/06/14/Rules'
+
+    $withXml = @($Applications | Where-Object { $_.NumberOfDeploymentTypes -gt 0 -and $_.SDMPackageXML })
+
+    foreach ($app in $withXml) {
+        try {
+            [xml]$xml = $app.SDMPackageXML
+        }
+        catch {
+            $notes.Add(("SDMPackageXML for '{0}' did not parse: {1}" -f $app.Name, $_.Exception.Message))
+            continue
+        }
+
+        $nsm = [System.Xml.XmlNamespaceManager]::new($xml.NameTable)
+        $nsm.AddNamespace('d', $nsDigest)
+        $nsm.AddNamespace('r', $nsRules)
+
+        $dtNodes = $xml.SelectNodes('/d:AppMgmtDigest/d:DeploymentType', $nsm)
+        foreach ($dtNode in $dtNodes) {
+            $dtTitle = ''
+            $titleNode = $dtNode.SelectSingleNode('d:Title', $nsm)
+            if ($titleNode) { $dtTitle = $titleNode.InnerText }
+
+            foreach ($loc in $dtNode.SelectNodes('d:Installer/d:Contents/d:Content/d:Location', $nsm)) {
+                $path = [string]$loc.InnerText
+                if (-not [string]::IsNullOrWhiteSpace($path)) {
+                    $contentLocations.Add([pscustomobject]@{
+                        AppCIID = [int]$app.CI_ID
+                        AppName = [string]$app.Name
+                        DTName  = $dtTitle
+                        Location = $path.Trim()
+                    })
+                }
+            }
+
+            if ($app.IsSuperseding) {
+                foreach ($rule in $dtNode.SelectNodes('d:Supersedes/r:DeploymentTypeRule', $nsm)) {
+                    foreach ($intent in $rule.SelectNodes('.//r:DeploymentTypeIntentExpression', $nsm)) {
+                        $appRef = $intent.SelectSingleNode('r:DeploymentTypeApplicationReference', $nsm)
+                        if (-not $appRef) { continue }
+                        $refModel = '{0}/{1}' -f $appRef.GetAttribute('AuthoringScopeId'), $appRef.GetAttribute('LogicalName')
+                        $toApp = $null
+                        if ($modelToApp.ContainsKey($refModel)) { $toApp = $modelToApp[$refModel] }
+
+                        $relationships.Add([pscustomobject]@{
+                            FromAppCIID     = [int]$app.CI_ID
+                            FromAppName     = [string]$app.Name
+                            FromDTName      = $dtTitle
+                            ToAppCIID       = if ($toApp) { [int]$toApp.CI_ID } else { 0 }
+                            ToAppName       = if ($toApp) { [string]$toApp.Name } else { "Unknown ($refModel)" }
+                            ToModelName     = $refModel
+                            ToAppExists     = ($null -ne $toApp)
+                            Kind            = 'Supersedence'
+                            DependencyState = ''
+                        })
+                    }
+                }
+            }
+
+            foreach ($rule in $dtNode.SelectNodes('d:Dependencies/r:DeploymentTypeRule', $nsm)) {
+                foreach ($intent in $rule.SelectNodes('.//r:DeploymentTypeIntentExpression', $nsm)) {
+                    $appRef = $intent.SelectSingleNode('r:DeploymentTypeApplicationReference', $nsm)
+                    if (-not $appRef) { continue }
+                    $refModel = '{0}/{1}' -f $appRef.GetAttribute('AuthoringScopeId'), $appRef.GetAttribute('LogicalName')
+                    $toApp = $null
+                    if ($modelToApp.ContainsKey($refModel)) { $toApp = $modelToApp[$refModel] }
+
+                    $desired = [string]$intent.GetAttribute('DesiredState')
+                    $depState = switch ($desired) {
+                        'Required' { 'Required' }
+                        'Optional' { 'Optional' }
+                        default    { 'AppDependence' }
+                    }
+
+                    $relationships.Add([pscustomobject]@{
+                        FromAppCIID     = [int]$app.CI_ID
+                        FromAppName     = [string]$app.Name
+                        FromDTName      = $dtTitle
+                        ToAppCIID       = if ($toApp) { [int]$toApp.CI_ID } else { 0 }
+                        ToAppName       = if ($toApp) { [string]$toApp.Name } else { "Unknown ($refModel)" }
+                        ToModelName     = $refModel
+                        ToAppExists     = ($null -ne $toApp)
+                        Kind            = 'Dependency'
+                        DependencyState = $depState
+                    })
+                }
+            }
+        }
+    }
+
+    # .ToArray(), not @(...): wrapping a generic List of PSCustomObjects in
+    # an array subexpression throws "Argument types do not match" on some
+    # PowerShell 7 builds.
+    return [pscustomobject]@{
+        Relationships    = $relationships.ToArray()
+        ContentLocations = $contentLocations.ToArray()
+        ParseNotes       = $notes.ToArray()
+    }
+}
+
+function Get-HygieneRelationshipData {
+    <#
+    .SYNOPSIS
+        Bulk-loads applications WITH SDMPackageXML and resolves every
+        supersedence/dependency relationship in one pass.
+
+    .DESCRIPTION
+        One Get-CMApplication call (no -Fast: the XML is the point)
+        followed by the pure parser. Requires an established CM
+        connection. Returns $null on total failure with the reason logged.
+    #>
+    param()
+
+    try {
+        Write-Log 'Loading applications with SDMPackageXML for relationship analysis...'
+        $apps = @(Get-CMApplication -ErrorAction Stop | ForEach-Object {
+            [pscustomobject]@{
+                CI_ID                   = [int]$_.CI_ID
+                ModelName               = [string]$_.ModelName
+                Name                    = [string]$_.LocalizedDisplayName
+                SoftwareVersion         = [string]$_.SoftwareVersion
+                Manufacturer            = [string]$_.Manufacturer
+                IsEnabled               = [bool]$_.IsEnabled
+                IsExpired               = [bool]$_.IsExpired
+                IsSuperseded            = [bool]$_.IsSuperseded
+                IsSuperseding           = [bool]$_.IsSuperseding
+                HasContent              = [bool]$_.HasContent
+                NumberOfDeploymentTypes = [int]$_.NumberOfDeploymentTypes
+                SDMPackageXML           = [string]$_.SDMPackageXML
+            }
+        })
+
+        $parsed = ConvertTo-HygRelationships -Applications $apps
+
+        $lookup = @{}
+        foreach ($a in $apps) { $lookup[[int]$a.CI_ID] = $a }
+
+        Write-Log ("Resolved {0} relationships and {1} content locations from {2} applications" -f @($parsed.Relationships).Count, @($parsed.ContentLocations).Count, $apps.Count)
+
+        return [pscustomobject]@{
+            Apps             = $lookup
+            Relationships    = $parsed.Relationships
+            ContentLocations = $parsed.ContentLocations
+            DatasetNotes     = $parsed.ParseNotes
+        }
+    }
+    catch {
+        Write-Log ("Relationship data unavailable: {0}" -f $_.Exception.Message) -Level WARN
+        return $null
+    }
+}
+
+function Find-HygCircularEdges {
+    <#
+    .SYNOPSIS
+        Returns the set of edges that participate in a cycle: an edge
+        (From -> To) is circular when From is reachable from To.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Returns the circular edge set by design.')]
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Edges
+    )
+
+    $adj = @{}
+    foreach ($e in $Edges) {
+        $k = [int]$e.FromAppCIID
+        if (-not $adj.ContainsKey($k)) { $adj[$k] = New-Object System.Collections.Generic.List[int] }
+        $adj[$k].Add([int]$e.ToAppCIID)
+    }
+
+    $reachCache = @{}
+    $reach = {
+        param([int]$From, [int]$Target)
+        $key = "$From>$Target"
+        if ($reachCache.ContainsKey($key)) { return $reachCache[$key] }
+        $seen = New-Object 'System.Collections.Generic.HashSet[int]'
+        $stack = New-Object System.Collections.Generic.Stack[int]
+        $stack.Push($From)
+        $found = $false
+        while ($stack.Count -gt 0) {
+            $n = $stack.Pop()
+            if ($n -eq $Target) { $found = $true; break }
+            if (-not $seen.Add($n)) { continue }
+            if ($adj.ContainsKey($n)) { foreach ($m in $adj[$n]) { $stack.Push($m) } }
+        }
+        $reachCache[$key] = $found
+        return $found
+    }
+
+    $circular = @()
+    foreach ($e in $Edges) {
+        if ([int]$e.ToAppCIID -eq 0) { continue }
+        if (& $reach ([int]$e.ToAppCIID) ([int]$e.FromAppCIID)) { $circular += ,$e }
+    }
+    # Emit unrolled: callers rebuild with @(...).
+    return $circular
+}
+
+function Test-HygRelationshipChecks {
+    <#
+    .SYNOPSIS
+        SUP-01..04, DEP-01..05, REL-01 over parsed relationship data.
+
+    .DESCRIPTION
+        Status semantics match the absorbed auditor: orphaned reference and
+        circular chains are errors, expired targets and disabled
+        source/target are warnings, a dependency target without content is
+        an error, relationships without manufacturer metadata are
+        informational. Supersedence and dependency rules have no removal
+        cmdlet, so the fix scripts are console guidance.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Runs the full relationship check family by design.')]
+    param(
+        [Parameter(Mandatory)]$RelationshipData
+    )
+
+    $apps = $RelationshipData.Apps
+    $rels = @($RelationshipData.Relationships)
+    $sup  = @($rels | Where-Object { $_.Kind -eq 'Supersedence' })
+    $dep  = @($rels | Where-Object { $_.Kind -eq 'Dependency' })
+
+    foreach ($r in $sup) {
+        $pair = "'{0}' -> '{1}'" -f $r.FromAppName, $r.ToAppName
+        if (-not $r.ToAppExists) {
+            New-HygieneFinding -CheckId 'SUP-01' -Severity Error -Category 'Relationships' `
+                -ObjectType 'Supersedence' -ObjectId ([string]$r.FromAppCIID) -ObjectName $pair `
+                -Evidence ("Supersedence on deployment type '{0}' references {1}, which no longer exists in the site." -f $r.FromDTName, $r.ToModelName) `
+                -Recommendation 'Remove the broken supersedence reference.' `
+                -FixScript ("# Console: '{0}' Properties > Supersedence tab - remove the reference to the deleted application" -f $r.FromAppName)
+            continue
+        }
+        $fromApp = $apps[[int]$r.FromAppCIID]
+        $toApp   = $apps[[int]$r.ToAppCIID]
+        if ($toApp -and $toApp.IsExpired) {
+            New-HygieneFinding -CheckId 'SUP-04' -Severity Warning -Category 'Relationships' `
+                -ObjectType 'Supersedence' -ObjectId ([string]$r.FromAppCIID) -ObjectName $pair `
+                -Evidence ("Superseded application '{0}' is retired; the rule still exists but its target is inactive." -f $r.ToAppName) `
+                -Recommendation 'Remove the supersedence relationship or delete the retired application once nothing references it.' `
+                -FixScript ("# Console: '{0}' Properties > Supersedence tab - review the reference to retired '{1}'" -f $r.FromAppName, $r.ToAppName)
+        }
+        elseif ($fromApp -and -not $fromApp.IsEnabled) {
+            New-HygieneFinding -CheckId 'SUP-03' -Severity Warning -Category 'Relationships' `
+                -ObjectType 'Supersedence' -ObjectId ([string]$r.FromAppCIID) -ObjectName $pair `
+                -Evidence ("Superseding application '{0}' is disabled; the replacement cannot deploy while the rule stands." -f $r.FromAppName) `
+                -Recommendation 'Enable the superseding application or remove the supersedence relationship.' `
+                -FixScript ("Get-CMApplication -Name '{0}' | Enable-CMApplication" -f ($r.FromAppName -replace "'", "''"))
+        }
+    }
+
+    foreach ($e in (Find-HygCircularEdges -Edges $sup)) {
+        New-HygieneFinding -CheckId 'SUP-02' -Severity Error -Category 'Relationships' `
+            -ObjectType 'Supersedence' -ObjectId ([string]$e.FromAppCIID) -ObjectName ("'{0}' -> '{1}'" -f $e.FromAppName, $e.ToAppName) `
+            -Evidence 'This supersedence edge is part of a loop: following the chain from the superseded application eventually returns to the superseding one.' `
+            -Recommendation 'Break the loop by removing the relationship that closes it.' `
+            -FixScript ("# Console: review the supersedence chain starting at '{0}' and remove the looping reference" -f $e.FromAppName)
+    }
+
+    foreach ($r in $dep) {
+        $pair = "'{0}' -> '{1}'" -f $r.FromAppName, $r.ToAppName
+        if (-not $r.ToAppExists) {
+            New-HygieneFinding -CheckId 'DEP-01' -Severity Error -Category 'Relationships' `
+                -ObjectType 'Dependency' -ObjectId ([string]$r.FromAppCIID) -ObjectName $pair `
+                -Evidence ("Dependency on deployment type '{0}' references {1}, which no longer exists in the site." -f $r.FromDTName, $r.ToModelName) `
+                -Recommendation 'Remove the broken dependency; installs of the parent fail while it references a deleted application.' `
+                -FixScript ("# Console: '{0}' > Deployment Types > '{1}' > Dependencies - remove the broken reference" -f $r.FromAppName, $r.FromDTName)
+            continue
+        }
+        $toApp = $apps[[int]$r.ToAppCIID]
+        if ($toApp -and $toApp.IsExpired) {
+            New-HygieneFinding -CheckId 'DEP-04' -Severity Warning -Category 'Relationships' `
+                -ObjectType 'Dependency' -ObjectId ([string]$r.FromAppCIID) -ObjectName $pair `
+                -Evidence ("Dependency target '{0}' is retired; {1} installs relying on it will fail." -f $r.ToAppName, $r.DependencyState) `
+                -Recommendation 'Point the dependency at the current application or reinstate the target.' `
+                -FixScript ("# Console: '{0}' > Deployment Types > '{1}' > Dependencies - update the reference to retired '{2}'" -f $r.FromAppName, $r.FromDTName, $r.ToAppName)
+        }
+        elseif ($toApp -and -not $toApp.IsEnabled) {
+            New-HygieneFinding -CheckId 'DEP-03' -Severity Warning -Category 'Relationships' `
+                -ObjectType 'Dependency' -ObjectId ([string]$r.FromAppCIID) -ObjectName $pair `
+                -Evidence ("Dependency target '{0}' is disabled; automatic dependency installs will fail." -f $r.ToAppName) `
+                -Recommendation 'Enable the dependency target or remove the dependency.' `
+                -FixScript ("Get-CMApplication -Name '{0}' | Enable-CMApplication" -f ($r.ToAppName -replace "'", "''"))
+        }
+        elseif ($toApp -and -not $toApp.HasContent) {
+            New-HygieneFinding -CheckId 'DEP-05' -Severity Error -Category 'Relationships' `
+                -ObjectType 'Dependency' -ObjectId ([string]$r.FromAppCIID) -ObjectName $pair `
+                -Evidence ("Dependency target '{0}' has no distributed content; automatic dependency installs cannot download it." -f $r.ToAppName) `
+                -Recommendation 'Distribute the dependency target content to the DPs serving the parent.' `
+                -FixScript ("Start-CMContentDistribution -ApplicationName '{0}' -DistributionPointGroupName '<group>'" -f ($r.ToAppName -replace "'", "''"))
+        }
+    }
+
+    foreach ($e in (Find-HygCircularEdges -Edges $dep)) {
+        New-HygieneFinding -CheckId 'DEP-02' -Severity Error -Category 'Relationships' `
+            -ObjectType 'Dependency' -ObjectId ([string]$e.FromAppCIID) -ObjectName ("'{0}' -> '{1}'" -f $e.FromAppName, $e.ToAppName) `
+            -Evidence 'This dependency edge is part of a loop: the target eventually depends back on the source, which deadlocks automatic installs.' `
+            -Recommendation 'Break the loop by removing one dependency in the cycle.' `
+            -FixScript ("# Console: review the dependency chain starting at '{0}' and remove the looping reference" -f $e.FromAppName)
+    }
+
+    # REL-01: apps carrying relationships but no manufacturer metadata.
+    $participants = New-Object 'System.Collections.Generic.HashSet[int]'
+    foreach ($r in $rels) {
+        [void]$participants.Add([int]$r.FromAppCIID)
+        if ([int]$r.ToAppCIID -ne 0) { [void]$participants.Add([int]$r.ToAppCIID) }
+    }
+    foreach ($ciid in $participants) {
+        $app = $apps[[int]$ciid]
+        if ($app -and [string]::IsNullOrWhiteSpace([string]$app.Manufacturer)) {
+            New-HygieneFinding -CheckId 'REL-01' -Severity Info -Category 'Relationships' `
+                -ObjectType 'Application' -ObjectId ([string]$app.CI_ID) -ObjectName $app.Name `
+                -Evidence 'Application participates in supersedence/dependency relationships but has no Manufacturer set, which makes relationship views hard to audit.' `
+                -Recommendation 'Fill in the Manufacturer field.' `
+                -FixScript ("Set-CMApplication -Name '{0}' -Publisher '<manufacturer>'" -f ($app.Name -replace "'", "''"))
+        }
+    }
+}
+
+function Test-HygAppContentPath {
+    <#
+    .SYNOPSIS
+        APP-04: deployment-type content source folders that are missing or
+        unreachable from this workstation.
+
+    .DESCRIPTION
+        Probes each unique content location once with a bounded Test-Path.
+        Unreachable can mean deleted source or no rights from here - the
+        evidence says which app/DT so the operator can judge.
+    #>
+    param(
+        [Parameter(Mandatory)]$RelationshipData
+    )
+
+    $checked = @{}
+    foreach ($loc in @($RelationshipData.ContentLocations)) {
+        $path = [string]$loc.Location
+        if (-not $checked.ContainsKey($path)) {
+            $ok = $false
+            try { $ok = Test-Path -LiteralPath $path -ErrorAction Stop } catch { $ok = $false }
+            $checked[$path] = $ok
+        }
+        if ($checked[$path]) { continue }
+
+        New-HygieneFinding -CheckId 'APP-04' -Severity Warning -Category 'Applications' `
+            -ObjectType 'DeploymentType' -ObjectId ([string]$loc.AppCIID) -ObjectName ("{0} / {1}" -f $loc.AppName, $loc.DTName) `
+            -Evidence ("Content source '{0}' is missing or unreachable from this workstation; content updates and new distributions will fail." -f $path) `
+            -Recommendation 'Restore the source folder, correct the deployment type content location, or verify share permissions.' `
+            -FixScript ("# Console: '{0}' > Deployment Types > '{1}' > Content - correct the content location" -f $loc.AppName, $loc.DTName)
+    }
+}
+
+# ---------------------------------------------------------------------------
 # Scan orchestration
 # ---------------------------------------------------------------------------
 
@@ -596,11 +999,12 @@ function Invoke-HygieneScan {
     #>
     param(
         [Parameter(Mandatory)]$Data,
-        [hashtable]$Thresholds = (Get-HygieneDefaultThresholds)
+        [hashtable]$Thresholds = (Get-HygieneDefaultThresholds),
+        $RelationshipData = $null
     )
 
-    # Threshold-less checks take only $d; the runner still passes both
-    # arguments and the extra lands in $args, keeping one invocation shape.
+    # Threshold-less checks take only $d; the runner still passes every
+    # argument and the extras land in $args, keeping one invocation shape.
     $checks = @(
         @{ Id = 'APP-01'; Run = { param($d, $t) Test-HygAppNoReferences -Data $d -Thresholds $t } }
         @{ Id = 'APP-02'; Run = { param($d) Test-HygAppRetiredDeployed -Data $d } }
@@ -613,11 +1017,21 @@ function Invoke-HygieneScan {
         @{ Id = 'DPL-02'; Run = { param($d, $t) Test-HygDeploymentPastDeadlineFailures -Data $d -Thresholds $t } }
         @{ Id = 'DPL-03'; Run = { param($d, $t) Test-HygDeploymentAvailableUnused -Data $d -Thresholds $t } }
     )
+    if ($RelationshipData) {
+        # $args-based: these only consume the third runner argument.
+        $checks += @(
+            @{ Id = 'SUP/DEP/REL'; Run = { Test-HygRelationshipChecks -RelationshipData $args[2] } }
+            @{ Id = 'APP-04';      Run = { Test-HygAppContentPath -RelationshipData $args[2] } }
+        )
+    }
+    else {
+        Write-Log 'Relationship data not collected; SUP/DEP/REL and APP-04 checks skipped this scan.' -Level WARN
+    }
 
     $findings = New-Object System.Collections.Generic.List[object]
     foreach ($check in $checks) {
         try {
-            foreach ($f in @(& $check.Run $Data $Thresholds)) {
+            foreach ($f in @(& $check.Run $Data $Thresholds $RelationshipData)) {
                 if ($f) { $findings.Add($f) }
             }
         }
@@ -665,6 +1079,18 @@ function Get-HygieneScanSummary {
         }
     }
     return @($rows)
+}
+
+function Get-HygieneSuppressionKey {
+    <#
+    .SYNOPSIS
+        Stable identity for a finding, used by the suppression list and
+        rescan comparisons.
+    #>
+    param(
+        [Parameter(Mandatory)]$Finding
+    )
+    return '{0}|{1}|{2}|{3}' -f $Finding.CheckId, $Finding.ObjectType, $Finding.ObjectId, $Finding.ObjectName
 }
 
 # ---------------------------------------------------------------------------

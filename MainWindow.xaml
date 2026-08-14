@@ -146,7 +146,7 @@
                 <StackPanel DockPanel.Dock="Top" Margin="14,14,14,12">
                     <TextBlock x:Name="txtAppTitle" Text="Site Hygiene"
                                FontSize="20" FontWeight="Bold" TextWrapping="Wrap"/>
-                    <TextBlock x:Name="txtVersion" Text="v0.1.0" FontSize="10"
+                    <TextBlock x:Name="txtVersion" Text="v0.2.0" FontSize="10"
                                Foreground="{DynamicResource MahApps.Brushes.Gray1}"
                                Margin="0,2,0,0"/>
                 </StackPanel>
@@ -241,6 +241,7 @@
                         <ComboBoxItem Content="Packages"/>
                         <ComboBoxItem Content="Collections"/>
                         <ComboBoxItem Content="Deployments"/>
+                        <ComboBoxItem Content="Relationships"/>
                         <ComboBoxItem Content="Scan"/>
                     </ComboBox>
 
@@ -270,14 +271,29 @@
                 <!-- ============================================================ -->
                 <Grid x:Name="viewFindings" Visibility="Visible">
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="5"/>
                         <RowDefinition Height="220"/>
                     </Grid.RowDefinitions>
 
+                    <Border Grid.Row="0" Padding="0,8,0,8">
+                        <StackPanel Orientation="Horizontal">
+                            <Button x:Name="btnSuppress"   Content="Suppress"   Style="{StaticResource SquareInlineButtonStyle}" MinWidth="110"
+                                    ToolTip="Hide the selected finding(s) from future scans until unsuppressed"/>
+                            <Button x:Name="btnUnsuppress" Content="Unsuppress" Style="{StaticResource SquareInlineButtonStyle}" MinWidth="110"
+                                    ToolTip="Remove the selected finding(s) from the suppression list"/>
+                            <CheckBox x:Name="chkShowSuppressed" Content="Show suppressed" FontSize="12" VerticalAlignment="Center" Margin="8,0,0,0"
+                                      Controls:ControlsHelper.ContentCharacterCasing="Normal"
+                                      ToolTip="Include suppressed findings in the grid"/>
+                            <TextBlock x:Name="txtSuppressCount" FontSize="11" VerticalAlignment="Center" Margin="12,0,0,0"
+                                       Foreground="{DynamicResource MahApps.Brushes.Gray1}"/>
+                        </StackPanel>
+                    </Border>
+
                     <DataGrid x:Name="gridFindings"
-                              Grid.Row="0"
-                              SelectionMode="Single"
+                              Grid.Row="1"
+                              SelectionMode="Extended"
                               Style="{StaticResource ViewDataGrid}"
                               ColumnHeaderStyle="{StaticResource GridHeaderStyle}"
                               CellStyle="{StaticResource GridCellStyle}">
@@ -285,17 +301,17 @@
                             <DataGridTextColumn Header=""          Width="32"  Binding="{Binding SeverityGlyph}"/>
                             <DataGridTextColumn Header="Check"     Width="70"  Binding="{Binding CheckId}"/>
                             <DataGridTextColumn Header="Severity"  Width="80"  Binding="{Binding Severity}"/>
-                            <DataGridTextColumn Header="Category"  Width="100" Binding="{Binding Category}"/>
+                            <DataGridTextColumn Header="Category"  Width="110" Binding="{Binding Category}"/>
                             <DataGridTextColumn Header="Object"    Width="2*"  Binding="{Binding ObjectName}"/>
                             <DataGridTextColumn Header="Evidence"  Width="3*"  Binding="{Binding Evidence}"/>
                         </DataGrid.Columns>
                     </DataGrid>
 
-                    <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch"
+                    <GridSplitter Grid.Row="2" Height="5" HorizontalAlignment="Stretch"
                                   Background="{DynamicResource MahApps.Brushes.Gray8}"
                                   ResizeDirection="Rows"/>
 
-                    <TextBox x:Name="txtFindingDetail" Grid.Row="2" Style="{StaticResource DetailTextStyle}"
+                    <TextBox x:Name="txtFindingDetail" Grid.Row="3" Style="{StaticResource DetailTextStyle}"
                              Text="Select a finding to see its evidence, recommendation, and the fix script it would take."/>
                 </Grid>
 
