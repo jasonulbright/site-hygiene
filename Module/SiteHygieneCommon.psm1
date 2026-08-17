@@ -55,7 +55,7 @@ function Get-HygieneCheckCatalog {
         [pscustomobject]@{ Id = 'DEP-02'; Category = 'Relationships'; Severity = 'Error';   Title = 'Circular dependency' }
         [pscustomobject]@{ Id = 'DEP-03'; Category = 'Relationships'; Severity = 'Warning'; Title = 'Dependency target disabled' }
         [pscustomobject]@{ Id = 'DEP-04'; Category = 'Relationships'; Severity = 'Warning'; Title = 'Dependency target retired or expired' }
-        [pscustomobject]@{ Id = 'DEP-05'; Category = 'Relationships'; Severity = 'Error';   Title = 'Dependency target with no distributed content' }
+        [pscustomobject]@{ Id = 'DEP-05'; Category = 'Relationships'; Severity = 'Warning'; Title = 'Dependency target with no content' }
         [pscustomobject]@{ Id = 'REL-01'; Category = 'Relationships'; Severity = 'Info';    Title = 'Application relationships without manufacturer metadata' }
         [pscustomobject]@{ Id = 'DEV-01'; Category = 'Devices';      Severity = 'Warning'; Title = 'Inactive devices beyond threshold' }
         [pscustomobject]@{ Id = 'DEV-02'; Category = 'Devices';      Severity = 'Warning'; Title = 'Duplicate device records' }
@@ -65,8 +65,7 @@ function Get-HygieneCheckCatalog {
         [pscustomobject]@{ Id = 'BND-03'; Category = 'Boundaries';   Severity = 'Info';    Title = 'Overlapping IP-range boundaries' }
         [pscustomobject]@{ Id = 'TSQ-01'; Category = 'Task Sequences'; Severity = 'Error';   Title = 'Task sequence referencing deleted content' }
         [pscustomobject]@{ Id = 'TSQ-02'; Category = 'Task Sequences'; Severity = 'Warning'; Title = 'Boot image or driver package referenced by nothing' }
-        [pscustomobject]@{ Id = 'UPD-01'; Category = 'Updates';      Severity = 'Warning'; Title = 'Update group with high expired/superseded ratio' }
-        [pscustomobject]@{ Id = 'UPD-02'; Category = 'Updates';      Severity = 'Info';    Title = 'Update deployment package referenced by no deployment' }
+        [pscustomobject]@{ Id = 'UPD-01'; Category = 'Updates';      Severity = 'Warning'; Title = 'Update group with high expired-update ratio' }
         [pscustomobject]@{ Id = 'UPD-03'; Category = 'Updates';      Severity = 'Warning'; Title = 'Automatic deployment rule disabled, stale, or erroring' }
         [pscustomobject]@{ Id = 'MNT-01'; Category = 'Site';         Severity = 'Info';    Title = 'Recommended maintenance tasks disabled' }
         [pscustomobject]@{ Id = 'MNT-02'; Category = 'Site';         Severity = 'Warning'; Title = 'Site backup task disabled' }
@@ -148,6 +147,10 @@ function Get-HygieneData {
     param()
 
     $notes = New-Object System.Collections.Generic.List[string]
+    # Dataset keys whose collection query failed; the scan runner skips
+    # checks whose inputs are on this list instead of treating an empty
+    # array as evidence.
+    $failed = New-Object System.Collections.Generic.List[string]
 
     $apps = @()
     try {
@@ -165,7 +168,7 @@ function Get-HygieneData {
             }
         })
         Write-Log "Loaded $($apps.Count) applications"
-    } catch { $notes.Add("Applications unavailable: $($_.Exception.Message)"); Write-Log "Applications unavailable: $($_.Exception.Message)" -Level WARN }
+    } catch { $failed.Add('Applications'); $notes.Add("Applications unavailable: $($_.Exception.Message)"); Write-Log "Applications unavailable: $($_.Exception.Message)" -Level WARN }
 
     $packages = @()
     try {
@@ -173,7 +176,7 @@ function Get-HygieneData {
             [pscustomobject]@{ PackageID = [string]$_.PackageID; Name = [string]$_.Name }
         })
         Write-Log "Loaded $($packages.Count) packages"
-    } catch { $notes.Add("Packages unavailable: $($_.Exception.Message)"); Write-Log "Packages unavailable: $($_.Exception.Message)" -Level WARN }
+    } catch { $failed.Add('Packages'); $notes.Add("Packages unavailable: $($_.Exception.Message)"); Write-Log "Packages unavailable: $($_.Exception.Message)" -Level WARN }
 
     $programs = @()
     try {
@@ -181,7 +184,7 @@ function Get-HygieneData {
             [pscustomobject]@{ PackageID = [string]$_.PackageID; ProgramName = [string]$_.ProgramName }
         })
         Write-Log "Loaded $($programs.Count) programs"
-    } catch { $notes.Add("Programs unavailable: $($_.Exception.Message)"); Write-Log "Programs unavailable: $($_.Exception.Message)" -Level WARN }
+    } catch { $failed.Add('Programs'); $notes.Add("Programs unavailable: $($_.Exception.Message)"); Write-Log "Programs unavailable: $($_.Exception.Message)" -Level WARN }
 
     $taskSequences = @()
     try {
@@ -194,7 +197,7 @@ function Get-HygieneData {
             [pscustomobject]@{ PackageID = [string]$_.PackageID; Name = [string]$_.Name; ReferencedIDs = $refs; BootImageID = $bootImage }
         })
         Write-Log "Loaded $($taskSequences.Count) task sequences"
-    } catch { $notes.Add("Task sequences unavailable: $($_.Exception.Message)"); Write-Log "Task sequences unavailable: $($_.Exception.Message)" -Level WARN }
+    } catch { $failed.Add('TaskSequences'); $notes.Add("Task sequences unavailable: $($_.Exception.Message)"); Write-Log "Task sequences unavailable: $($_.Exception.Message)" -Level WARN }
 
     $devices = @()
     try {
@@ -215,7 +218,7 @@ function Get-HygieneData {
             }
         })
         Write-Log "Loaded $($devices.Count) devices"
-    } catch { $notes.Add("Devices unavailable: $($_.Exception.Message)"); Write-Log "Devices unavailable: $($_.Exception.Message)" -Level WARN }
+    } catch { $failed.Add('Devices'); $notes.Add("Devices unavailable: $($_.Exception.Message)"); Write-Log "Devices unavailable: $($_.Exception.Message)" -Level WARN }
 
     $boundaries = @()
     try {
@@ -234,7 +237,7 @@ function Get-HygieneData {
             }
         })
         Write-Log "Loaded $($boundaries.Count) boundaries"
-    } catch { $notes.Add("Boundaries unavailable: $($_.Exception.Message)"); Write-Log "Boundaries unavailable: $($_.Exception.Message)" -Level WARN }
+    } catch { $failed.Add('Boundaries'); $notes.Add("Boundaries unavailable: $($_.Exception.Message)"); Write-Log "Boundaries unavailable: $($_.Exception.Message)" -Level WARN }
 
     $boundaryGroups = @()
     try {
@@ -245,7 +248,7 @@ function Get-HygieneData {
             [pscustomobject]@{ GroupID = [int]$_.GroupID; Name = [string]$_.Name; SiteSystemCount = $ssCount }
         })
         Write-Log "Loaded $($boundaryGroups.Count) boundary groups"
-    } catch { $notes.Add("Boundary groups unavailable: $($_.Exception.Message)"); Write-Log "Boundary groups unavailable: $($_.Exception.Message)" -Level WARN }
+    } catch { $failed.Add('BoundaryGroups'); $notes.Add("Boundary groups unavailable: $($_.Exception.Message)"); Write-Log "Boundary groups unavailable: $($_.Exception.Message)" -Level WARN }
 
     $bootImages = @()
     try {
@@ -253,7 +256,23 @@ function Get-HygieneData {
             [pscustomobject]@{ PackageID = [string]$_.PackageID; Name = [string]$_.Name }
         })
         Write-Log "Loaded $($bootImages.Count) boot images"
-    } catch { $notes.Add("Boot images unavailable: $($_.Exception.Message)"); Write-Log "Boot images unavailable: $($_.Exception.Message)" -Level WARN }
+    } catch { $failed.Add('BootImages'); $notes.Add("Boot images unavailable: $($_.Exception.Message)"); Write-Log "Boot images unavailable: $($_.Exception.Message)" -Level WARN }
+
+    $osImages = @()
+    try {
+        $osImages = @(Get-CMOperatingSystemImage -ErrorAction Stop | ForEach-Object {
+            [pscustomobject]@{ PackageID = [string]$_.PackageID; Name = [string]$_.Name }
+        })
+        Write-Log "Loaded $($osImages.Count) OS images"
+    } catch { $failed.Add('OSImages'); $notes.Add("OS images unavailable: $($_.Exception.Message)"); Write-Log "OS images unavailable: $($_.Exception.Message)" -Level WARN }
+
+    $osUpgradePackages = @()
+    try {
+        $osUpgradePackages = @(Get-CMOperatingSystemInstaller -ErrorAction Stop | ForEach-Object {
+            [pscustomobject]@{ PackageID = [string]$_.PackageID; Name = [string]$_.Name }
+        })
+        Write-Log "Loaded $($osUpgradePackages.Count) OS upgrade packages"
+    } catch { $failed.Add('OSUpgradePackages'); $notes.Add("OS upgrade packages unavailable: $($_.Exception.Message)"); Write-Log "OS upgrade packages unavailable: $($_.Exception.Message)" -Level WARN }
 
     $driverPackages = @()
     try {
@@ -261,19 +280,19 @@ function Get-HygieneData {
             [pscustomobject]@{ PackageID = [string]$_.PackageID; Name = [string]$_.Name }
         })
         Write-Log "Loaded $($driverPackages.Count) driver packages"
-    } catch { $notes.Add("Driver packages unavailable: $($_.Exception.Message)"); Write-Log "Driver packages unavailable: $($_.Exception.Message)" -Level WARN }
+    } catch { $failed.Add('DriverPackages'); $notes.Add("Driver packages unavailable: $($_.Exception.Message)"); Write-Log "Driver packages unavailable: $($_.Exception.Message)" -Level WARN }
 
     $updateGroups = @()
     try {
         $updateGroups = @(Get-CMSoftwareUpdateGroup -ErrorAction Stop | ForEach-Object {
-            $n = 0; $e = 0; $s = 0
+            $n = 0; $e = 0; $sup = $false
             $p = $_.PSObject.Properties['NumberOfUpdates'];           if ($p) { $n = [int]$p.Value }
             $p = $_.PSObject.Properties['NumberOfExpiredUpdates'];    if ($p) { $e = [int]$p.Value }
-            $p = $_.PSObject.Properties['NumberOfSupersededUpdates']; if ($p) { $s = [int]$p.Value }
-            [pscustomobject]@{ Name = [string]$_.LocalizedDisplayName; CI_ID = [int]$_.CI_ID; NumberOfUpdates = $n; NumberOfExpiredUpdates = $e; NumberOfSupersededUpdates = $s }
+            $sup = [bool]$_.ContainsSupersededUpdates
+            [pscustomobject]@{ Name = [string]$_.LocalizedDisplayName; CI_ID = [int]$_.CI_ID; NumberOfUpdates = $n; NumberOfExpiredUpdates = $e; ContainsSupersededUpdates = $sup }
         })
         Write-Log "Loaded $($updateGroups.Count) software update groups"
-    } catch { $notes.Add("Software update groups unavailable: $($_.Exception.Message)"); Write-Log "Software update groups unavailable: $($_.Exception.Message)" -Level WARN }
+    } catch { $failed.Add('UpdateGroups'); $notes.Add("Software update groups unavailable: $($_.Exception.Message)"); Write-Log "Software update groups unavailable: $($_.Exception.Message)" -Level WARN }
 
     $updatePackages = @()
     try {
@@ -281,7 +300,7 @@ function Get-HygieneData {
             [pscustomobject]@{ PackageID = [string]$_.PackageID; Name = [string]$_.Name }
         })
         Write-Log "Loaded $($updatePackages.Count) update deployment packages"
-    } catch { $notes.Add("Update deployment packages unavailable: $($_.Exception.Message)"); Write-Log "Update deployment packages unavailable: $($_.Exception.Message)" -Level WARN }
+    } catch { $failed.Add('UpdatePackages'); $notes.Add("Update deployment packages unavailable: $($_.Exception.Message)"); Write-Log "Update deployment packages unavailable: $($_.Exception.Message)" -Level WARN }
 
     $adrs = @()
     try {
@@ -293,7 +312,7 @@ function Get-HygieneData {
             [pscustomobject]@{ Name = [string]$_.Name; AutoDeploymentEnabled = $enabled; LastRunTime = $lastRun; LastErrorCode = $lastError }
         })
         Write-Log "Loaded $($adrs.Count) automatic deployment rules"
-    } catch { $notes.Add("Automatic deployment rules unavailable: $($_.Exception.Message)"); Write-Log "Automatic deployment rules unavailable: $($_.Exception.Message)" -Level WARN }
+    } catch { $failed.Add('AutoDeploymentRules'); $notes.Add("Automatic deployment rules unavailable: $($_.Exception.Message)"); Write-Log "Automatic deployment rules unavailable: $($_.Exception.Message)" -Level WARN }
 
     $maintTasks = @()
     try {
@@ -301,7 +320,7 @@ function Get-HygieneData {
             [pscustomobject]@{ TaskName = [string]$_.TaskName; Enabled = [bool]$_.Enabled }
         })
         Write-Log "Loaded $($maintTasks.Count) site maintenance tasks"
-    } catch { $notes.Add("Site maintenance tasks unavailable: $($_.Exception.Message)"); Write-Log "Site maintenance tasks unavailable: $($_.Exception.Message)" -Level WARN }
+    } catch { $failed.Add('MaintenanceTasks'); $notes.Add("Site maintenance tasks unavailable: $($_.Exception.Message)"); Write-Log "Site maintenance tasks unavailable: $($_.Exception.Message)" -Level WARN }
 
     $collections = @()
     try {
@@ -334,7 +353,7 @@ function Get-HygieneData {
             }
         })
         Write-Log "Loaded $($collections.Count) collections"
-    } catch { $notes.Add("Collections unavailable: $($_.Exception.Message)"); Write-Log "Collections unavailable: $($_.Exception.Message)" -Level WARN }
+    } catch { $failed.Add('Collections'); $notes.Add("Collections unavailable: $($_.Exception.Message)"); Write-Log "Collections unavailable: $($_.Exception.Message)" -Level WARN }
 
     $deployments = @()
     try {
@@ -355,27 +374,25 @@ function Get-HygieneData {
             }
         })
         Write-Log "Loaded $($deployments.Count) deployment summaries"
-    } catch { $notes.Add("Deployment summaries unavailable: $($_.Exception.Message)"); Write-Log "Deployment summaries unavailable: $($_.Exception.Message)" -Level WARN }
+    } catch { $failed.Add('Deployments'); $notes.Add("Deployment summaries unavailable: $($_.Exception.Message)"); Write-Log "Deployment summaries unavailable: $($_.Exception.Message)" -Level WARN }
 
     $appDeployments = @()
     try {
         $appDeployments = @(Get-CMApplicationDeployment -ErrorAction Stop | ForEach-Object {
-            $expEnabled = $false
+            # SMS_ApplicationAssignment documents ExpirationTime only; a
+            # deployment without an expiration reads null.
             $expTime = $null
-            $p = $_.PSObject.Properties['ExpirationTimeEnabled']
-            if ($p) { $expEnabled = [bool]$p.Value }
             $p = $_.PSObject.Properties['ExpirationTime']
             if ($p) { $expTime = $p.Value }
             [pscustomobject]@{
                 ApplicationName       = [string]$_.ApplicationName
                 CollectionName        = [string]$_.CollectionName
                 TargetCollectionID    = [string]$_.TargetCollectionID
-                ExpirationTimeEnabled = $expEnabled
                 ExpirationTime        = $expTime
             }
         })
         Write-Log "Loaded $($appDeployments.Count) application deployments"
-    } catch { $notes.Add("Application deployments unavailable: $($_.Exception.Message)"); Write-Log "Application deployments unavailable: $($_.Exception.Message)" -Level WARN }
+    } catch { $failed.Add('AppDeployments'); $notes.Add("Application deployments unavailable: $($_.Exception.Message)"); Write-Log "Application deployments unavailable: $($_.Exception.Message)" -Level WARN }
 
     $conn = Get-CMConnectionInfo
     $collectionsWithSettings = @()
@@ -394,7 +411,7 @@ function Get-HygieneData {
                 ForEach-Object { [string]$_.CollectionID }
             )
             Write-Log "Loaded $($collectionsWithSettings.Count) collection-settings rows"
-        } catch { $notes.Add("Collection settings unavailable (COL-01 cannot rule out variables): $($_.Exception.Message)"); Write-Log "Collection settings unavailable: $($_.Exception.Message)" -Level WARN }
+        } catch { $failed.Add('CollectionsWithSettings'); $notes.Add("Collection settings unavailable (COL-01 cannot rule out variables): $($_.Exception.Message)"); Write-Log "Collection settings unavailable: $($_.Exception.Message)" -Level WARN }
 
         try {
             $dependencyTargetCIIDs = @(
@@ -403,7 +420,7 @@ function Get-HygieneData {
                 ForEach-Object { [int]$_.ToApplicationCIID }
             )
             Write-Log "Loaded $($dependencyTargetCIIDs.Count) dependency relations"
-        } catch { $notes.Add("Dependency relations unavailable (APP-01 may over-report dependency-only applications): $($_.Exception.Message)"); Write-Log "Dependency relations unavailable: $($_.Exception.Message)" -Level WARN }
+        } catch { $failed.Add('DependencyTargetCIIDs'); $notes.Add("Dependency relations unavailable (APP-01 may over-report dependency-only applications): $($_.Exception.Message)"); Write-Log "Dependency relations unavailable: $($_.Exception.Message)" -Level WARN }
     }
     else {
         $notes.Add('No CM connection recorded; CIM datasets (collection settings, dependency relations) skipped.')
@@ -423,12 +440,15 @@ function Get-HygieneData {
         Boundaries              = $boundaries
         BoundaryGroups          = $boundaryGroups
         BootImages              = $bootImages
+        OSImages                = $osImages
+        OSUpgradePackages       = $osUpgradePackages
         DriverPackages          = $driverPackages
         UpdateGroups            = $updateGroups
         UpdatePackages          = $updatePackages
         AutoDeploymentRules     = $adrs
         MaintenanceTasks        = $maintTasks
         DatasetNotes            = $notes.ToArray()
+        FailedDatasets          = $failed.ToArray()
         CollectedAt             = Get-Date
     }
 }
@@ -655,7 +675,8 @@ function Test-HygDeploymentExpired {
 
     $now = Get-Date
     foreach ($d in @($Data.AppDeployments)) {
-        if (-not $d.ExpirationTimeEnabled) { continue }
+        # SMS_ApplicationAssignment exposes ExpirationTime only (no enable
+        # flag); a deployment with no expiration reads null and is skipped.
         if (-not $d.ExpirationTime -or $d.ExpirationTime -ge $now) { continue }
 
         New-HygieneFinding -CheckId 'DPL-01' -Severity Info -Category 'Deployments' `
@@ -913,11 +934,16 @@ function Test-HygTaskSequenceRefs {
     param([Parameter(Mandatory)]$Data)
 
     $known = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
-    foreach ($x in @($Data.Packages))       { [void]$known.Add([string]$x.PackageID) }
-    foreach ($x in @($Data.BootImages))     { [void]$known.Add([string]$x.PackageID) }
-    foreach ($x in @($Data.DriverPackages)) { [void]$known.Add([string]$x.PackageID) }
-    foreach ($x in @($Data.UpdatePackages)) { [void]$known.Add([string]$x.PackageID) }
-    foreach ($x in @($Data.TaskSequences))  { [void]$known.Add([string]$x.PackageID) }
+    foreach ($x in @($Data.Packages))          { [void]$known.Add([string]$x.PackageID) }
+    foreach ($x in @($Data.BootImages))        { [void]$known.Add([string]$x.PackageID) }
+    foreach ($x in @($Data.DriverPackages))    { [void]$known.Add([string]$x.PackageID) }
+    foreach ($x in @($Data.UpdatePackages))    { [void]$known.Add([string]$x.PackageID) }
+    foreach ($x in @($Data.TaskSequences))     { [void]$known.Add([string]$x.PackageID) }
+    # OS images and OS upgrade packages are legitimate task-sequence
+    # references (ImagePackageID / InstallPackageID); without them every
+    # Apply/Upgrade Operating System step reads as deleted content.
+    foreach ($x in @($Data.OSImages))          { [void]$known.Add([string]$x.PackageID) }
+    foreach ($x in @($Data.OSUpgradePackages)) { [void]$known.Add([string]$x.PackageID) }
     foreach ($x in @($Data.Applications)) {
         if ($x.PackageID) { [void]$known.Add([string]$x.PackageID) }
         if ($x.ModelName) { [void]$known.Add([string]$x.ModelName) }
@@ -963,42 +989,44 @@ function Test-HygTaskSequenceRefs {
 # Checks: Updates
 # ---------------------------------------------------------------------------
 
-function Test-HygUpdateChecks {
+function Test-HygUpdateGroupChecks {
     <#
     .SYNOPSIS
-        UPD-01 update groups with a high expired/superseded ratio, UPD-02
-        update deployment packages no deployment references, UPD-03 ADRs
-        disabled, stale, or erroring.
+        UPD-01: update groups with a high expired-update ratio.
     #>
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Runs the full software update check family by design.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Runs the update-group check family by design.')]
     param(
         [Parameter(Mandatory)]$Data,
         [hashtable]$Thresholds = (Get-HygieneDefaultThresholds)
     )
 
+    # Expired count is the only documented number on SMS_AuthorizationList;
+    # superseded presence is a boolean (ContainsSupersededUpdates), so it
+    # colors the evidence but never enters the percentage.
     $pctThreshold = [int]$Thresholds.SugExpiredPctThreshold
     foreach ($sug in @($Data.UpdateGroups)) {
         if ($sug.NumberOfUpdates -le 0) { continue }
-        $dead = $sug.NumberOfExpiredUpdates + $sug.NumberOfSupersededUpdates
-        $pct = [math]::Round(($dead / $sug.NumberOfUpdates) * 100, 1)
+        $pct = [math]::Round(($sug.NumberOfExpiredUpdates / $sug.NumberOfUpdates) * 100, 1)
         if ($pct -lt $pctThreshold) { continue }
+        $supersededNote = if ($sug.ContainsSupersededUpdates) { ' The group also contains superseded updates.' } else { '' }
         New-HygieneFinding -CheckId 'UPD-01' -Severity Warning -Category 'Updates' `
             -ObjectType 'UpdateGroup' -ObjectId ([string]$sug.CI_ID) -ObjectName $sug.Name `
-            -Evidence ("{0} of {1} updates in the group are expired or superseded ({2}%); compliance numbers computed from it are misleading." -f $dead, $sug.NumberOfUpdates, $pct) `
+            -Evidence ("{0} of {1} updates in the group are expired ({2}%); compliance numbers computed from it are misleading.{3}" -f $sug.NumberOfExpiredUpdates, $sug.NumberOfUpdates, $pct, $supersededNote) `
             -Recommendation 'Clean the expired/superseded updates out of the group or rebuild it from a current search.' `
             -FixScript ("# Console: Software Library > Software Update Groups > '{0}' - remove expired/superseded members" -f $sug.Name)
     }
+}
 
-    $deployedPkgs = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
-    foreach ($d in @($Data.Deployments)) { if ($d.PackageID) { [void]$deployedPkgs.Add([string]$d.PackageID) } }
-    foreach ($pkg in @($Data.UpdatePackages)) {
-        if ($deployedPkgs.Contains([string]$pkg.PackageID)) { continue }
-        New-HygieneFinding -CheckId 'UPD-02' -Severity Info -Category 'Updates' `
-            -ObjectType 'UpdatePackage' -ObjectId ([string]$pkg.PackageID) -ObjectName $pkg.Name `
-            -Evidence 'No deployment references this update deployment package id; its content may be dead weight on the DPs. Update deployments bind to update groups, so verify before deleting.' `
-            -Recommendation 'Check which ADR or deployment fills this package; delete it when nothing does.' `
-            -FixScript ("# Verify first, then: Remove-CMSoftwareUpdateDeploymentPackage -Id '{0}' -Force" -f $pkg.PackageID)
-    }
+function Test-HygAdrChecks {
+    <#
+    .SYNOPSIS
+        UPD-03: ADRs erroring, disabled, or enabled but stale.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Runs the ADR check family by design.')]
+    param(
+        [Parameter(Mandatory)]$Data,
+        [hashtable]$Thresholds = (Get-HygieneDefaultThresholds)
+    )
 
     $staleDays = [int]$Thresholds.AdrStaleDays
     $staleCutoff = (Get-Date).AddDays(-$staleDays)
@@ -1008,7 +1036,7 @@ function Test-HygUpdateChecks {
                 -ObjectType 'ADR' -ObjectId '' -ObjectName $adr.Name `
                 -Evidence ("Automatic deployment rule's last run ended with error code {0}; new updates are not being deployed by it." -f $adr.LastErrorCode) `
                 -Recommendation 'Open the ADR run history (ruleengine.log on the site server) and fix the failure.' `
-                -FixScript ("# Rerun after fixing: Invoke-CMAutoDeploymentRule -Name '{0}'" -f ($adr.Name -replace "'", "''"))
+                -FixScript ("# Rerun after fixing: Invoke-CMSoftwareUpdateAutoDeploymentRule -Name '{0}'" -f ($adr.Name -replace "'", "''"))
         }
         elseif (-not $adr.AutoDeploymentEnabled) {
             New-HygieneFinding -CheckId 'UPD-03' -Severity Info -Category 'Updates' `
@@ -1022,7 +1050,7 @@ function Test-HygUpdateChecks {
                 -ObjectType 'ADR' -ObjectId '' -ObjectName $adr.Name `
                 -Evidence ("Automatic deployment rule is enabled but last ran {0} (over {1} days ago); its schedule may be broken." -f $adr.LastRunTime, $staleDays) `
                 -Recommendation 'Check the ADR schedule and the last evaluation in ruleengine.log.' `
-                -FixScript ("Invoke-CMAutoDeploymentRule -Name '{0}'" -f ($adr.Name -replace "'", "''"))
+                -FixScript ("Invoke-CMSoftwareUpdateAutoDeploymentRule -Name '{0}'" -f ($adr.Name -replace "'", "''"))
         }
     }
 }
@@ -1110,6 +1138,10 @@ function ConvertTo-HygRelationships {
     $relationships = New-Object System.Collections.Generic.List[object]
     $contentLocations = New-Object System.Collections.Generic.List[object]
     $notes = New-Object System.Collections.Generic.List[string]
+    # Dataset keys whose collection query failed; the scan runner skips
+    # checks whose inputs are on this list instead of treating an empty
+    # array as evidence.
+    $failed = New-Object System.Collections.Generic.List[string]
 
     $nsDigest = 'http://schemas.microsoft.com/SystemCenterConfigurationManager/2009/AppMgmtDigest'
     $nsRules  = 'https://schemas.microsoft.com/SystemsCenterConfigurationManager/2009/06/14/Rules'
@@ -1374,7 +1406,7 @@ function Test-HygRelationshipChecks {
                 -ObjectType 'Supersedence' -ObjectId ([string]$r.FromAppCIID) -ObjectName $pair `
                 -Evidence ("Superseding application '{0}' is disabled; the replacement cannot deploy while the rule stands." -f $r.FromAppName) `
                 -Recommendation 'Enable the superseding application or remove the supersedence relationship.' `
-                -FixScript ("Get-CMApplication -Name '{0}' | Enable-CMApplication" -f ($r.FromAppName -replace "'", "''"))
+                -FixScript ("Get-CMApplication -Name '{0}' | Resume-CMApplication" -f ($r.FromAppName -replace "'", "''"))
         }
     }
 
@@ -1409,14 +1441,17 @@ function Test-HygRelationshipChecks {
                 -ObjectType 'Dependency' -ObjectId ([string]$r.FromAppCIID) -ObjectName $pair `
                 -Evidence ("Dependency target '{0}' is disabled; automatic dependency installs will fail." -f $r.ToAppName) `
                 -Recommendation 'Enable the dependency target or remove the dependency.' `
-                -FixScript ("Get-CMApplication -Name '{0}' | Enable-CMApplication" -f ($r.ToAppName -replace "'", "''"))
+                -FixScript ("Get-CMApplication -Name '{0}' | Resume-CMApplication" -f ($r.ToAppName -replace "'", "''"))
         }
         elseif ($toApp -and -not $toApp.HasContent) {
-            New-HygieneFinding -CheckId 'DEP-05' -Severity Error -Category 'Relationships' `
+            # HasContent says only whether the application carries content;
+            # distribution state is a separate status query this scan does
+            # not make.
+            New-HygieneFinding -CheckId 'DEP-05' -Severity Warning -Category 'Relationships' `
                 -ObjectType 'Dependency' -ObjectId ([string]$r.FromAppCIID) -ObjectName $pair `
-                -Evidence ("Dependency target '{0}' has no distributed content; automatic dependency installs cannot download it." -f $r.ToAppName) `
-                -Recommendation 'Distribute the dependency target content to the DPs serving the parent.' `
-                -FixScript ("Start-CMContentDistribution -ApplicationName '{0}' -DistributionPointGroupName '<group>'" -f ($r.ToAppName -replace "'", "''"))
+                -Evidence ("Dependency target '{0}' carries no content; automatic dependency installs have nothing to install." -f $r.ToAppName) `
+                -Recommendation 'Give the dependency target a deployment type with content (then distribute it), or remove the dependency.' `
+                -FixScript ("# Add a deployment type with content to '{0}', then distribute it to the DPs serving the parent" -f ($r.ToAppName -replace "'", "''"))
         }
     }
 
@@ -1544,24 +1579,48 @@ function Test-HygAppContentPath {
         evidence says which app/DT so the operator can judge.
     #>
     param(
-        [Parameter(Mandatory)]$RelationshipData
+        [Parameter(Mandatory)]$RelationshipData,
+        [int]$ProbeTimeoutMs = 3000
     )
 
     $checked = @{}
     foreach ($loc in @($RelationshipData.ContentLocations)) {
         $path = [string]$loc.Location
         if (-not $checked.ContainsKey($path)) {
-            $ok = $false
-            try { $ok = Test-Path -LiteralPath $path -ErrorAction Stop } catch { $ok = $false }
-            $checked[$path] = $ok
+            # Probe on a worker pipeline with a real timeout: Test-Path
+            # against a stalled SMB endpoint blocks for the TCP timeout and
+            # would hang the scan. Timed out means Unknown, never missing.
+            $state = 'Missing'
+            $probe = [powershell]::Create()
+            [void]$probe.AddScript({ param($p) try { Test-Path -LiteralPath $p -ErrorAction Stop } catch { $false } }).AddArgument($path)
+            $handle = $probe.BeginInvoke()
+            if ($handle.AsyncWaitHandle.WaitOne($ProbeTimeoutMs)) {
+                $ok = [bool]($probe.EndInvoke($handle) | Select-Object -First 1)
+                if ($ok) { $state = 'Ok' }
+                $probe.Dispose()
+            }
+            else {
+                try { [void]$probe.BeginStop($null, $null) } catch { $null = $_ }
+                $state = 'Unknown'
+            }
+            $checked[$path] = $state
         }
-        if ($checked[$path]) { continue }
+        if ($checked[$path] -eq 'Ok') { continue }
 
-        New-HygieneFinding -CheckId 'APP-04' -Severity Warning -Category 'Applications' `
-            -ObjectType 'DeploymentType' -ObjectId ([string]$loc.AppCIID) -ObjectName ("{0} / {1}" -f $loc.AppName, $loc.DTName) `
-            -Evidence ("Content source '{0}' is missing or unreachable from this workstation; content updates and new distributions will fail." -f $path) `
-            -Recommendation 'Restore the source folder, correct the deployment type content location, or verify share permissions.' `
-            -FixScript ("# Console: '{0}' > Deployment Types > '{1}' > Content - correct the content location" -f $loc.AppName, $loc.DTName)
+        if ($checked[$path] -eq 'Unknown') {
+            New-HygieneFinding -CheckId 'APP-04' -Severity Info -Category 'Applications' `
+                -ObjectType 'DeploymentType' -ObjectId ([string]$loc.AppCIID) -ObjectName ("{0} / {1}" -f $loc.AppName, $loc.DTName) `
+                -Evidence ("Content source '{0}' did not answer within {1}s from this workstation; its state is unknown, not missing." -f $path, [int]($ProbeTimeoutMs / 1000)) `
+                -Recommendation 'Probe the path from the site server, where rights and routes may differ.' `
+                -FixScript ("# From the site server: Test-Path -LiteralPath '{0}'" -f ($path -replace "'", "''"))
+        }
+        else {
+            New-HygieneFinding -CheckId 'APP-04' -Severity Warning -Category 'Applications' `
+                -ObjectType 'DeploymentType' -ObjectId ([string]$loc.AppCIID) -ObjectName ("{0} / {1}" -f $loc.AppName, $loc.DTName) `
+                -Evidence ("Content source '{0}' is missing or unreachable from this workstation; the site server may still reach it, but content updates run from a session that cannot will fail." -f $path) `
+                -Recommendation 'Verify from the site server; restore the source folder, correct the deployment type content location, or fix share permissions.' `
+                -FixScript ("# Console: '{0}' > Deployment Types > '{1}' > Content - correct the content location" -f $loc.AppName, $loc.DTName)
+        }
     }
 }
 
@@ -1588,24 +1647,29 @@ function Invoke-HygieneScan {
 
     # Threshold-less checks take only $d; the runner still passes every
     # argument and the extras land in $args, keeping one invocation shape.
+    # Requires lists the datasets a check reads as evidence: a failed
+    # dataset skips the check with a visible Scan finding, because running
+    # it over an empty array would turn a query failure into "nothing
+    # references this object" plus a deletion script.
     $checks = @(
-        @{ Id = 'APP-01'; Run = { param($d, $t) Test-HygAppNoReferences -Data $d -Thresholds $t } }
-        @{ Id = 'APP-02'; Run = { param($d) Test-HygAppRetiredDeployed -Data $d } }
-        @{ Id = 'APP-03'; Run = { param($d) Test-HygAppSupersededDeployed -Data $d } }
-        @{ Id = 'PKG-01'; Run = { param($d) Test-HygPackageUnused -Data $d } }
-        @{ Id = 'COL-01'; Run = { param($d) Test-HygCollectionEmptyUnused -Data $d } }
-        @{ Id = 'COL-02'; Run = { param($d) Test-HygDeploymentEmptyCollection -Data $d } }
-        @{ Id = 'COL-03'; Run = { param($d, $t) Test-HygIncrementalCeiling -Data $d -Thresholds $t } }
-        @{ Id = 'DPL-01'; Run = { param($d) Test-HygDeploymentExpired -Data $d } }
-        @{ Id = 'DPL-02'; Run = { param($d, $t) Test-HygDeploymentPastDeadlineFailures -Data $d -Thresholds $t } }
-        @{ Id = 'DPL-03'; Run = { param($d, $t) Test-HygDeploymentAvailableUnused -Data $d -Thresholds $t } }
-        @{ Id = 'DEV-01'; Run = { param($d, $t) Test-HygDeviceInactive -Data $d -Thresholds $t } }
-        @{ Id = 'DEV-02'; Run = { param($d) Test-HygDeviceDuplicates -Data $d } }
-        @{ Id = 'DEV-03'; Run = { param($d) Test-HygClientVersions -Data $d } }
-        @{ Id = 'BND';    Run = { param($d) Test-HygBoundaryChecks -Data $d } }
-        @{ Id = 'TSQ';    Run = { param($d) Test-HygTaskSequenceRefs -Data $d } }
-        @{ Id = 'UPD';    Run = { param($d, $t) Test-HygUpdateChecks -Data $d -Thresholds $t } }
-        @{ Id = 'MNT';    Run = { param($d) Test-HygMaintenanceTasks -Data $d } }
+        @{ Id = 'APP-01'; Requires = @('Applications','Deployments'); Run = { param($d, $t) Test-HygAppNoReferences -Data $d -Thresholds $t } }
+        @{ Id = 'APP-02'; Requires = @('Applications'); Run = { param($d) Test-HygAppRetiredDeployed -Data $d } }
+        @{ Id = 'APP-03'; Requires = @('Applications'); Run = { param($d) Test-HygAppSupersededDeployed -Data $d } }
+        @{ Id = 'PKG-01'; Requires = @('Packages','Deployments','TaskSequences'); Run = { param($d) Test-HygPackageUnused -Data $d } }
+        @{ Id = 'COL-01'; Requires = @('Collections','Deployments'); Run = { param($d) Test-HygCollectionEmptyUnused -Data $d } }
+        @{ Id = 'COL-02'; Requires = @('Collections','Deployments'); Run = { param($d) Test-HygDeploymentEmptyCollection -Data $d } }
+        @{ Id = 'COL-03'; Requires = @('Collections'); Run = { param($d, $t) Test-HygIncrementalCeiling -Data $d -Thresholds $t } }
+        @{ Id = 'DPL-01'; Requires = @('AppDeployments'); Run = { param($d) Test-HygDeploymentExpired -Data $d } }
+        @{ Id = 'DPL-02'; Requires = @('Deployments'); Run = { param($d, $t) Test-HygDeploymentPastDeadlineFailures -Data $d -Thresholds $t } }
+        @{ Id = 'DPL-03'; Requires = @('Deployments'); Run = { param($d, $t) Test-HygDeploymentAvailableUnused -Data $d -Thresholds $t } }
+        @{ Id = 'DEV-01'; Requires = @('Devices'); Run = { param($d, $t) Test-HygDeviceInactive -Data $d -Thresholds $t } }
+        @{ Id = 'DEV-02'; Requires = @('Devices'); Run = { param($d) Test-HygDeviceDuplicates -Data $d } }
+        @{ Id = 'DEV-03'; Requires = @('Devices'); Run = { param($d) Test-HygClientVersions -Data $d } }
+        @{ Id = 'BND';    Requires = @('Boundaries','BoundaryGroups'); Run = { param($d) Test-HygBoundaryChecks -Data $d } }
+        @{ Id = 'TSQ';    Requires = @('TaskSequences','Packages','BootImages','DriverPackages','UpdatePackages','OSImages','OSUpgradePackages','Applications'); Run = { param($d) Test-HygTaskSequenceRefs -Data $d } }
+        @{ Id = 'UPD-01'; Requires = @('UpdateGroups'); Run = { param($d, $t) Test-HygUpdateGroupChecks -Data $d -Thresholds $t } }
+        @{ Id = 'UPD-03'; Requires = @('AutoDeploymentRules'); Run = { param($d, $t) Test-HygAdrChecks -Data $d -Thresholds $t } }
+        @{ Id = 'MNT';    Requires = @('MaintenanceTasks'); Run = { param($d) Test-HygMaintenanceTasks -Data $d } }
     )
     if ($RelationshipData) {
         # $args-based: these only consume the third runner argument.
@@ -1618,8 +1682,22 @@ function Invoke-HygieneScan {
         Write-Log 'Relationship data not collected; SUP/DEP/REL and APP-04 checks skipped this scan.' -Level WARN
     }
 
+    # Synthetic fixtures may predate FailedDatasets; absent means none.
+    $failedSet = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    $fp = $Data.PSObject.Properties['FailedDatasets']
+    if ($fp -and $fp.Value) { foreach ($k in @($fp.Value)) { [void]$failedSet.Add([string]$k) } }
+
     $findings = New-Object System.Collections.Generic.List[object]
     foreach ($check in $checks) {
+        $missing = @(@($check.Requires) | Where-Object { $failedSet.Contains($_) })
+        if ($missing.Count -gt 0) {
+            Write-Log ("Check {0} skipped: dataset(s) {1} unavailable" -f $check.Id, ($missing -join ', ')) -Level WARN
+            $findings.Add((New-HygieneFinding -CheckId $check.Id -Severity Info -Category 'Scan' `
+                -ObjectType 'Check' -ObjectName ("Check {0} skipped" -f $check.Id) `
+                -Evidence ("Dataset(s) {0} could not be collected this scan; running the check over incomplete input would fabricate evidence." -f ($missing -join ', ')) `
+                -Recommendation 'Fix the dataset error (see the scan log for the query failure) and rescan.'))
+            continue
+        }
         try {
             foreach ($f in @(& $check.Run $Data $Thresholds $RelationshipData)) {
                 if ($f) { $findings.Add($f) }

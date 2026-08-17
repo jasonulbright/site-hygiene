@@ -18,7 +18,7 @@
 
 .NOTES
     ScriptName : start-sitehygiene.ps1
-    Version    : 0.3.0
+    Version    : 0.5.0
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', '', Justification='PS51-WPF-001..003: $global: survives closure scope-strip.')]
@@ -55,6 +55,9 @@ Get-ChildItem -LiteralPath $libDir -File -ErrorAction SilentlyContinue | Unblock
 $__modulePath = Join-Path $PSScriptRoot 'Module\SiteHygieneCommon.psd1'
 if (-not (Test-Path -LiteralPath $__modulePath)) { throw "Shared module not found at: $__modulePath" }
 Import-Module -Name $__modulePath -Force -DisableNameChecking
+# Single version source: the module manifest. Every UI surface (title-bar
+# version, About pane) renders from this value.
+$script:AppVersion = [string](Import-PowerShellDataFile -LiteralPath $__modulePath).ModuleVersion
 
 $global:PrefsPath = Join-Path $PSScriptRoot 'SiteHygiene.prefs.json'
 function Get-ShPreferences {
@@ -138,7 +141,8 @@ $lblLogOutput = $window.FindName('lblLogOutput')
 $txtLog       = $window.FindName('txtLog')
 $txtStatus    = $window.FindName('txtStatus')
 
-$null = $txtAppTitle, $txtVersion, $txtProgressTitle
+if ($txtVersion) { $txtVersion.Text = "v$script:AppVersion" }
+$null = $txtAppTitle, $txtProgressTitle
 
 function Add-LogLine {
     param([Parameter(Mandatory)][string]$Message)
@@ -635,7 +639,7 @@ function Show-OptionsDialog {
             </StackPanel>
             <StackPanel x:Name="paneAbout" Visibility="Collapsed">
                 <TextBlock Text="About" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,10"/>
-                <TextBlock Text="Site Hygiene v0.4.0" FontSize="13" FontWeight="SemiBold"/>
+                <TextBlock x:Name="txtAboutVersion" Text="Site Hygiene" FontSize="13" FontWeight="SemiBold"/>
                 <TextBlock Text="Read-only MECM hygiene scanning: unused applications and packages, dead collections, stale and failing deployments. Every finding carries its evidence and the PowerShell a fix would take - shown, never executed."
                            FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0"/>
                 <TextBlock Text="Author: Jason Ulbright. License: MIT."
@@ -661,6 +665,8 @@ function Show-OptionsDialog {
     $btnCatAbout      = $dlg.FindName('btnCatAbout')
     $paneConnection   = $dlg.FindName('paneConnection')
     $paneAbout        = $dlg.FindName('paneAbout')
+    $txtAboutVersion  = $dlg.FindName('txtAboutVersion')
+    if ($txtAboutVersion) { $txtAboutVersion.Text = "Site Hygiene v$script:AppVersion" }
     $txtSiteCode      = $dlg.FindName('txtSiteCode')
     $txtSmsProvider   = $dlg.FindName('txtSmsProvider')
     $btnOk            = $dlg.FindName('btnOk')

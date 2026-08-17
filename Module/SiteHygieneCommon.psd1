@@ -1,6 +1,6 @@
 @{
     RootModule        = 'SiteHygieneCommon.psm1'
-    ModuleVersion     = '0.4.0'
+    ModuleVersion     = '0.5.0'
     GUID              = 'e94b7c15-2f6a-4d38-8b0c-51a9d3e6f284'
     Author            = 'Jason Ulbright'
     Description       = 'Read-only MECM site hygiene scanning: unused applications and packages, dead collections, stale and failing deployments.'
@@ -34,7 +34,8 @@
         'Test-HygClientVersions'
         'Test-HygBoundaryChecks'
         'Test-HygTaskSequenceRefs'
-        'Test-HygUpdateChecks'
+        'Test-HygUpdateGroupChecks'
+        'Test-HygAdrChecks'
         'Test-HygMaintenanceTasks'
 
         # Relationships (absorbed from the supersedence-auditor tool)

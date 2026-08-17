@@ -2,6 +2,44 @@
 
 All notable changes to Site Hygiene are documented in this file.
 
+## [0.5.0] - 2026-08-16
+
+### Changed
+
+- **Provider contracts corrected against the documented WMI classes.**
+  `DPL-01` now keys on `ExpirationTime` alone (`SMS_ApplicationAssignment`
+  has no enable flag, so the old gate silently disabled the check).
+  `UPD-01` computes its ratio from the documented expired count only;
+  superseded presence is a boolean on the provider and now colors the
+  evidence instead of inflating the percentage. `TSQ-01` learns OS images
+  and OS upgrade packages, so `ImagePackageID`/`InstallPackageID`
+  references stop reading as deleted content. `DEP-05` claims what
+  `HasContent` actually means — the dependency target carries no
+  content — at Warning, instead of asserting distribution state it never
+  queried.
+- **`UPD-02` is removed** (23 checks now). It joined update packages
+  against `SMS_DeploymentSummary.PackageID`, which the provider documents
+  as the 2007-era program identifier; the check would have reported
+  modern update packages as unused and offered a deletion script.
+- **A failed dataset now skips its checks instead of feeding them.**
+  Every collection failure lands in `FailedDatasets`, and the scan
+  replaces each dependent check with a visible skip finding — a lost
+  deployment query can no longer make applications, packages, and
+  collections read as unreferenced with deletion scripts attached.
+- **`APP-04` probes with a real timeout and an Unknown verdict.** A
+  content source that does not answer is reported as unknown-from-this-
+  workstation at Info rather than missing, and a stalled SMB path can no
+  longer hang the scan; verdict wording is scoped to the workstation
+  since the site server may have rights this session lacks.
+- **Fix scripts use real cmdlets** (`Invoke-CMSoftwareUpdateAutoDeploymentRule`,
+  `Resume-CMApplication`).
+- **Version metadata is single-sourced** from the module manifest: the
+  title-bar version and About pane render from it, and a test fails the
+  build when the manifest, changelog headline, and script header
+  disagree.
+- Pester suite is now tracked in the repository (fixtures are synthetic;
+  packaging continues to exclude tests from release zips).
+
 ## [0.4.0] - 2026-08-16
 
 ### Changed

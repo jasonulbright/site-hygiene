@@ -68,7 +68,6 @@ Stable check IDs so findings and reports stay comparable across scans:
 | TSQ-01 | Error | Task sequence referencing deleted content |
 | TSQ-02 | Warning | Custom boot images / driver packages nothing references |
 | UPD-01 | Warning | Update group over the expired/superseded ratio threshold |
-| UPD-02 | Info | Update deployment package referenced by no deployment |
 | UPD-03 | Error/Warning/Info | ADR erroring / stale / disabled |
 | MNT-01 | Info | Recommended cleanup maintenance tasks disabled |
 | MNT-02 | Warning | Backup Site Server task disabled |
