@@ -1223,10 +1223,13 @@ function New-SuiteBgRunspace {
     # much later as an unrelated "term not recognized" from the first
     # background operation; name the real cause here.
     if ($initPS.HadErrors) {
-        foreach ($e in $initPS.Streams.Error) {
-            Write-Log ("Background runspace initialization error: {0}" -f $e.ToString()) -Level ERROR
-        }
-        Write-Log ("Background runspace initialized with errors (module: {0}); background operations may fail." -f $ModulePath) -Level WARN
+        $messages = @($initPS.Streams.Error | ForEach-Object { $_.ToString() } | Select-Object -Unique)
+        $detail = if ($messages.Count -gt 0) { $messages -join '; ' } else { 'Unknown initialization error' }
+        Write-Log ("Background runspace initialization failed (module: {0}): {1}" -f $ModulePath, $detail) -Level ERROR
+        $initPS.Dispose()
+        try { $rs.Close() } catch { $null = $_ }
+        try { $rs.Dispose() } catch { $null = $_ }
+        throw "Background runspace initialization failed for '$ModulePath': $detail"
     }
     $initPS.Dispose()
     return $rs
@@ -1506,4 +1509,3 @@ function Show-CollectionPickerDialog {
     [void]$dlg.ShowDialog()
     return $script:PickerResult
 }
-

@@ -658,8 +658,9 @@ Describe 'Test-HygRelationshipChecks' {
         @($f | Where-Object { $_.CheckId -eq 'DEP-04' }).Count | Should -Be 1
         @($f | Where-Object { $_.CheckId -eq 'DEP-03' }).Count | Should -Be 1
         @($f | Where-Object { $_.CheckId -eq 'DEP-05' }).Count | Should -Be 1
-        ($f | Where-Object { $_.CheckId -eq 'DEP-05' }).Severity | Should -Be 'Warning' -Because 'HasContent only says the app carries no content; distribution state is a separate query'
+        ($f | Where-Object { $_.CheckId -eq 'DEP-05' }).Severity | Should -Be 'Info' -Because 'contentless script deployment types can be valid'
         ($f | Where-Object { $_.CheckId -eq 'DEP-05' }).Evidence | Should -Not -Match 'distributed'
+        ($f | Where-Object { $_.CheckId -eq 'DEP-05' }).Evidence | Should -Match 'not evidence of an installation'
     }
 
     It 'DEP-02 flags a circular dependency' {
@@ -963,6 +964,23 @@ Describe 'Dataset-failure skipping' {
         $f = @(Invoke-HygieneScan -Data $data)
         @($f | Where-Object { $_.ObjectName -like 'Check * skipped' }).Count | Should -Be 0
     }
+
+    It 'gates every supporting dataset used by absence and severity checks' {
+        $cases = @(
+            @{ Failed = 'TaskSequences';          Check = 'APP-01'; Data = (New-HygData -Applications @((New-HygApp))) },
+            @{ Failed = 'DependencyTargetCIIDs';  Check = 'APP-01'; Data = (New-HygData -Applications @((New-HygApp))) },
+            @{ Failed = 'Programs';               Check = 'PKG-01'; Data = (New-HygData -Packages @([pscustomobject]@{ PackageID = 'MCM00001'; Name = 'Unknown program state' })) },
+            @{ Failed = 'CollectionsWithSettings'; Check = 'COL-01'; Data = (New-HygData -Collections @((New-HygCollection))) },
+            @{ Failed = 'MaintenanceTasks';       Check = 'DEV-01'; Data = (New-HygData -Devices @((New-HygDevice -LastActiveTime (Get-Date).AddDays(-365)))) }
+        )
+
+        foreach ($case in $cases) {
+            $case.Data.FailedDatasets = @($case.Failed)
+            $f = @(Invoke-HygieneScan -Data $case.Data | Where-Object { $_.CheckId -eq $case.Check })
+            @($f | Where-Object { $_.Category -eq 'Scan' }).Count | Should -Be 1 -Because "$($case.Check) must skip when $($case.Failed) failed"
+            @($f | Where-Object { $_.Category -ne 'Scan' }).Count | Should -Be 0 -Because 'incomplete input must never become a cleanup finding'
+        }
+    }
 }
 
 Describe 'TSQ-01 content universe' {
@@ -975,6 +993,15 @@ Describe 'TSQ-01 content universe' {
         ($f | ForEach-Object Evidence) -join ' ' | Should -Not -Match 'MCM00IMG'
         ($f | ForEach-Object Evidence) -join ' ' | Should -Not -Match 'MCM00UPG'
         ($f | ForEach-Object Evidence) -join ' ' | Should -Match 'MCM0GONE'
+    }
+
+    It 'flags a deleted BootImageID even though it is stored outside References' {
+        $data = New-HygData -TaskSequences @(
+            [pscustomobject]@{ PackageID = 'MCM000TS'; Name = 'Broken boot image'; ReferencedIDs = @(); BootImageID = 'MCM0GONE' }
+        )
+        $f = @(Test-HygTaskSequenceRefs -Data $data | Where-Object { $_.CheckId -eq 'TSQ-01' })
+        $f.Count | Should -Be 1
+        $f[0].Evidence | Should -Match 'MCM0GONE'
     }
 }
 
@@ -1002,6 +1029,13 @@ Describe 'APP-04 bounded probe' {
         $f.Count | Should -Be 1
         $f[0].Severity | Should -Be 'Warning'
         $f[0].Evidence | Should -Match 'from this workstation'
+    }
+}
+
+Describe 'SuiteCommon background-runspace initialization' {
+    It 'throws immediately instead of returning an opened runspace when bootstrap fails' {
+        $missingModule = Join-Path $TestDrive 'missing-module.psd1'
+        { New-SuiteBgRunspace -ModulePath $missingModule } | Should -Throw '*Background runspace initialization failed*'
     }
 }
 
@@ -1081,4 +1115,3 @@ Describe 'DEV-02 placeholder SMBIOS handling' {
         @(Test-HygDeviceDuplicates -Data $data).Count | Should -Be 1
     }
 }
-
