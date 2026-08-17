@@ -2,6 +2,18 @@
 
 All notable changes to Site Hygiene are documented in this file.
 
+## [0.4.0] - 2026-08-16
+
+### Changed
+
+- **Window chrome, theming, dialog theming, window-state persistence,
+  and the background-runspace lifecycle now come from the vendored
+  `SuiteCommon` module** (0.3.0); this tool's non-blocking teardown
+  pattern (BeginStop into a reaped graveyard, CloseAsync at exit) is now
+  the shared implementation every suite tool uses. Behavior gains from
+  the shared chrome: hook state no longer leaks on window close, and a
+  maximized close persists the pre-maximize geometry.
+
 ## [0.3.0] - 2026-08-14
 
 ### Added
