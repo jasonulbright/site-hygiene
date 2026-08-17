@@ -48,7 +48,7 @@ Stable check IDs so findings and reports stay comparable across scans:
 | DPL-01 | Info | Application deployments past their expiration time |
 | DPL-02 | Error | Required deployments past deadline with a failure rate over threshold |
 | DPL-03 | Info | Available deployments old enough to judge with zero installs and nothing in progress |
-| APP-04 | Warning | Deployment-type content source folders missing or unreachable |
+| APP-04 | Warning/Info | Deployment-type content sources missing or unreachable, with timed-out probes reported as Unknown at Info |
 | SUP-01 | Error | Supersedence referencing a deleted application |
 | SUP-02 | Error | Circular supersedence chain |
 | SUP-03 | Warning | Superseding application disabled |
@@ -57,7 +57,7 @@ Stable check IDs so findings and reports stay comparable across scans:
 | DEP-02 | Error | Circular dependency |
 | DEP-03 | Warning | Dependency target disabled |
 | DEP-04 | Warning | Dependency target retired or expired |
-| DEP-05 | Error | Dependency target with no distributed content |
+| DEP-05 | Info | Dependency target reports no packaged content; contentless script deployment types may be intentional |
 | REL-01 | Info | Relationship participants without manufacturer metadata |
 | DEV-01 | Warning/Info | Inactive clients beyond threshold (Info when cleanup tasks will purge them) |
 | DEV-02 | Warning | Duplicate device records by name or SMBIOS GUID |
@@ -67,7 +67,7 @@ Stable check IDs so findings and reports stay comparable across scans:
 | BND-03 | Info | Overlapping IP-range boundaries |
 | TSQ-01 | Error | Task sequence referencing deleted content |
 | TSQ-02 | Warning | Custom boot images / driver packages nothing references |
-| UPD-01 | Warning | Update group over the expired/superseded ratio threshold |
+| UPD-01 | Warning | Update group over the documented expired-update ratio threshold; superseded presence is reported separately |
 | UPD-03 | Error/Warning/Info | ADR erroring / stale / disabled |
 | MNT-01 | Info | Recommended cleanup maintenance tasks disabled |
 | MNT-02 | Warning | Backup Site Server task disabled |

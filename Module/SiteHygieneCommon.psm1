@@ -31,6 +31,11 @@ if (-not (Get-Module SuiteCommon)) {
     Import-Module (Join-Path $PSScriptRoot '..\Lib\SuiteCommon\SuiteCommon.psd1') -Global -DisableNameChecking
 }
 
+# Timed-out content probes are stopped asynchronously so the scan thread
+# never blocks on a dead SMB endpoint. Keep them rooted until a later probe
+# observes the terminal state and disposes them.
+$script:AppContentProbeGraveyard = @()
+
 # ---------------------------------------------------------------------------
 # Check catalog
 # ---------------------------------------------------------------------------
@@ -55,7 +60,7 @@ function Get-HygieneCheckCatalog {
         [pscustomobject]@{ Id = 'DEP-02'; Category = 'Relationships'; Severity = 'Error';   Title = 'Circular dependency' }
         [pscustomobject]@{ Id = 'DEP-03'; Category = 'Relationships'; Severity = 'Warning'; Title = 'Dependency target disabled' }
         [pscustomobject]@{ Id = 'DEP-04'; Category = 'Relationships'; Severity = 'Warning'; Title = 'Dependency target retired or expired' }
-        [pscustomobject]@{ Id = 'DEP-05'; Category = 'Relationships'; Severity = 'Warning'; Title = 'Dependency target with no content' }
+        [pscustomobject]@{ Id = 'DEP-05'; Category = 'Relationships'; Severity = 'Info';    Title = 'Dependency target reports no packaged content' }
         [pscustomobject]@{ Id = 'REL-01'; Category = 'Relationships'; Severity = 'Info';    Title = 'Application relationships without manufacturer metadata' }
         [pscustomobject]@{ Id = 'DEV-01'; Category = 'Devices';      Severity = 'Warning'; Title = 'Inactive devices beyond threshold' }
         [pscustomobject]@{ Id = 'DEV-02'; Category = 'Devices';      Severity = 'Warning'; Title = 'Duplicate device records' }
@@ -423,6 +428,8 @@ function Get-HygieneData {
         } catch { $failed.Add('DependencyTargetCIIDs'); $notes.Add("Dependency relations unavailable (APP-01 may over-report dependency-only applications): $($_.Exception.Message)"); Write-Log "Dependency relations unavailable: $($_.Exception.Message)" -Level WARN }
     }
     else {
+        $failed.Add('CollectionsWithSettings')
+        $failed.Add('DependencyTargetCIIDs')
         $notes.Add('No CM connection recorded; CIM datasets (collection settings, dependency relations) skipped.')
     }
 
@@ -950,7 +957,12 @@ function Test-HygTaskSequenceRefs {
     }
 
     foreach ($ts in @($Data.TaskSequences)) {
-        $missing = @($ts.ReferencedIDs | Where-Object { $_ -and -not $known.Contains([string]$_) } | Select-Object -Unique)
+        # BootImageID is stored separately from References on the task
+        # sequence object, so include it explicitly in the broken-reference
+        # check as well as in TSQ-02's usage accounting below.
+        $candidateIds = @($ts.ReferencedIDs)
+        if ($ts.BootImageID) { $candidateIds += [string]$ts.BootImageID }
+        $missing = @($candidateIds | Where-Object { $_ -and -not $known.Contains([string]$_) } | Select-Object -Unique)
         if ($missing.Count -eq 0) { continue }
         New-HygieneFinding -CheckId 'TSQ-01' -Severity Error -Category 'Task Sequences' `
             -ObjectType 'TaskSequence' -ObjectId ([string]$ts.PackageID) -ObjectName $ts.Name `
@@ -1138,10 +1150,6 @@ function ConvertTo-HygRelationships {
     $relationships = New-Object System.Collections.Generic.List[object]
     $contentLocations = New-Object System.Collections.Generic.List[object]
     $notes = New-Object System.Collections.Generic.List[string]
-    # Dataset keys whose collection query failed; the scan runner skips
-    # checks whose inputs are on this list instead of treating an empty
-    # array as evidence.
-    $failed = New-Object System.Collections.Generic.List[string]
 
     $nsDigest = 'http://schemas.microsoft.com/SystemCenterConfigurationManager/2009/AppMgmtDigest'
     $nsRules  = 'https://schemas.microsoft.com/SystemsCenterConfigurationManager/2009/06/14/Rules'
@@ -1444,14 +1452,14 @@ function Test-HygRelationshipChecks {
                 -FixScript ("Get-CMApplication -Name '{0}' | Resume-CMApplication" -f ($r.ToAppName -replace "'", "''"))
         }
         elseif ($toApp -and -not $toApp.HasContent) {
-            # HasContent says only whether the application carries content;
-            # distribution state is a separate status query this scan does
-            # not make.
-            New-HygieneFinding -CheckId 'DEP-05' -Severity Warning -Category 'Relationships' `
+            # ContentLocation is optional for script deployment types. This
+            # is therefore an inventory signal, not proof that dependency
+            # installation will fail or that DP distribution is missing.
+            New-HygieneFinding -CheckId 'DEP-05' -Severity Info -Category 'Relationships' `
                 -ObjectType 'Dependency' -ObjectId ([string]$r.FromAppCIID) -ObjectName $pair `
-                -Evidence ("Dependency target '{0}' carries no content; automatic dependency installs have nothing to install." -f $r.ToAppName) `
-                -Recommendation 'Give the dependency target a deployment type with content (then distribute it), or remove the dependency.' `
-                -FixScript ("# Add a deployment type with content to '{0}', then distribute it to the DPs serving the parent" -f ($r.ToAppName -replace "'", "''"))
+                -Evidence ("Dependency target '{0}' reports HasContent=false. Contentless script deployment types can be valid, so this is not evidence of an installation or distribution failure." -f $r.ToAppName) `
+                -Recommendation 'Verify the target has an enabled deployment type and that its install command does not require packaged source content.' `
+                -FixScript ("# Review deployment types for '{0}'; no automatic remediation is safe for HasContent=false" -f ($r.ToAppName -replace "'", "''"))
         }
     }
 
@@ -1583,6 +1591,8 @@ function Test-HygAppContentPath {
         [int]$ProbeTimeoutMs = 3000
     )
 
+    # Reap probes that finished stopping after an earlier timeout.
+    $script:AppContentProbeGraveyard = @(Stop-SuiteBgWork -PowerShell $null -Timer $null -Graveyard $script:AppContentProbeGraveyard)
     $checked = @{}
     foreach ($loc in @($RelationshipData.ContentLocations)) {
         $path = [string]$loc.Location
@@ -1600,7 +1610,10 @@ function Test-HygAppContentPath {
                 $probe.Dispose()
             }
             else {
-                try { [void]$probe.BeginStop($null, $null) } catch { $null = $_ }
+                # BeginStop remains non-blocking even when Test-Path is stuck
+                # in an SMB call. Retain and reap the pipeline later rather
+                # than abandoning an undisposed PowerShell/runspace object.
+                $script:AppContentProbeGraveyard = @(Stop-SuiteBgWork -PowerShell $probe -Timer $null -Graveyard $script:AppContentProbeGraveyard)
                 $state = 'Unknown'
             }
             $checked[$path] = $state
@@ -1652,17 +1665,17 @@ function Invoke-HygieneScan {
     # it over an empty array would turn a query failure into "nothing
     # references this object" plus a deletion script.
     $checks = @(
-        @{ Id = 'APP-01'; Requires = @('Applications','Deployments'); Run = { param($d, $t) Test-HygAppNoReferences -Data $d -Thresholds $t } }
+        @{ Id = 'APP-01'; Requires = @('Applications','Deployments','TaskSequences','DependencyTargetCIIDs'); Run = { param($d, $t) Test-HygAppNoReferences -Data $d -Thresholds $t } }
         @{ Id = 'APP-02'; Requires = @('Applications'); Run = { param($d) Test-HygAppRetiredDeployed -Data $d } }
         @{ Id = 'APP-03'; Requires = @('Applications'); Run = { param($d) Test-HygAppSupersededDeployed -Data $d } }
-        @{ Id = 'PKG-01'; Requires = @('Packages','Deployments','TaskSequences'); Run = { param($d) Test-HygPackageUnused -Data $d } }
-        @{ Id = 'COL-01'; Requires = @('Collections','Deployments'); Run = { param($d) Test-HygCollectionEmptyUnused -Data $d } }
+        @{ Id = 'PKG-01'; Requires = @('Packages','Programs','Deployments','TaskSequences'); Run = { param($d) Test-HygPackageUnused -Data $d } }
+        @{ Id = 'COL-01'; Requires = @('Collections','Deployments','CollectionsWithSettings'); Run = { param($d) Test-HygCollectionEmptyUnused -Data $d } }
         @{ Id = 'COL-02'; Requires = @('Collections','Deployments'); Run = { param($d) Test-HygDeploymentEmptyCollection -Data $d } }
         @{ Id = 'COL-03'; Requires = @('Collections'); Run = { param($d, $t) Test-HygIncrementalCeiling -Data $d -Thresholds $t } }
         @{ Id = 'DPL-01'; Requires = @('AppDeployments'); Run = { param($d) Test-HygDeploymentExpired -Data $d } }
         @{ Id = 'DPL-02'; Requires = @('Deployments'); Run = { param($d, $t) Test-HygDeploymentPastDeadlineFailures -Data $d -Thresholds $t } }
         @{ Id = 'DPL-03'; Requires = @('Deployments'); Run = { param($d, $t) Test-HygDeploymentAvailableUnused -Data $d -Thresholds $t } }
-        @{ Id = 'DEV-01'; Requires = @('Devices'); Run = { param($d, $t) Test-HygDeviceInactive -Data $d -Thresholds $t } }
+        @{ Id = 'DEV-01'; Requires = @('Devices','MaintenanceTasks'); Run = { param($d, $t) Test-HygDeviceInactive -Data $d -Thresholds $t } }
         @{ Id = 'DEV-02'; Requires = @('Devices'); Run = { param($d) Test-HygDeviceDuplicates -Data $d } }
         @{ Id = 'DEV-03'; Requires = @('Devices'); Run = { param($d) Test-HygClientVersions -Data $d } }
         @{ Id = 'BND';    Requires = @('Boundaries','BoundaryGroups'); Run = { param($d) Test-HygBoundaryChecks -Data $d } }

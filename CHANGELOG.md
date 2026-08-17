@@ -2,6 +2,25 @@
 
 All notable changes to Site Hygiene are documented in this file.
 
+## [0.5.1] - 2026-08-17
+
+### Fixed
+
+- Completed dataset-failure gating for task-sequence references,
+  dependency targets, package programs, collection settings, and device
+  cleanup-task state; incomplete input can no longer produce cleanup
+  findings from those checks.
+- `TSQ-01` now validates the task sequence's separately stored
+  `BootImageID`, not only its `References` collection.
+- `DEP-05` is now an informational inventory signal that explicitly
+  recognizes valid contentless script deployment types and offers no
+  automatic remediation.
+- Failed background-runspace bootstrap now disposes the unusable runspace
+  and throws the original initialization error instead of returning an
+  opened but broken worker.
+- Timed-out `APP-04` probe pipelines are retained and reaped after their
+  asynchronous stop completes.
+
 ## [0.5.0] - 2026-08-16
 
 ### Changed
@@ -17,7 +36,8 @@ All notable changes to Site Hygiene are documented in this file.
   `HasContent` actually means — the dependency target carries no
   content — at Warning, instead of asserting distribution state it never
   queried.
-- **`UPD-02` is removed** (23 checks now). It joined update packages
+- **`UPD-02` is removed** (23 core-register checks; 33 total including
+  the ten relationship checks). It joined update packages
   against `SMS_DeploymentSummary.PackageID`, which the provider documents
   as the 2007-era program identifier; the check would have reported
   modern update packages as unused and offered a deletion script.
