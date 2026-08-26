@@ -18,7 +18,7 @@
 
 .NOTES
     ScriptName : start-sitehygiene.ps1
-    Version    : 0.5.1
+    Version    : 0.6.0
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', '', Justification='PS51-WPF-001..003: $global: survives closure scope-strip.')]
@@ -115,6 +115,7 @@ $txtModuleSubtitle = $window.FindName('txtModuleSubtitle')
 $btnScan       = $window.FindName('btnScan')
 $btnSuppress        = $window.FindName('btnSuppress')
 $btnUnsuppress      = $window.FindName('btnUnsuppress')
+$btnRunFix          = $window.FindName('btnRunFix')
 $chkShowSuppressed  = $window.FindName('chkShowSuppressed')
 $txtSuppressCount   = $window.FindName('txtSuppressCount')
 $txtFilter     = $window.FindName('txtFilter')
@@ -392,10 +393,75 @@ $gridFindings.Add_SelectionChanged({
     $lines += ('Recommendation: {0}' -f $row.Recommendation)
     if ($row.FixScript) {
         $lines += ''
-        $lines += 'Fix script (not executed by this tool):'
+        $lines += $(if (Test-HygieneFixExecutable -FixScript $row.FixScript) { 'Fix script (Run Fix executes exactly this):' } else { 'Fix guidance (display-only, nothing to execute):' })
         $lines += ('  {0}' -f $row.FixScript)
     }
+    if ($row.FixState) { $lines += ''; $lines += ('Fix state:      {0}' -f $row.FixState) }
     $txtFindingDetail.Text = $lines -join [Environment]::NewLine
+    $btnRunFix.IsEnabled = ((@($gridFindings.SelectedItems).Count -eq 1) -and
+                            ($row.FixState -ne 'Fixed') -and
+                            (Test-HygieneFixExecutable -FixScript $row.FixScript))
+})
+
+$btnRunFix.Add_Click({
+    $row = $gridFindings.SelectedItem
+    if (-not $row -or -not (Test-HygieneFixExecutable -FixScript $row.FixScript)) { return }
+    if ($script:BgPowerShell) { Add-LogLine 'Run Fix: another operation is still running.'; return }
+    $msg = ("This runs the following against site {0}:`r`n`r`n{1}`r`n`r`nObject: {2}" -f $global:Prefs.SiteCode, $row.FixScript, $row.ObjectName)
+    if (-not (Show-ConfirmDialog -Title ('Run fix for {0}?' -f $row.CheckId) -Message $msg -Owner $window)) { return }
+
+    Initialize-BgRunspace
+    Dispose-BgWork
+    Add-LogLine ('Run Fix [{0}] {1}: {2}' -f $row.CheckId, $row.ObjectName, $row.FixScript)
+    $btnRunFix.IsEnabled = $false
+    $script:BgState = [hashtable]::Synchronized(@{ Done = $false; Result = $null; ErrorMsg = $null })
+    $finding = [pscustomobject]@{ CheckId = $row.CheckId; ObjectName = $row.ObjectName; FixScript = $row.FixScript }
+
+    $script:BgPowerShell = [powershell]::Create()
+    $script:BgPowerShell.Runspace = $script:BgRunspace
+    [void]$script:BgPowerShell.AddScript({
+        param($SiteCode, $SMSProvider, $Finding, $State)
+        try {
+            if (-not (Test-CMConnection)) {
+                if (-not (Connect-CMSite -SiteCode $SiteCode -SMSProvider $SMSProvider)) {
+                    $State.ErrorMsg = "Failed to connect to site $SiteCode (provider $SMSProvider)."; return
+                }
+            }
+            $State.Result = Invoke-HygieneFix -Finding $Finding
+        }
+        catch { $State.ErrorMsg = $_.Exception.Message }
+        finally { $State.Done = $true }
+    }).AddArgument([string]$global:Prefs.SiteCode).AddArgument([string]$global:Prefs.SMSProvider).AddArgument($finding).AddArgument($script:BgState)
+
+    $script:BgInvokeHandle = $script:BgPowerShell.BeginInvoke()
+    $script:BgTimer = New-Object System.Windows.Threading.DispatcherTimer
+    $script:BgTimer.Interval = [TimeSpan]::FromMilliseconds(150)
+    $script:BgTimer.Add_Tick({
+        if (-not ($script:BgState -and $script:BgState.Done)) { return }
+        $script:BgTimer.Stop()
+        try { [void]$script:BgPowerShell.EndInvoke($script:BgInvokeHandle) } catch { $null = $_ }
+        try { $script:BgPowerShell.Dispose() } catch { $null = $_ }
+        $script:BgPowerShell   = $null
+        $script:BgInvokeHandle = $null
+
+        $row = $gridFindings.SelectedItem
+        $result = $script:BgState.Result
+        if ($script:BgState.ErrorMsg -or -not $result -or -not $result.Success) {
+            $reason = if ($script:BgState.ErrorMsg) { $script:BgState.ErrorMsg } elseif ($result) { $result.ErrorMessage } else { 'no result returned' }
+            if ($row) { $row.FixState = 'Failed' }
+            Add-LogLine ('Run Fix failed: {0}' -f $reason)
+            Set-StatusText 'Fix failed - see log.'
+        }
+        else {
+            if ($row) { $row.FixState = 'Fixed' }
+            Add-LogLine 'Run Fix succeeded. Rescan to confirm the finding clears.'
+            if ($result.Output) { Add-LogLine ('Fix output: {0}' -f $result.Output) }
+            Set-StatusText 'Fix applied - rescan to confirm.'
+        }
+        $gridFindings.Items.Refresh()
+        if ($row) { $btnRunFix.IsEnabled = (($row.FixState -ne 'Fixed') -and (Test-HygieneFixExecutable -FixScript $row.FixScript)) }
+    })
+    $script:BgTimer.Start()
 })
 
 # === Bg runspace + scan ===
@@ -508,6 +574,7 @@ function Invoke-Scan {
                     Evidence       = $_.Evidence
                     Recommendation = $_.Recommendation
                     FixScript      = $_.FixScript
+                    FixState       = ''
                     SuppressKey    = Get-HygieneSuppressionKey -Finding $_
                 }
             })

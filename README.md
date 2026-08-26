@@ -93,7 +93,8 @@ check may over- or under-report because of it.
 
 - **Findings** — every finding from the last scan with severity glyphs,
   filterable by text, category, and severity. Selecting a row shows the
-  full evidence, the recommendation, and the fix script. Suppress and
+  full evidence, the recommendation, and the fix script; Run Fix
+  executes that script against the site after confirmation. Suppress and
   Unsuppress (multi-select) hide accepted findings from future scans;
   keys persist in `SiteHygiene.suppressions.json` and a toggle shows the
   suppressed set.
@@ -127,7 +128,10 @@ site-hygiene/
 
 - A scan is read-only end to end: `Get-CM*` cmdlets plus two read-only
   CIM queries.
-- Fix scripts are display-only. Nothing in this tool executes them.
+- Nothing mutates without Run Fix: a per-finding action behind a
+  confirmation dialog that shows the exact script it will run. The
+  script is logged before execution and the outcome after. Comment-only
+  fix guidance never enables the action.
 - The scan runs in a background runspace so the UI stays responsive on
   large sites.
 

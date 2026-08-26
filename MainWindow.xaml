@@ -290,6 +290,8 @@
                                     ToolTip="Hide the selected finding(s) from future scans until unsuppressed"/>
                             <Button x:Name="btnUnsuppress" Content="Unsuppress" Style="{StaticResource SquareInlineButtonStyle}" MinWidth="110"
                                     ToolTip="Remove the selected finding(s) from the suppression list"/>
+                            <Button x:Name="btnRunFix" Content="Run Fix" Style="{StaticResource SquareInlineButtonStyle}" MinWidth="110" IsEnabled="False"
+                                    ToolTip="Run the selected finding's fix script against the site after confirmation"/>
                             <CheckBox x:Name="chkShowSuppressed" Content="Show suppressed" FontSize="12" VerticalAlignment="Center" Margin="8,0,0,0"
                                       Controls:ControlsHelper.ContentCharacterCasing="Normal"
                                       ToolTip="Include suppressed findings in the grid"/>
@@ -311,6 +313,7 @@
                             <DataGridTextColumn Header="Category"  Width="110" Binding="{Binding Category}"/>
                             <DataGridTextColumn Header="Object"    Width="2*"  Binding="{Binding ObjectName}"/>
                             <DataGridTextColumn Header="Evidence"  Width="3*"  Binding="{Binding Evidence}"/>
+                            <DataGridTextColumn Header="Fix"       Width="70"  Binding="{Binding FixState}"/>
                         </DataGrid.Columns>
                     </DataGrid>
 

@@ -1115,3 +1115,35 @@ Describe 'DEV-02 placeholder SMBIOS handling' {
         @(Test-HygDeviceDuplicates -Data $data).Count | Should -Be 1
     }
 }
+
+Describe 'Fix execution' {
+    It 'treats an empty fix script as not executable' {
+        Test-HygieneFixExecutable -FixScript '' | Should -BeFalse
+    }
+
+    It 'treats a comment-only fix script as not executable' {
+        Test-HygieneFixExecutable -FixScript "# Console: fix it there`r`n# second line" | Should -BeFalse
+    }
+
+    It 'treats a real command as executable' {
+        Test-HygieneFixExecutable -FixScript "Remove-CMApplication -Name 'X' -Force" | Should -BeTrue
+    }
+
+    It 'treats a command with a trailing comment as executable' {
+        Test-HygieneFixExecutable -FixScript "Get-CMAutoDeploymentRule -Name 'r' | Remove-CMAutoDeploymentRule -Force  # or re-enable" | Should -BeTrue
+    }
+
+    It 'refuses to run a display-only finding' {
+        $f = [pscustomobject]@{ CheckId = 'COL-02'; ObjectName = 'x'; FixScript = '# Review in console' }
+        $r = Invoke-HygieneFix -Finding $f
+        $r.Success | Should -BeFalse
+        $r.ErrorMessage | Should -Match 'display-only'
+    }
+
+    It 'refuses to run outside a CMSite drive' {
+        $f = [pscustomobject]@{ CheckId = 'APP-01'; ObjectName = 'x'; FixScript = "Remove-CMApplication -Name 'x' -Force" }
+        $r = Invoke-HygieneFix -Finding $f
+        $r.Success | Should -BeFalse
+        $r.ErrorMessage | Should -Match 'site drive'
+    }
+}
