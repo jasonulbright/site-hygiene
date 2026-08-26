@@ -1895,3 +1895,65 @@ function New-HygieneSummaryText {
     }
     return ($lines -join "`r`n")
 }
+
+# ---------------------------------------------------------------------------
+# Fix execution
+# ---------------------------------------------------------------------------
+
+function Test-HygieneFixExecutable {
+    <#
+    .SYNOPSIS
+        True when a finding's fix script contains something to run.
+
+    .DESCRIPTION
+        Comment-only fix scripts point the operator at the console or at
+        another tool; they are display-only and must not enable the Run
+        Fix action.
+    #>
+    param([AllowEmptyString()][string]$FixScript = '')
+
+    foreach ($line in ($FixScript -split "`r?`n")) {
+        $trimmed = $line.Trim()
+        if ($trimmed -and -not $trimmed.StartsWith('#')) { return $true }
+    }
+    return $false
+}
+
+function Invoke-HygieneFix {
+    <#
+    .SYNOPSIS
+        Executes one finding's fix script against the connected site.
+
+    .DESCRIPTION
+        Must be called from the CM site drive. The exact script is logged
+        before execution and the outcome after, so the log carries a
+        complete record of every mutation this tool performs. The script
+        runs with ErrorAction Stop so a partial failure surfaces instead
+        of reporting success.
+
+    .OUTPUTS
+        [pscustomobject] Success, Output, ErrorMessage.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification='Confirmation happens in the GUI before this is called; the function is the execution primitive.')]
+    param([Parameter(Mandatory)][pscustomobject]$Finding)
+
+    $fixScript = [string]$Finding.FixScript
+    if (-not (Test-HygieneFixExecutable -FixScript $fixScript)) {
+        return [pscustomobject]@{ Success = $false; Output = ''; ErrorMessage = 'This finding has a display-only fix script; nothing to execute.' }
+    }
+    if ((Get-Location).Provider.Name -ne 'CMSite') {
+        return [pscustomobject]@{ Success = $false; Output = ''; ErrorMessage = 'Fix execution requires the CM site drive as the current location.' }
+    }
+
+    Write-Log ("Fix executing [{0}] {1}: {2}" -f $Finding.CheckId, $Finding.ObjectName, $fixScript)
+    try {
+        $output = Invoke-Command -ScriptBlock ([scriptblock]::Create($fixScript)) -ErrorAction Stop
+        $text = (@($output) | Out-String).Trim()
+        Write-Log ("Fix succeeded [{0}] {1}" -f $Finding.CheckId, $Finding.ObjectName)
+        return [pscustomobject]@{ Success = $true; Output = $text; ErrorMessage = '' }
+    }
+    catch {
+        Write-Log ("Fix FAILED [{0}] {1}: {2}" -f $Finding.CheckId, $Finding.ObjectName, $_.Exception.Message) -Level ERROR
+        return [pscustomobject]@{ Success = $false; Output = ''; ErrorMessage = $_.Exception.Message }
+    }
+}

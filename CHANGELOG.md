@@ -2,6 +2,19 @@
 
 All notable changes to Site Hygiene are documented in this file.
 
+## [0.6.0] - 2026-08-26
+
+### Added
+
+- **Per-finding fix execution.** A Run Fix button executes the selected
+  finding's fix script against the connected site after a confirmation
+  dialog that shows the exact script. Execution runs on the background
+  runspace from the CM site drive; the script is logged before execution
+  and the outcome after, and the grid marks the finding Fixed or Failed.
+  Display-only fix guidance (comment-only scripts) never enables the
+  button. `SiteHygieneCommon` 0.6.0 adds `Test-HygieneFixExecutable`
+  and `Invoke-HygieneFix`.
+
 ## [0.5.1] - 2026-08-17
 
 ### Fixed
