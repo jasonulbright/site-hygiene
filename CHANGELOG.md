@@ -2,6 +2,31 @@
 
 All notable changes to Site Hygiene are documented in this file.
 
+## [0.8.0] - 2026-08-27
+
+### Added
+
+- **Collection evaluation deep-dive** (five new checks, per the Learn
+  collection best-practices and collection-evaluation docs):
+  - `COL-05` incremental collection with a sub-daily full evaluation
+    schedule — the full update is only a backup; executable fix drops
+    the collection to incremental-only (`-RefreshType Continuous`).
+  - `COL-06` direct-rule-only collection with a scheduled evaluation
+    and a non-incremental limiting collection — the schedule re-computes
+    an identical result; executable fix sets `-RefreshType Manual`.
+  - `COL-07` include/exclude reference chain deeper than the threshold
+    (default 3), with the measured depth as evidence and the WQL
+    subselect rewrite as guidance.
+  - `COL-08` circular collection reference across limiting, include,
+    and exclude edges (Error) — evaluation loops that hammer the site
+    database.
+  - `COL-09` full-update start-hour hot spots (default 10 collections
+    sharing a start hour).
+  The collection dataset now carries rule composition and full-update
+  schedule fields; the reference graph builds from data already loaded,
+  with zero extra provider round-trips. Built-in SMS collections are
+  exempt. New thresholds `ColRefDepthMax` and `ColFullEvalHotSpotCount`.
+
 ## [0.7.0] - 2026-08-26
 
 ### Added

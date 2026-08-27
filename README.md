@@ -83,9 +83,9 @@ sensible defaults in `Get-HygieneDefaultThresholds`.
 ## How a scan works
 
 One prefetch pass pulls every dataset the checks need — bulk `Get-CM*`
-reads plus two read-only CIM queries (collection settings, application
-dependency relations) — and the checks run as pure functions over that
-data. A dataset that fails to load degrades to an empty set with a note
+reads plus three read-only CIM queries (collection settings, application
+dependency relations, collection reference edges) — and the checks run
+as pure functions over that data. A dataset that fails to load degrades to an empty set with a note
 in the Summary view instead of killing the scan; the note also says which
 check may over- or under-report because of it.
 
@@ -130,7 +130,7 @@ site-hygiene/
 
 ## Safety
 
-- A scan is read-only end to end: `Get-CM*` cmdlets plus two read-only
+- A scan is read-only end to end: `Get-CM*` cmdlets plus three read-only
   CIM queries.
 - Nothing mutates without Run Fix: a per-finding action behind a
   confirmation dialog that shows the exact script it will run. The

@@ -77,6 +77,11 @@ function Get-HygieneCheckCatalog {
         [pscustomobject]@{ Id = 'COL-01'; Category = 'Collections';  Severity = 'Info';    Title = 'Empty collection nothing references' }
         [pscustomobject]@{ Id = 'COL-02'; Category = 'Collections';  Severity = 'Warning'; Title = 'Deployment targeting an empty collection' }
         [pscustomobject]@{ Id = 'COL-03'; Category = 'Collections';  Severity = 'Warning'; Title = 'Incremental-evaluation collection count over ceiling' }
+        [pscustomobject]@{ Id = 'COL-05'; Category = 'Collections';  Severity = 'Warning'; Title = 'Sub-daily full evaluation on an incremental collection' }
+        [pscustomobject]@{ Id = 'COL-06'; Category = 'Collections';  Severity = 'Info';    Title = 'Scheduled evaluation on a direct-rule-only collection' }
+        [pscustomobject]@{ Id = 'COL-07'; Category = 'Collections';  Severity = 'Warning'; Title = 'Include/exclude reference chain over depth threshold' }
+        [pscustomobject]@{ Id = 'COL-08'; Category = 'Collections';  Severity = 'Error';   Title = 'Circular collection reference' }
+        [pscustomobject]@{ Id = 'COL-09'; Category = 'Collections';  Severity = 'Info';    Title = 'Full-update start-time hot spot' }
         [pscustomobject]@{ Id = 'DPL-01'; Category = 'Deployments';  Severity = 'Info';    Title = 'Deployment past its expiration time' }
         [pscustomobject]@{ Id = 'DPL-02'; Category = 'Deployments';  Severity = 'Error';   Title = 'Required deployment past deadline with high failures' }
         [pscustomobject]@{ Id = 'DPL-03'; Category = 'Deployments';  Severity = 'Info';    Title = 'Available deployment with no takers' }
@@ -99,6 +104,8 @@ function Get-HygieneDefaultThresholds {
         InactiveDeviceDays        = 90
         SugExpiredPctThreshold    = 30
         AdrStaleDays              = 45
+        ColRefDepthMax            = 3
+        ColFullEvalHotSpotCount   = 10
     }
 }
 
@@ -332,6 +339,8 @@ function Get-HygieneData {
         $collections = @(Get-CMCollection -ErrorAction Stop | ForEach-Object {
             $includeIds = @()
             $excludeIds = @()
+            $directRules = 0
+            $queryRules = 0
             if ($_.CollectionRules) {
                 foreach ($rule in $_.CollectionRules) {
                     # Embedded rule objects frequently carry an empty
@@ -344,8 +353,22 @@ function Get-HygieneData {
                     if (-not $typeName) { try { $typeName = $rule.GetType().Name } catch { continue } }
                     if ($typeName -match 'IncludeCollection') { $includeIds += [string]$rule.IncludeCollectionID }
                     elseif ($typeName -match 'ExcludeCollection') { $excludeIds += [string]$rule.ExcludeCollectionID }
+                    elseif ($typeName -match 'Direct') { $directRules++ }
+                    elseif ($typeName -match 'Query') { $queryRules++ }
                 }
             }
+            # RefreshSchedule is an embedded SMS_ST_RecurInterval; spans of
+            # zero with no start time mean "no full schedule recorded".
+            $fullDaySpan = 0; $fullHourSpan = 0; $fullMinuteSpan = 0; $fullStartHour = -1
+            try {
+                $sched = @($_.RefreshSchedule)[0]
+                if ($sched) {
+                    if ($sched.PSObject.Properties['DaySpan'])    { $fullDaySpan    = [int]$sched.DaySpan }
+                    if ($sched.PSObject.Properties['HourSpan'])   { $fullHourSpan   = [int]$sched.HourSpan }
+                    if ($sched.PSObject.Properties['MinuteSpan']) { $fullMinuteSpan = [int]$sched.MinuteSpan }
+                    if ($sched.PSObject.Properties['StartTime'] -and $sched.StartTime) { $fullStartHour = ([datetime]$sched.StartTime).Hour }
+                }
+            } catch { $null = $_ }
             [pscustomobject]@{
                 CollectionID        = [string]$_.CollectionID
                 Name                = [string]$_.Name
@@ -355,6 +378,12 @@ function Get-HygieneData {
                 IsBuiltIn           = ([string]$_.CollectionID -like 'SMS*')
                 IncludeIDs          = $includeIds
                 ExcludeIDs          = $excludeIds
+                DirectRuleCount     = $directRules
+                QueryRuleCount      = $queryRules
+                FullDaySpan         = $fullDaySpan
+                FullHourSpan        = $fullHourSpan
+                FullMinuteSpan      = $fullMinuteSpan
+                FullStartHour       = $fullStartHour
             }
         })
         Write-Log "Loaded $($collections.Count) collections"
@@ -400,6 +429,7 @@ function Get-HygieneData {
     } catch { $failed.Add('AppDeployments'); $notes.Add("Application deployments unavailable: $($_.Exception.Message)"); Write-Log "Application deployments unavailable: $($_.Exception.Message)" -Level WARN }
 
     $conn = Get-CMConnectionInfo
+    $collectionDependencies = @()
     $collectionsWithSettings = @()
     $dependencyTargetCIIDs = @()
 
@@ -426,11 +456,32 @@ function Get-HygieneData {
             )
             Write-Log "Loaded $($dependencyTargetCIIDs.Count) dependency relations"
         } catch { $failed.Add('DependencyTargetCIIDs'); $notes.Add("Dependency relations unavailable (APP-01 may over-report dependency-only applications): $($_.Exception.Message)"); Write-Log "Dependency relations unavailable: $($_.Exception.Message)" -Level WARN }
+
+        # The embedded CollectionRules array returns include/exclude rules
+        # as null lazy elements often enough to make it unusable as a
+        # graph source; SMS_CollectionDependencies is authoritative for
+        # every reference edge. RelationshipType: 1 = limiting,
+        # 2 = include, 3 = exclude; Dependent references Source.
+        try {
+            $collectionDependencies = @(
+                Get-CimInstance -ComputerName $conn.SMSProvider -Namespace $ns `
+                    -Query 'SELECT DependentCollectionID, SourceCollectionID, RelationshipType FROM SMS_CollectionDependencies' -ErrorAction Stop |
+                ForEach-Object {
+                    [pscustomobject]@{
+                        From = [string]$_.DependentCollectionID
+                        To   = [string]$_.SourceCollectionID
+                        Kind = switch ([int]$_.RelationshipType) { 1 { 'limit' } 2 { 'include' } 3 { 'exclude' } default { "type$([int]$_.RelationshipType)" } }
+                    }
+                }
+            )
+            Write-Log "Loaded $($collectionDependencies.Count) collection reference edges"
+        } catch { $failed.Add('CollectionDependencies'); $notes.Add("Collection reference edges unavailable (COL-07/COL-08 fall back to embedded rules, which under-report): $($_.Exception.Message)"); Write-Log "Collection reference edges unavailable: $($_.Exception.Message)" -Level WARN }
     }
     else {
         $failed.Add('CollectionsWithSettings')
         $failed.Add('DependencyTargetCIIDs')
-        $notes.Add('No CM connection recorded; CIM datasets (collection settings, dependency relations) skipped.')
+        $failed.Add('CollectionDependencies')
+        $notes.Add('No CM connection recorded; CIM datasets (collection settings, dependency relations, collection reference edges) skipped.')
     }
 
     return [pscustomobject]@{
@@ -443,6 +494,7 @@ function Get-HygieneData {
         AppDeployments          = $appDeployments
         CollectionsWithSettings = $collectionsWithSettings
         DependencyTargetCIIDs   = $dependencyTargetCIIDs
+        CollectionDependencies  = $collectionDependencies
         Devices                 = $devices
         Boundaries              = $boundaries
         BoundaryGroups          = $boundaryGroups
@@ -1672,6 +1724,7 @@ function Invoke-HygieneScan {
         @{ Id = 'COL-01'; Requires = @('Collections','Deployments','CollectionsWithSettings'); Run = { param($d) Test-HygCollectionEmptyUnused -Data $d } }
         @{ Id = 'COL-02'; Requires = @('Collections','Deployments'); Run = { param($d) Test-HygDeploymentEmptyCollection -Data $d } }
         @{ Id = 'COL-03'; Requires = @('Collections'); Run = { param($d, $t) Test-HygIncrementalCeiling -Data $d -Thresholds $t } }
+        @{ Id = 'COL-EVAL'; Requires = @('Collections'); Run = { param($d, $t) Test-HygCollectionEvaluationChecks -Data $d -Thresholds $t } }
         @{ Id = 'DPL-01'; Requires = @('AppDeployments'); Run = { param($d) Test-HygDeploymentExpired -Data $d } }
         @{ Id = 'DPL-02'; Requires = @('Deployments'); Run = { param($d, $t) Test-HygDeploymentPastDeadlineFailures -Data $d -Thresholds $t } }
         @{ Id = 'DPL-03'; Requires = @('Deployments'); Run = { param($d, $t) Test-HygDeploymentAvailableUnused -Data $d -Thresholds $t } }
@@ -2045,4 +2098,176 @@ function Get-HygieneScanDelta {
 
     $resolved = @(@($Previous.Findings) | Where-Object { -not $currentKeys.Contains((Get-HygieneSuppressionKey -Finding $_)) })
     return [pscustomobject]@{ NewKeys = $newKeys; Resolved = $resolved; HasBaseline = $true }
+}
+
+# ---------------------------------------------------------------------------
+# Collection evaluation deep-dive (COL-05..COL-09)
+# ---------------------------------------------------------------------------
+
+function Get-HygCollectionReferenceGraph {
+    <#
+    .SYNOPSIS
+        Builds the collection reference edge list from the collection
+        dataset: limiting, include, and exclude references.
+
+    .DESCRIPTION
+        Every referenced collection joins the evaluation graph when the
+        referencing collection evaluates, so these edges are the unit of
+        both the depth and the cycle analysis. No provider round-trips:
+        the dataset already carries the ids.
+    #>
+    param([Parameter(Mandatory)]$Data)
+
+    # SMS_CollectionDependencies is the authoritative source; the embedded
+    # CollectionRules fallback under-reports because the provider returns
+    # include/exclude rules as null lazy elements.
+    if ($Data.PSObject.Properties['CollectionDependencies'] -and @($Data.CollectionDependencies).Count -gt 0) {
+        return @($Data.CollectionDependencies)
+    }
+
+    $edges = @()
+    foreach ($c in @($Data.Collections)) {
+        if ($c.LimitToCollectionID) { $edges += [pscustomobject]@{ From = [string]$c.CollectionID; To = [string]$c.LimitToCollectionID; Kind = 'limit' } }
+        foreach ($id in @($c.IncludeIDs)) { if ($id) { $edges += [pscustomobject]@{ From = [string]$c.CollectionID; To = [string]$id; Kind = 'include' } } }
+        foreach ($id in @($c.ExcludeIDs)) { if ($id) { $edges += [pscustomobject]@{ From = [string]$c.CollectionID; To = [string]$id; Kind = 'exclude' } } }
+    }
+    return $edges
+}
+
+function Test-HygCollectionEvaluationChecks {
+    <#
+    .SYNOPSIS
+        COL-05..COL-09: collection evaluation configuration checks.
+
+    .DESCRIPTION
+        Rules per the Learn collection best-practices and evaluation
+        docs: full updates are only a backup on incremental collections;
+        direct-rule-only collections with a non-incremental limiting
+        collection need no schedule; deep include/exclude chains pull
+        every referenced collection into the evaluation graph; reference
+        cycles are never valid; clustered full-update start times create
+        evaluation hot spots. Built-in (SMS*) collections are exempt -
+        the site owns their configuration and Set-CMCollection refuses
+        them.
+    #>
+    param(
+        [Parameter(Mandatory)]$Data,
+        [hashtable]$Thresholds = (Get-HygieneDefaultThresholds)
+    )
+
+    $cols = @($Data.Collections | Where-Object { -not $_.IsBuiltIn })
+    $byId = @{}
+    foreach ($c in @($Data.Collections)) { $byId[[string]$c.CollectionID] = $c }
+    $nameOf = { param($id) if ($byId.ContainsKey($id)) { $byId[$id].Name } else { $id } }
+
+    # COL-05 / COL-06: refresh configuration. RefreshType: 1 = manual,
+    # 2 = periodic full, 4 = incremental, 6 = both.
+    foreach ($c in $cols) {
+        $freqText = if ($c.FullMinuteSpan -gt 0) { "every $($c.FullMinuteSpan) minute(s)" }
+                    elseif ($c.FullHourSpan -gt 0) { "every $($c.FullHourSpan) hour(s)" }
+                    elseif ($c.FullDaySpan -gt 0) { "every $($c.FullDaySpan) day(s)" }
+                    else { 'on an unrecognized schedule' }
+
+        if ($c.RefreshType -eq 6 -and ($c.FullMinuteSpan -gt 0 -or $c.FullHourSpan -gt 0)) {
+            New-HygieneFinding -CheckId 'COL-05' -Severity Warning -Category 'Collections' `
+                -ObjectType 'Collection' -ObjectId $c.CollectionID -ObjectName $c.Name `
+                -Evidence ("Incremental updates are enabled AND a full evaluation runs {0}. A full update on an incremental collection is only a backup evaluation; running it sub-daily duplicates work the incremental cycle already does, and each full evaluation also evaluates every dependent collection." -f $freqText) `
+                -Recommendation 'Keep incremental updates and drop the full schedule back to a rare backup, or remove it.' `
+                -FixScript ("Set-CMCollection -CollectionId '{0}' -RefreshType Continuous" -f $c.CollectionID)
+        }
+
+        if ($c.RefreshType -in 2, 6 -and $c.DirectRuleCount -gt 0 -and $c.QueryRuleCount -eq 0 -and @($c.IncludeIDs).Count -eq 0 -and @($c.ExcludeIDs).Count -eq 0) {
+            $limiting = $(if ($byId.ContainsKey([string]$c.LimitToCollectionID)) { $byId[[string]$c.LimitToCollectionID] } else { $null })
+            if (-not $limiting -or $limiting.RefreshType -notin 4, 6) {
+                New-HygieneFinding -CheckId 'COL-06' -Severity Info -Category 'Collections' `
+                    -ObjectType 'Collection' -ObjectId $c.CollectionID -ObjectName $c.Name `
+                    -Evidence ("Membership is {0} direct rule(s) only and the limiting collection '{1}' is not incrementally updated. Direct membership never changes on its own, so the scheduled evaluation re-computes an identical result every cycle." -f $c.DirectRuleCount, (& $nameOf ([string]$c.LimitToCollectionID))) `
+                    -Recommendation 'Disable the update schedule; direct-rule collections update when the rule changes.' `
+                    -FixScript ("Set-CMCollection -CollectionId '{0}' -RefreshType Manual" -f $c.CollectionID)
+            }
+        }
+    }
+
+    # Reference graph: depth and cycles.
+    $edges = @(Get-HygCollectionReferenceGraph -Data $Data)
+    $refAdj = @{}
+    foreach ($e in ($edges | Where-Object { $_.Kind -ne 'limit' })) {
+        if (-not $refAdj.ContainsKey($e.From)) { $refAdj[$e.From] = @() }
+        $refAdj[$e.From] += $e.To
+    }
+
+    # COL-07: longest include/exclude chain per collection (memoized DFS,
+    # cycle-guarded; cycles report through COL-08, not a bogus depth).
+    $depthCache = @{}
+    $getRefDepth = $null
+    $getRefDepth = {
+        param([string]$Id, [hashtable]$OnPath)
+        if ($depthCache.ContainsKey($Id)) { return $depthCache[$Id] }
+        if ($OnPath.ContainsKey($Id)) { return 0 }
+        $OnPath[$Id] = $true
+        $max = 0
+        if ($refAdj.ContainsKey($Id)) {
+            foreach ($next in $refAdj[$Id]) {
+                $d = 1 + (& $getRefDepth $next $OnPath)
+                if ($d -gt $max) { $max = $d }
+            }
+        }
+        [void]$OnPath.Remove($Id)
+        $depthCache[$Id] = $max
+        return $max
+    }
+    $maxDepth = [int]$Thresholds.ColRefDepthMax
+    foreach ($c in $cols) {
+        $d = & $getRefDepth ([string]$c.CollectionID) @{}
+        if ($d -gt $maxDepth) {
+            New-HygieneFinding -CheckId 'COL-07' -Severity Warning -Category 'Collections' `
+                -ObjectType 'Collection' -ObjectId $c.CollectionID -ObjectName $c.Name `
+                -Evidence ("Include/exclude references chain {0} levels deep (threshold {1}). Every referenced collection is evaluated to build this membership, and a change anywhere in the chain re-evaluates the whole branch." -f $d, $maxDepth) `
+                -Recommendation 'Flatten the chain: replace nested include/exclude rules with a WQL query rule using a ResourceId subselect against the target collection.' `
+                -FixScript ("# Replace include/exclude rules on '{0}' with a query rule, e.g.: select * from SMS_R_System where SMS_R_System.ResourceId in (select ResourceID from SMS_CM_RES_COLL_<CollectionID>)" -f $c.Name)
+        }
+    }
+
+    # COL-08: reference cycles across limit + include + exclude edges.
+    $fullAdj = @{}
+    foreach ($e in $edges) {
+        if (-not $fullAdj.ContainsKey($e.From)) { $fullAdj[$e.From] = @() }
+        $fullAdj[$e.From] += $e.To
+    }
+    $flagged = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($e in $edges) {
+        if ($flagged.Contains($e.From)) { continue }
+        if ($e.From -like 'SMS*') { continue }
+        # From is in a cycle when From is reachable from To.
+        $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+        $stack = New-Object 'System.Collections.Generic.Stack[string]'
+        $stack.Push($e.To)
+        $inCycle = $false
+        while ($stack.Count -gt 0) {
+            $n = $stack.Pop()
+            if ($n -eq $e.From) { $inCycle = $true; break }
+            if (-not $seen.Add($n)) { continue }
+            if ($fullAdj.ContainsKey($n)) { foreach ($m in $fullAdj[$n]) { $stack.Push($m) } }
+        }
+        if ($inCycle) {
+            [void]$flagged.Add($e.From)
+            New-HygieneFinding -CheckId 'COL-08' -Severity Error -Category 'Collections' `
+                -ObjectType 'Collection' -ObjectId $e.From -ObjectName (& $nameOf $e.From) `
+                -Evidence ("The {0} reference from '{1}' to '{2}' is part of a loop: following limiting/include/exclude references from '{2}' leads back to '{1}'. Every evaluation of any collection in the loop re-enters the loop, which hammers collection evaluation and the site database." -f $e.Kind, (& $nameOf $e.From), (& $nameOf $e.To)) `
+                -Recommendation 'Break the loop by removing or re-pointing one of the references in the cycle.' `
+                -FixScript ("# Console: review the {0} rule on '{1}' that references '{2}' and break the cycle" -f $e.Kind, (& $nameOf $e.From), (& $nameOf $e.To))
+        }
+    }
+
+    # COL-09: full-update start-time hot spots.
+    $hotThreshold = [int]$Thresholds.ColFullEvalHotSpotCount
+    $scheduled = @($cols | Where-Object { $_.RefreshType -in 2, 6 -and $_.FullStartHour -ge 0 })
+    foreach ($group in ($scheduled | Group-Object FullStartHour | Where-Object { $_.Count -ge $hotThreshold })) {
+        $names = @($group.Group | Select-Object -First 5 | ForEach-Object { "'$($_.Name)'" }) -join ', '
+        New-HygieneFinding -CheckId 'COL-09' -Severity Info -Category 'Collections' `
+            -ObjectType 'Schedule' -ObjectId ([string]$group.Name) -ObjectName ("{0} full updates starting at {1:00}:00" -f $group.Count, [int]$group.Name) `
+            -Evidence ("{0} collections schedule their full evaluation in the same start hour ({1:00}:00), including {2}. Clustered full updates create an evaluation hot spot; spreading them out and preferring off-peak hours reduces contention." -f $group.Count, [int]$group.Name, $names) `
+            -Recommendation 'Stagger the full-update start times across off-peak hours.' `
+            -FixScript '# Per collection: Set-CMCollection -CollectionId <ID> -RefreshSchedule (New-CMSchedule -Start <off-peak time> -RecurInterval Days -RecurCount 1)'
+    }
 }

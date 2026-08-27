@@ -79,6 +79,7 @@ BeforeAll {
             [object[]]$AppDeployments = @(),
             [string[]]$CollectionsWithSettings = @(),
             [int[]]$DependencyTargetCIIDs = @(),
+            [object[]]$CollectionDependencies = @(),
             [object[]]$Devices = @(),
             [object[]]$Boundaries = @(),
             [object[]]$BoundaryGroups = @(),
@@ -103,6 +104,7 @@ BeforeAll {
             AppDeployments          = $AppDeployments
             CollectionsWithSettings = $CollectionsWithSettings
             DependencyTargetCIIDs   = $DependencyTargetCIIDs
+            CollectionDependencies  = $CollectionDependencies
             Devices                 = $Devices
             Boundaries              = $Boundaries
             BoundaryGroups          = $BoundaryGroups
@@ -164,13 +166,22 @@ BeforeAll {
             [int]$RefreshType = 2,
             [string]$LimitToCollectionID = 'SMS00001',
             [string[]]$IncludeIDs = @(),
-            [string[]]$ExcludeIDs = @()
+            [string[]]$ExcludeIDs = @(),
+            [int]$DirectRuleCount = 0,
+            [int]$QueryRuleCount = 0,
+            [int]$FullDaySpan = 0,
+            [int]$FullHourSpan = 0,
+            [int]$FullMinuteSpan = 0,
+            [int]$FullStartHour = -1
         )
         [pscustomobject]@{
             CollectionID = $CollectionID; Name = $Name; MemberCount = $MemberCount
             RefreshType = $RefreshType; LimitToCollectionID = $LimitToCollectionID
             IsBuiltIn = ($CollectionID -like 'SMS*')
             IncludeIDs = $IncludeIDs; ExcludeIDs = $ExcludeIDs
+            DirectRuleCount = $DirectRuleCount; QueryRuleCount = $QueryRuleCount
+            FullDaySpan = $FullDaySpan; FullHourSpan = $FullHourSpan
+            FullMinuteSpan = $FullMinuteSpan; FullStartHour = $FullStartHour
         }
     }
 
@@ -1049,7 +1060,7 @@ Describe 'Version metadata single-sourcing' {
         $header = (Select-String (Join-Path $root 'start-sitehygiene.ps1') -Pattern 'Version    : ([0-9\.]+)' | Select-Object -First 1).Matches[0].Groups[1].Value
         $header | Should -Be $manifestVersion -Because 'the script header must match the manifest'
         (Select-String (Join-Path $root 'start-sitehygiene.ps1') -Pattern '\$script:AppVersion').Count | Should -BeGreaterThan 1 -Because 'UI version strings must render from the manifest-derived variable'
-        @(Get-HygieneCheckCatalog).Count | Should -Be 33
+        @(Get-HygieneCheckCatalog).Count | Should -Be 38
         @(Get-HygieneCheckCatalog | Where-Object { $_.Id -eq 'UPD-02' }).Count | Should -Be 0 -Because 'UPD-02 was removed; its provider join was invalid'
     }
 }
@@ -1194,5 +1205,124 @@ Describe 'Rescan deltas' {
         $d = Get-HygieneScanDelta -Findings @() -Previous $prev
         @($d.Resolved).Count | Should -Be 1
         $d.NewKeys.Count | Should -Be 0
+    }
+}
+
+Describe 'Collection evaluation deep-dive (COL-05..09)' {
+    It 'COL-05 flags sub-daily full evaluation on an incremental collection with an executable fix' {
+        $data = New-HygData -Collections @(
+            (New-HygCollection -CollectionID 'MCM00010' -Name 'Both hourly' -RefreshType 6 -FullHourSpan 1),
+            (New-HygCollection -CollectionID 'MCM00011' -Name 'Both daily backup' -RefreshType 6 -FullDaySpan 1),
+            (New-HygCollection -CollectionID 'MCM00012' -Name 'Incremental only' -RefreshType 4)
+        )
+        $f = @(Test-HygCollectionEvaluationChecks -Data $data | Where-Object CheckId -eq 'COL-05')
+        $f.Count | Should -Be 1
+        $f[0].ObjectName | Should -Be 'Both hourly'
+        Test-HygieneFixExecutable -FixScript $f[0].FixScript | Should -BeTrue
+        $f[0].FixScript | Should -Match 'Continuous'
+    }
+
+    It 'COL-06 flags direct-rule-only scheduled collections but not when the limiting collection is incremental' {
+        $data = New-HygData -Collections @(
+            (New-HygCollection -CollectionID 'MCM00020' -Name 'Direct scheduled' -RefreshType 2 -DirectRuleCount 3 -FullDaySpan 1 -LimitToCollectionID 'MCM00022'),
+            (New-HygCollection -CollectionID 'MCM00021' -Name 'Direct under incremental limit' -RefreshType 2 -DirectRuleCount 1 -LimitToCollectionID 'MCM00023'),
+            (New-HygCollection -CollectionID 'MCM00022' -Name 'Static limit' -RefreshType 2),
+            (New-HygCollection -CollectionID 'MCM00023' -Name 'Incremental limit' -RefreshType 4)
+        )
+        $f = @(Test-HygCollectionEvaluationChecks -Data $data | Where-Object CheckId -eq 'COL-06')
+        @($f | Where-Object ObjectName -eq 'Direct scheduled').Count | Should -Be 1
+        @($f | Where-Object ObjectName -eq 'Direct under incremental limit').Count | Should -Be 0
+    }
+
+    It 'COL-06 does not flag collections with query rules' {
+        $data = New-HygData -Collections @(
+            (New-HygCollection -CollectionID 'MCM00024' -Name 'Mixed rules' -RefreshType 2 -DirectRuleCount 1 -QueryRuleCount 1)
+        )
+        @(Test-HygCollectionEvaluationChecks -Data $data | Where-Object CheckId -eq 'COL-06').Count | Should -Be 0
+    }
+
+    It 'COL-07 flags include chains deeper than the threshold with the measured depth' {
+        # A includes B includes C includes D includes E: depth 4 from A.
+        $data = New-HygData -Collections @(
+            (New-HygCollection -CollectionID 'MCM000A0' -Name 'A' -IncludeIDs @('MCM000B0')),
+            (New-HygCollection -CollectionID 'MCM000B0' -Name 'B' -IncludeIDs @('MCM000C0')),
+            (New-HygCollection -CollectionID 'MCM000C0' -Name 'C' -IncludeIDs @('MCM000D0')),
+            (New-HygCollection -CollectionID 'MCM000D0' -Name 'D' -ExcludeIDs @('MCM000E0')),
+            (New-HygCollection -CollectionID 'MCM000E0' -Name 'E')
+        )
+        $f = @(Test-HygCollectionEvaluationChecks -Data $data | Where-Object CheckId -eq 'COL-07')
+        $f.Count | Should -Be 1
+        $f[0].ObjectName | Should -Be 'A'
+        $f[0].Evidence | Should -Match 'chain 4 levels'
+    }
+
+    It 'COL-08 flags include/exclude/limit reference cycles as errors' {
+        $data = New-HygData -Collections @(
+            (New-HygCollection -CollectionID 'MCM000F0' -Name 'Loop1' -IncludeIDs @('MCM000F1')),
+            (New-HygCollection -CollectionID 'MCM000F1' -Name 'Loop2' -ExcludeIDs @('MCM000F2')),
+            (New-HygCollection -CollectionID 'MCM000F2' -Name 'Loop3' -LimitToCollectionID 'MCM000F0'),
+            (New-HygCollection -CollectionID 'MCM000F3' -Name 'Bystander' -IncludeIDs @('MCM000F0'))
+        )
+        $f = @(Test-HygCollectionEvaluationChecks -Data $data | Where-Object CheckId -eq 'COL-08')
+        $f.Count | Should -Be 3
+        ($f | ForEach-Object Severity | Select-Object -Unique) | Should -Be 'Error'
+        @($f | Where-Object ObjectName -eq 'Bystander').Count | Should -Be 0
+    }
+
+    It 'COL-08 stays quiet on an acyclic tree and COL-07 tolerates cycles without blowing up' {
+        $data = New-HygData -Collections @(
+            (New-HygCollection -CollectionID 'MCM000G0' -Name 'Root'),
+            (New-HygCollection -CollectionID 'MCM000G1' -Name 'Child' -LimitToCollectionID 'MCM000G0' -IncludeIDs @('MCM000G0'))
+        )
+        @(Test-HygCollectionEvaluationChecks -Data $data | Where-Object CheckId -eq 'COL-08').Count | Should -Be 0
+    }
+
+    It 'COL-09 flags a full-update start-hour hot spot above the threshold' {
+        $many = @(1..10 | ForEach-Object { New-HygCollection -CollectionID ('MCM00H{0:00}' -f $_) -Name "Hot$_" -RefreshType 2 -FullDaySpan 1 -FullStartHour 8 })
+        $few  = @(1..3  | ForEach-Object { New-HygCollection -CollectionID ('MCM00J{0:00}' -f $_) -Name "Cool$_" -RefreshType 2 -FullDaySpan 1 -FullStartHour 22 })
+        $f = @(Test-HygCollectionEvaluationChecks -Data (New-HygData -Collections ($many + $few)) | Where-Object CheckId -eq 'COL-09')
+        $f.Count | Should -Be 1
+        $f[0].ObjectId | Should -Be '8'
+    }
+
+    It 'exempts built-in SMS collections from every evaluation check' {
+        $data = New-HygData -Collections @(
+            (New-HygCollection -CollectionID 'SMS00001' -Name 'All Systems' -RefreshType 6 -FullHourSpan 1 -DirectRuleCount 1)
+        )
+        @(Test-HygCollectionEvaluationChecks -Data $data | Where-Object { $_.CheckId -in 'COL-05','COL-06' }).Count | Should -Be 0
+    }
+}
+
+Describe 'Collection reference graph source' {
+    It 'prefers the SMS_CollectionDependencies dataset over embedded rules' {
+        $data = New-HygData -Collections @(
+            (New-HygCollection -CollectionID 'MCM000K0' -Name 'K0' -IncludeIDs @('MCM000K9'))
+        ) -CollectionDependencies @(
+            [pscustomobject]@{ From = 'MCM000K0'; To = 'MCM000K1'; Kind = 'include' }
+        )
+        $edges = @(Get-HygCollectionReferenceGraph -Data $data)
+        $edges.Count | Should -Be 1
+        $edges[0].To | Should -Be 'MCM000K1'
+    }
+
+    It 'falls back to embedded rules when the dependencies dataset is empty' {
+        $data = New-HygData -Collections @(
+            (New-HygCollection -CollectionID 'MCM000K2' -Name 'K2' -LimitToCollectionID 'SMS00001' -IncludeIDs @('MCM000K3'))
+        )
+        $kinds = @(Get-HygCollectionReferenceGraph -Data $data | ForEach-Object Kind | Sort-Object)
+        $kinds | Should -Be @('include', 'limit')
+    }
+
+    It 'COL-08 finds a cycle reported only by the dependencies dataset' {
+        # Embedded rules are blind (null lazy elements); the CIM edges see the loop.
+        $data = New-HygData -Collections @(
+            (New-HygCollection -CollectionID 'MCM000L0' -Name 'LoopA'),
+            (New-HygCollection -CollectionID 'MCM000L1' -Name 'LoopB')
+        ) -CollectionDependencies @(
+            [pscustomobject]@{ From = 'MCM000L0'; To = 'MCM000L1'; Kind = 'include' },
+            [pscustomobject]@{ From = 'MCM000L1'; To = 'MCM000L0'; Kind = 'limit' }
+        )
+        $f = @(Test-HygCollectionEvaluationChecks -Data $data | Where-Object CheckId -eq 'COL-08')
+        $f.Count | Should -Be 2
     }
 }
