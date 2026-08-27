@@ -94,7 +94,11 @@ check may over- or under-report because of it.
 - **Findings** — every finding from the last scan with severity glyphs,
   filterable by text, category, and severity. Selecting a row shows the
   full evidence, the recommendation, and the fix script; Run Fix
-  executes that script against the site after confirmation. Suppress and
+  executes that script against the site after confirmation, and a
+  multi-row selection runs as a bulk fix behind one confirmation that
+  lists every script. A New column flags findings first seen this scan;
+  resolved findings are logged, with the comparison baseline kept in
+  `SiteHygiene.lastscan.json`. Suppress and
   Unsuppress (multi-select) hide accepted findings from future scans;
   keys persist in `SiteHygiene.suppressions.json` and a toggle shows the
   suppressed set.

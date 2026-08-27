@@ -2,6 +2,23 @@
 
 All notable changes to Site Hygiene are documented in this file.
 
+## [0.7.0] - 2026-08-26
+
+### Added
+
+- **Bulk fixes.** Run Fix now accepts a multi-row selection: one
+  confirmation dialog lists every script it will run, execution proceeds
+  sequentially on the background runspace, and each row is marked Fixed
+  or Failed individually. Display-only and already-fixed rows are
+  excluded from the runnable set automatically.
+- **Rescan deltas.** Each scan saves its findings to
+  `SiteHygiene.lastscan.json` and diffs against the previous file:
+  first-seen findings are flagged in a New column, resolved findings are
+  logged by check and object, and a missing or malformed previous file
+  degrades to "baseline recorded" instead of failing the scan.
+  `SiteHygieneCommon` 0.7.0 adds `Save-HygieneScanResult`,
+  `Read-HygieneScanResult`, and `Get-HygieneScanDelta`.
+
 ## [0.6.0] - 2026-08-26
 
 ### Added

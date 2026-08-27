@@ -18,7 +18,7 @@
 
 .NOTES
     ScriptName : start-sitehygiene.ps1
-    Version    : 0.6.0
+    Version    : 0.7.0
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', '', Justification='PS51-WPF-001..003: $global: survives closure scope-strip.')]
@@ -73,6 +73,7 @@ function Save-ShPreferences {
 $global:Prefs = Get-ShPreferences
 
 $global:SuppressPath = Join-Path $PSScriptRoot 'SiteHygiene.suppressions.json'
+$global:LastScanPath = Join-Path $PSScriptRoot 'SiteHygiene.lastscan.json'
 function Get-ShSuppressedKeys {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Returns the full suppression key set by design.')]
     param()
@@ -398,40 +399,57 @@ $gridFindings.Add_SelectionChanged({
     }
     if ($row.FixState) { $lines += ''; $lines += ('Fix state:      {0}' -f $row.FixState) }
     $txtFindingDetail.Text = $lines -join [Environment]::NewLine
-    $btnRunFix.IsEnabled = ((@($gridFindings.SelectedItems).Count -eq 1) -and
-                            ($row.FixState -ne 'Fixed') -and
-                            (Test-HygieneFixExecutable -FixScript $row.FixScript))
+    $btnRunFix.IsEnabled = (@(Get-RunnableSelection).Count -gt 0)
 })
 
+function Get-RunnableSelection {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Returns the runnable subset of the selection.')]
+    param()
+    return @($gridFindings.SelectedItems | Where-Object {
+        $_.FixState -ne 'Fixed' -and (Test-HygieneFixExecutable -FixScript $_.FixScript)
+    })
+}
+
 $btnRunFix.Add_Click({
-    $row = $gridFindings.SelectedItem
-    if (-not $row -or -not (Test-HygieneFixExecutable -FixScript $row.FixScript)) { return }
+    $rows = @(Get-RunnableSelection)
+    if ($rows.Count -eq 0) { return }
     if ($script:BgPowerShell) { Add-LogLine 'Run Fix: another operation is still running.'; return }
-    $msg = ("This runs the following against site {0}:`r`n`r`n{1}`r`n`r`nObject: {2}" -f $global:Prefs.SiteCode, $row.FixScript, $row.ObjectName)
-    if (-not (Show-ConfirmDialog -Title ('Run fix for {0}?' -f $row.CheckId) -Message $msg -Owner $window)) { return }
+
+    $scriptLines = @($rows | ForEach-Object { ('[{0}] {1}' -f $_.CheckId, $_.FixScript) })
+    $title = if ($rows.Count -eq 1) { ('Run fix for {0}?' -f $rows[0].CheckId) } else { ('Run {0} fixes?' -f $rows.Count) }
+    $msg = ("This runs the following against site {0}:`r`n`r`n{1}" -f $global:Prefs.SiteCode, ($scriptLines -join "`r`n"))
+    if (-not (Show-ConfirmDialog -Title $title -Message $msg -Owner $window)) { return }
 
     Initialize-BgRunspace
     Dispose-BgWork
-    Add-LogLine ('Run Fix [{0}] {1}: {2}' -f $row.CheckId, $row.ObjectName, $row.FixScript)
+    foreach ($row in $rows) { Add-LogLine ('Run Fix [{0}] {1}: {2}' -f $row.CheckId, $row.ObjectName, $row.FixScript) }
     $btnRunFix.IsEnabled = $false
-    $script:BgState = [hashtable]::Synchronized(@{ Done = $false; Result = $null; ErrorMsg = $null })
-    $finding = [pscustomobject]@{ CheckId = $row.CheckId; ObjectName = $row.ObjectName; FixScript = $row.FixScript }
+    $script:BgState = [hashtable]::Synchronized(@{ Done = $false; Results = $null; ErrorMsg = $null })
+    # Rows are keyed back to results by SuppressKey; the bg runspace gets
+    # detached copies so it never touches WPF-bound objects.
+    $findings = @($rows | ForEach-Object { [pscustomobject]@{ CheckId = $_.CheckId; ObjectName = $_.ObjectName; FixScript = $_.FixScript; SuppressKey = $_.SuppressKey } })
+    $script:FixRowsByKey = @{}
+    foreach ($row in $rows) { $script:FixRowsByKey[[string]$row.SuppressKey] = $row }
 
     $script:BgPowerShell = [powershell]::Create()
     $script:BgPowerShell.Runspace = $script:BgRunspace
     [void]$script:BgPowerShell.AddScript({
-        param($SiteCode, $SMSProvider, $Finding, $State)
+        param($SiteCode, $SMSProvider, $Findings, $State)
         try {
             if (-not (Test-CMConnection)) {
                 if (-not (Connect-CMSite -SiteCode $SiteCode -SMSProvider $SMSProvider)) {
                     $State.ErrorMsg = "Failed to connect to site $SiteCode (provider $SMSProvider)."; return
                 }
             }
-            $State.Result = Invoke-HygieneFix -Finding $Finding
+            $results = @{}
+            foreach ($f in @($Findings)) {
+                $results[[string]$f.SuppressKey] = Invoke-HygieneFix -Finding $f
+            }
+            $State.Results = $results
         }
         catch { $State.ErrorMsg = $_.Exception.Message }
         finally { $State.Done = $true }
-    }).AddArgument([string]$global:Prefs.SiteCode).AddArgument([string]$global:Prefs.SMSProvider).AddArgument($finding).AddArgument($script:BgState)
+    }).AddArgument([string]$global:Prefs.SiteCode).AddArgument([string]$global:Prefs.SMSProvider).AddArgument($findings).AddArgument($script:BgState)
 
     $script:BgInvokeHandle = $script:BgPowerShell.BeginInvoke()
     $script:BgTimer = New-Object System.Windows.Threading.DispatcherTimer
@@ -444,22 +462,32 @@ $btnRunFix.Add_Click({
         $script:BgPowerShell   = $null
         $script:BgInvokeHandle = $null
 
-        $row = $gridFindings.SelectedItem
-        $result = $script:BgState.Result
-        if ($script:BgState.ErrorMsg -or -not $result -or -not $result.Success) {
-            $reason = if ($script:BgState.ErrorMsg) { $script:BgState.ErrorMsg } elseif ($result) { $result.ErrorMessage } else { 'no result returned' }
-            if ($row) { $row.FixState = 'Failed' }
-            Add-LogLine ('Run Fix failed: {0}' -f $reason)
+        if ($script:BgState.ErrorMsg) {
+            foreach ($row in $script:FixRowsByKey.Values) { $row.FixState = 'Failed' }
+            Add-LogLine ('Run Fix failed: {0}' -f $script:BgState.ErrorMsg)
             Set-StatusText 'Fix failed - see log.'
         }
         else {
-            if ($row) { $row.FixState = 'Fixed' }
-            Add-LogLine 'Run Fix succeeded. Rescan to confirm the finding clears.'
-            if ($result.Output) { Add-LogLine ('Fix output: {0}' -f $result.Output) }
-            Set-StatusText 'Fix applied - rescan to confirm.'
+            $fixed = 0; $failed = 0
+            foreach ($key in $script:FixRowsByKey.Keys) {
+                $row = $script:FixRowsByKey[$key]
+                $result = $script:BgState.Results[$key]
+                if ($result -and $result.Success) {
+                    $row.FixState = 'Fixed'; $fixed++
+                    if ($result.Output) { Add-LogLine ('Fix output [{0}]: {1}' -f $row.CheckId, $result.Output) }
+                }
+                else {
+                    $row.FixState = 'Failed'; $failed++
+                    $reason = if ($result) { $result.ErrorMessage } else { 'no result returned' }
+                    Add-LogLine ('Fix failed [{0}] {1}: {2}' -f $row.CheckId, $row.ObjectName, $reason)
+                }
+            }
+            Add-LogLine ('Run Fix complete: {0} fixed, {1} failed. Rescan to confirm.' -f $fixed, $failed)
+            Set-StatusText $(if ($failed -eq 0) { 'Fix(es) applied - rescan to confirm.' } else { 'Some fixes failed - see log.' })
         }
+        $script:FixRowsByKey = @{}
         $gridFindings.Items.Refresh()
-        if ($row) { $btnRunFix.IsEnabled = (($row.FixState -ne 'Fixed') -and (Test-HygieneFixExecutable -FixScript $row.FixScript)) }
+        $btnRunFix.IsEnabled = (@(Get-RunnableSelection).Count -gt 0)
     })
     $script:BgTimer.Start()
 })
@@ -562,8 +590,17 @@ function Invoke-Scan {
             }
 
             $script:LastScanTime = Get-Date
+            $previous = Read-HygieneScanResult -Path $global:LastScanPath
+            $delta = Get-HygieneScanDelta -Findings @($script:BgState.Findings) -Previous $previous
+            Save-HygieneScanResult -Findings @($script:BgState.Findings) -Path $global:LastScanPath
+            if ($delta.HasBaseline) {
+                Add-LogLine ('Delta vs previous scan: {0} new, {1} resolved.' -f $delta.NewKeys.Count, @($delta.Resolved).Count)
+                foreach ($r in @($delta.Resolved)) { Add-LogLine ('  Resolved: [{0}] {1}' -f $r.CheckId, $r.ObjectName) }
+            }
+            else { Add-LogLine 'No previous scan on file; delta baseline recorded.' }
             $script:AllFindings = @($script:BgState.Findings | ForEach-Object {
                 [pscustomobject]@{
+                    Delta          = $(if ($delta.NewKeys.Contains((Get-HygieneSuppressionKey -Finding $_))) { 'New' } else { '' })
                     SeverityGlyph  = Get-SeverityGlyph -Severity $_.Severity
                     CheckId        = $_.CheckId
                     Severity       = $_.Severity
