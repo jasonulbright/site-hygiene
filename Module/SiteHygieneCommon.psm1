@@ -1957,3 +1957,92 @@ function Invoke-HygieneFix {
         return [pscustomobject]@{ Success = $false; Output = ''; ErrorMessage = $_.Exception.Message }
     }
 }
+
+# ---------------------------------------------------------------------------
+# Rescan deltas
+# ---------------------------------------------------------------------------
+
+function Save-HygieneScanResult {
+    <#
+    .SYNOPSIS
+        Persists a scan's findings for the next scan's delta comparison.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification='Writes the tool-local results file; no site state.')]
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Findings,
+        [Parameter(Mandatory)][string]$Path
+    )
+    $doc = [pscustomobject]@{
+        SchemaVersion = 1
+        ScanTime      = (Get-Date).ToString('o')
+        Findings      = @($Findings | ForEach-Object {
+            [pscustomobject]@{
+                CheckId    = $_.CheckId
+                Severity   = $_.Severity
+                ObjectType = $_.ObjectType
+                ObjectId   = $_.ObjectId
+                ObjectName = $_.ObjectName
+                Evidence   = $_.Evidence
+            }
+        })
+    }
+    $doc | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $Path -Encoding UTF8
+}
+
+function Read-HygieneScanResult {
+    <#
+    .SYNOPSIS
+        Reads the previous scan's findings; $null when absent or unreadable.
+
+    .DESCRIPTION
+        A malformed file degrades to "no previous scan" (every finding
+        reports as new) rather than failing the scan that produced good
+        data.
+    #>
+    param([Parameter(Mandatory)][string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) { return $null }
+    try {
+        $doc = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json -ErrorAction Stop
+        if (-not $doc.PSObject.Properties['Findings']) { return $null }
+        return $doc
+    }
+    catch {
+        Write-Log "Previous scan results unreadable ($Path): $($_.Exception.Message)" -Level WARN
+        return $null
+    }
+}
+
+function Get-HygieneScanDelta {
+    <#
+    .SYNOPSIS
+        Diffs a scan against the previous results by finding identity.
+
+    .OUTPUTS
+        [pscustomobject] NewKeys (HashSet of suppression keys first seen
+        this scan), Resolved (previous findings no longer present),
+        HasBaseline (false when no previous scan existed).
+    #>
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Findings,
+        $Previous
+    )
+
+    $newKeys = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    if (-not $Previous) {
+        return [pscustomobject]@{ NewKeys = $newKeys; Resolved = @(); HasBaseline = $false }
+    }
+
+    $prevKeys = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($f in @($Previous.Findings)) { [void]$prevKeys.Add((Get-HygieneSuppressionKey -Finding $f)) }
+
+    $currentKeys = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($f in @($Findings)) {
+        $key = Get-HygieneSuppressionKey -Finding $f
+        [void]$currentKeys.Add($key)
+        if (-not $prevKeys.Contains($key)) { [void]$newKeys.Add($key) }
+    }
+
+    $resolved = @(@($Previous.Findings) | Where-Object { -not $currentKeys.Contains((Get-HygieneSuppressionKey -Finding $_)) })
+    return [pscustomobject]@{ NewKeys = $newKeys; Resolved = $resolved; HasBaseline = $true }
+}

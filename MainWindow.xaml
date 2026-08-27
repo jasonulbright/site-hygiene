@@ -308,6 +308,7 @@
                               CellStyle="{StaticResource GridCellStyle}">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header=""          Width="32"  Binding="{Binding SeverityGlyph}"/>
+                            <DataGridTextColumn Header="New"       Width="50"  Binding="{Binding Delta}"/>
                             <DataGridTextColumn Header="Check"     Width="70"  Binding="{Binding CheckId}"/>
                             <DataGridTextColumn Header="Severity"  Width="80"  Binding="{Binding Severity}"/>
                             <DataGridTextColumn Header="Category"  Width="110" Binding="{Binding Category}"/>

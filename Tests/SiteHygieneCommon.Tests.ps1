@@ -1147,3 +1147,52 @@ Describe 'Fix execution' {
         $r.ErrorMessage | Should -Match 'site drive'
     }
 }
+
+Describe 'Rescan deltas' {
+    BeforeAll {
+        $script:mkFinding = {
+            param($id, $name)
+            [pscustomobject]@{ CheckId = $id; Severity = 'Warning'; ObjectType = 'Application'; ObjectId = $name; ObjectName = $name; Evidence = 'e' }
+        }
+    }
+
+    It 'reports no baseline on the first scan' {
+        $d = Get-HygieneScanDelta -Findings @(& $mkFinding 'APP-01' 'A') -Previous $null
+        $d.HasBaseline | Should -BeFalse
+        $d.NewKeys.Count | Should -Be 0
+        @($d.Resolved).Count | Should -Be 0
+    }
+
+    It 'flags first-seen findings as new and dropped findings as resolved' {
+        $prev = [pscustomobject]@{ Findings = @((& $mkFinding 'APP-01' 'A'), (& $mkFinding 'PKG-01' 'B')) }
+        $curr = @((& $mkFinding 'APP-01' 'A'), (& $mkFinding 'COL-01' 'C'))
+        $d = Get-HygieneScanDelta -Findings $curr -Previous $prev
+        $d.HasBaseline | Should -BeTrue
+        $d.NewKeys.Count | Should -Be 1
+        $d.NewKeys.Contains((Get-HygieneSuppressionKey -Finding $curr[1])) | Should -BeTrue
+        @($d.Resolved).Count | Should -Be 1
+        @($d.Resolved)[0].ObjectName | Should -Be 'B'
+    }
+
+    It 'round-trips findings through the results file' {
+        $path = Join-Path $TestDrive 'lastscan.json'
+        Save-HygieneScanResult -Findings @(& $mkFinding 'APP-01' 'A') -Path $path
+        $doc = Read-HygieneScanResult -Path $path
+        @($doc.Findings).Count | Should -Be 1
+        $doc.Findings[0].CheckId | Should -Be 'APP-01'
+    }
+
+    It 'treats a missing or malformed results file as no baseline' {
+        Read-HygieneScanResult -Path (Join-Path $TestDrive 'absent.json') | Should -BeNullOrEmpty
+        $bad = Join-Path $TestDrive 'bad.json'
+        Set-Content -LiteralPath $bad -Value '{not json'
+        Read-HygieneScanResult -Path $bad | Should -BeNullOrEmpty
+    }
+
+    It 'handles an empty current scan (everything resolved)' {
+        $prev = [pscustomobject]@{ Findings = @(& $mkFinding 'APP-01' 'A') }
+        $d = Get-HygieneScanDelta -Findings @() -Previous $prev
+        @($d.Resolved).Count | Should -Be 1
+        $d.NewKeys.Count | Should -Be 0
+    }
+}
