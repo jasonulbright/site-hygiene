@@ -240,6 +240,7 @@
                               ToolTip="Limit findings to one category">
                         <ComboBoxItem Content="All" IsSelected="True"/>
                         <ComboBoxItem Content="Applications"/>
+                        <ComboBoxItem Content="Content"/>
                         <ComboBoxItem Content="Packages"/>
                         <ComboBoxItem Content="Collections"/>
                         <ComboBoxItem Content="Deployments"/>

@@ -54,6 +54,9 @@ function Get-HygieneCheckCatalog {
         [pscustomobject]@{ Id = 'APP-03'; Category = 'Applications'; Severity = 'Warning'; Title = 'Superseded application still deployed' }
         [pscustomobject]@{ Id = 'APP-04'; Category = 'Applications'; Severity = 'Warning'; Title = 'Deployment type content source missing or unreachable' }
         [pscustomobject]@{ Id = 'PKG-01'; Category = 'Packages';     Severity = 'Warning'; Title = 'Package with no programs and no references' }
+        [pscustomobject]@{ Id = 'CNT-01'; Category = 'Content';      Severity = 'Warning'; Title = 'Content failed on one or more distribution points' }
+        [pscustomobject]@{ Id = 'CNT-02'; Category = 'Content';      Severity = 'Info';    Title = 'Content distribution in progress beyond threshold' }
+        [pscustomobject]@{ Id = 'CNT-03'; Category = 'Content';      Severity = 'Error';   Title = 'Deployed content on no distribution point' }
         [pscustomobject]@{ Id = 'SUP-01'; Category = 'Relationships'; Severity = 'Error';   Title = 'Supersedence referencing a deleted application' }
         [pscustomobject]@{ Id = 'SUP-02'; Category = 'Relationships'; Severity = 'Error';   Title = 'Circular supersedence chain' }
         [pscustomobject]@{ Id = 'SUP-03'; Category = 'Relationships'; Severity = 'Warning'; Title = 'Superseding application disabled' }
@@ -108,6 +111,7 @@ function Get-HygieneDefaultThresholds {
         AdrStaleDays              = 45
         ColRefDepthMax            = 3
         ColFullEvalHotSpotCount   = 10
+        ContentStuckDays          = 2
     }
 }
 
@@ -156,6 +160,7 @@ function Get-HygieneScanScope {
     return @(
         [pscustomobject]@{ Id = 'Applications';        Title = 'Applications';                                Slow = $false }
         [pscustomobject]@{ Id = 'AppRelationships';    Title = 'Application relationships and content paths'; Slow = $true }
+        [pscustomobject]@{ Id = 'Content';             Title = 'Content distribution';                        Slow = $false }
         [pscustomobject]@{ Id = 'Packages';            Title = 'Packages';                                    Slow = $false }
         [pscustomobject]@{ Id = 'Collections';         Title = 'Collections';                                 Slow = $false }
         [pscustomobject]@{ Id = 'CollectionSchedules'; Title = 'Collection evaluation schedules';             Slow = $true }
@@ -186,6 +191,7 @@ function Get-HygScanPlan {
         @{ Id = 'APP-01'; Scopes = @('Applications'); Requires = @('Applications','Deployments','TaskSequences','DependencyTargetCIIDs'); Run = { param($d, $t) Test-HygAppNoReferences -Data $d -Thresholds $t } }
         @{ Id = 'APP-02'; Scopes = @('Applications'); Requires = @('Applications'); Run = { param($d) Test-HygAppRetiredDeployed -Data $d } }
         @{ Id = 'APP-03'; Scopes = @('Applications'); Requires = @('Applications'); Run = { param($d) Test-HygAppSupersededDeployed -Data $d } }
+        @{ Id = 'CNT';    Scopes = @('Content'); Requires = @('ContentStatus','Applications','Deployments'); Run = { param($d, $t) Test-HygContentDistribution -Data $d -Thresholds $t } }
         @{ Id = 'PKG-01'; Scopes = @('Packages'); Requires = @('Packages','Programs','Deployments','TaskSequences'); Run = { param($d) Test-HygPackageUnused -Data $d } }
         @{ Id = 'COL-01'; Scopes = @('Collections'); Requires = @('Collections','Deployments','CollectionsWithSettings','CollectionDependencies'); Run = { param($d) Test-HygCollectionEmptyUnused -Data $d } }
         @{ Id = 'COL-02'; Scopes = @('Collections'); Requires = @('Collections','Deployments'); Run = { param($d) Test-HygDeploymentEmptyCollection -Data $d } }
@@ -513,6 +519,29 @@ function Get-HygieneData {
                     NumberErrors        = [int]$_.NumberErrors
                     EnforcementDeadline = $_.EnforcementDeadline
                     CreationTime        = $_.CreationTime
+                }
+            }
+        } }
+        # One row per content object with per-state distribution point
+        # counts; the per-package-per-DP status classes grow as content
+        # times distribution points.
+        ContentStatus = @{ Label = 'content status rows'; Run = {
+            Invoke-CMWmiQuery -Query 'SELECT ObjectID, PackageID, SoftwareName, ObjectType, Targeted, NumberSuccess, NumberInProgress, NumberErrors, NumberUnknown, SourceSize, LastUpdateDate FROM SMS_ObjectContentInfo' -Option Fast -ErrorAction Stop | ForEach-Object {
+                $updated = $null
+                $p = $_.PSObject.Properties['LastUpdateDate']
+                if ($p) { $updated = $p.Value }
+                [pscustomobject]@{
+                    ObjectID         = [string]$_.ObjectID
+                    PackageID        = [string]$_.PackageID
+                    Name             = [string]$_.SoftwareName
+                    ObjectType       = [int]$_.ObjectType
+                    Targeted         = [int]$_.Targeted
+                    NumberSuccess    = [int]$_.NumberSuccess
+                    NumberInProgress = [int]$_.NumberInProgress
+                    NumberErrors     = [int]$_.NumberErrors
+                    NumberUnknown    = [int]$_.NumberUnknown
+                    SourceSize       = [long]$_.SourceSize
+                    LastUpdateDate   = $updated
                 }
             }
         } }
@@ -1754,6 +1783,74 @@ function Test-HygAppContentPath {
                 -Recommendation 'Verify from the site server; restore the source folder, correct the deployment type content location, or fix share permissions.' `
                 -FixScript ("# Console: '{0}' > Deployment Types > '{1}' > Content - correct the content location" -f $loc.AppName, $loc.DTName)
         }
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Content distribution (CNT-01..CNT-03)
+# ---------------------------------------------------------------------------
+
+function Test-HygContentDistribution {
+    <#
+    .SYNOPSIS
+        CNT-01..CNT-03: content failed on distribution points, content in
+        progress beyond the threshold, and deployed content targeted to no
+        distribution point.
+
+    .DESCRIPTION
+        Reads the per-content summary counts only. Fix scripts are
+        display-only: redistribution needs a distribution point choice
+        this data does not carry.
+    #>
+    param(
+        [Parameter(Mandatory)]$Data,
+        [hashtable]$Thresholds = (Get-HygieneDefaultThresholds)
+    )
+
+    $typeNames = @{ 0 = 'Package'; 3 = 'DriverPackage'; 4 = 'TaskSequence'; 5 = 'UpdatePackage'; 257 = 'OSImage'; 258 = 'BootImage'; 259 = 'OSUpgradePackage'; 512 = 'Application' }
+    $typeOf = { param($row) if ($typeNames.ContainsKey([int]$row.ObjectType)) { $typeNames[[int]$row.ObjectType] } else { 'Content' } }
+    $rows = @($Data.ContentStatus)
+    $stuckDays = [int]$Thresholds.ContentStuckDays
+    $cutoff = (Get-Date).AddDays(-$stuckDays)
+
+    foreach ($row in $rows) {
+        if ($row.NumberErrors -gt 0) {
+            New-HygieneFinding -CheckId 'CNT-01' -Severity Warning -Category 'Content' `
+                -ObjectType (& $typeOf $row) -ObjectId $row.PackageID -ObjectName $row.Name `
+                -Evidence ("Distribution failed on {0} of {1} targeted distribution point(s) ({2} succeeded, {3} in progress). Clients in the boundaries those distribution points serve fall back to another source or fail with content not found." -f $row.NumberErrors, $row.Targeted, $row.NumberSuccess, $row.NumberInProgress) `
+                -Recommendation 'Review the failed distribution points under Monitoring > Distribution Status > Content Status, fix the cause, then redistribute.' `
+                -FixScript ("# Console: Monitoring > Distribution Status > Content Status > '{0}' ({1}) > View Status > Error > Redistribute" -f $row.Name, $row.PackageID)
+        }
+        elseif ($row.NumberInProgress -gt 0 -and $row.LastUpdateDate -and ([datetime]$row.LastUpdateDate) -lt $cutoff) {
+            New-HygieneFinding -CheckId 'CNT-02' -Severity Info -Category 'Content' `
+                -ObjectType (& $typeOf $row) -ObjectId $row.PackageID -ObjectName $row.Name `
+                -Evidence ("Distribution is still in progress on {0} of {1} targeted distribution point(s), and the content was last updated {2:yyyy-MM-dd}, more than {3} day(s) ago. A transfer that old is usually stalled, not slow." -f $row.NumberInProgress, $row.Targeted, ([datetime]$row.LastUpdateDate), $stuckDays) `
+                -Recommendation 'Check the in-progress distribution points for a stalled transfer or an offline server; cancel and redistribute if nothing is moving.' `
+                -FixScript ("# Console: Monitoring > Distribution Status > Content Status > '{0}' ({1}) > View Status > In Progress" -f $row.Name, $row.PackageID)
+        }
+    }
+
+    # CNT-03: something is deployed, it has source content, and no
+    # distribution point is targeted. SourceSize 0 covers content-less
+    # script deployment types, which legitimately target nothing.
+    $undistributed = @($rows | Where-Object { $_.Targeted -eq 0 -and $_.SourceSize -gt 0 })
+    if ($undistributed.Count -eq 0) { return }
+
+    $deployedModels = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($a in @($Data.Applications)) { if ($a.IsDeployed -and -not $a.IsExpired -and $a.ModelName) { [void]$deployedModels.Add([string]$a.ModelName) } }
+    # FeatureType 2 = program deployment; its PackageID is the package id.
+    $deployedPackages = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($d in @($Data.Deployments)) { if ($d.FeatureType -eq 2 -and $d.PackageID) { [void]$deployedPackages.Add([string]$d.PackageID) } }
+
+    foreach ($row in $undistributed) {
+        $isDeployed = ($row.ObjectType -eq 512 -and $deployedModels.Contains([string]$row.ObjectID)) -or
+                      ($row.ObjectType -eq 0 -and $deployedPackages.Contains([string]$row.PackageID))
+        if (-not $isDeployed) { continue }
+        New-HygieneFinding -CheckId 'CNT-03' -Severity Error -Category 'Content' `
+            -ObjectType (& $typeOf $row) -ObjectId $row.PackageID -ObjectName $row.Name `
+            -Evidence 'This content has an active deployment and source files, but it is targeted to no distribution point. Every client that tries to install it fails to locate content.' `
+            -Recommendation 'Distribute the content to the distribution point groups that serve the deployment''s collection.' `
+            -FixScript ("# Console: Software Library > '{0}' > Distribute Content - choose the distribution point group(s) for the targeted clients" -f $row.Name)
     }
 }
 

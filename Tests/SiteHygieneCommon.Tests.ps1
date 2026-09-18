@@ -192,6 +192,7 @@ BeforeAll {
             [string]$CollectionID = 'MCM00001',
             [string]$CollectionName = 'Collection',
             [int]$DeploymentIntent = 1,
+            [int]$FeatureType = 1,
             [int]$NumberTargeted = 0,
             [int]$NumberSuccess = 0,
             [int]$NumberInProgress = 0,
@@ -202,7 +203,7 @@ BeforeAll {
         [pscustomobject]@{
             SoftwareName = $SoftwareName; PackageID = $PackageID
             CollectionID = $CollectionID; CollectionName = $CollectionName
-            DeploymentIntent = $DeploymentIntent; FeatureType = 1
+            DeploymentIntent = $DeploymentIntent; FeatureType = $FeatureType
             NumberTargeted = $NumberTargeted; NumberSuccess = $NumberSuccess
             NumberInProgress = $NumberInProgress; NumberErrors = $NumberErrors
             EnforcementDeadline = $EnforcementDeadline; CreationTime = $CreationTime
@@ -1060,7 +1061,7 @@ Describe 'Version metadata single-sourcing' {
         $header = (Select-String (Join-Path $root 'start-sitehygiene.ps1') -Pattern 'Version    : ([0-9\.]+)' | Select-Object -First 1).Matches[0].Groups[1].Value
         $header | Should -Be $manifestVersion -Because 'the script header must match the manifest'
         (Select-String (Join-Path $root 'start-sitehygiene.ps1') -Pattern '\$script:AppVersion').Count | Should -BeGreaterThan 1 -Because 'UI version strings must render from the manifest-derived variable'
-        @(Get-HygieneCheckCatalog).Count | Should -Be 38
+        @(Get-HygieneCheckCatalog).Count | Should -Be 41
         @(Get-HygieneCheckCatalog | Where-Object { $_.Id -eq 'UPD-02' }).Count | Should -Be 0 -Because 'UPD-02 was removed; its provider join was invalid'
     }
 }
@@ -1442,5 +1443,93 @@ Describe 'Scoped prefetch' {
         $data = Get-HygieneData -Datasets 'Devices'
         $data.FailedDatasets | Should -Contain 'Devices'
         @($data.DatasetNotes | Where-Object { $_ -like '*devices unavailable*' }).Count | Should -Be 1
+    }
+}
+
+Describe 'Content distribution checks' {
+    BeforeAll {
+        function New-HygContentRow {
+            param(
+                [string]$ObjectID = 'MCM00C01', [string]$PackageID = 'MCM00C01', [string]$Name = 'Content',
+                [int]$ObjectType = 0, [int]$Targeted = 10, [int]$NumberSuccess = 10, [int]$NumberInProgress = 0,
+                [int]$NumberErrors = 0, [long]$SourceSize = 1024, $LastUpdateDate = (Get-Date).AddDays(-30)
+            )
+            [pscustomobject]@{
+                ObjectID = $ObjectID; PackageID = $PackageID; Name = $Name; ObjectType = $ObjectType
+                Targeted = $Targeted; NumberSuccess = $NumberSuccess; NumberInProgress = $NumberInProgress
+                NumberErrors = $NumberErrors; NumberUnknown = 0; SourceSize = $SourceSize; LastUpdateDate = $LastUpdateDate
+            }
+        }
+        function New-HygContentData {
+            param([object[]]$ContentStatus = @(), [object[]]$Applications = @(), [object[]]$Deployments = @())
+            $data = New-HygData -Applications $Applications -Deployments $Deployments
+            $data | Add-Member -NotePropertyName ContentStatus -NotePropertyValue $ContentStatus -PassThru
+        }
+    }
+
+    It 'CNT-01 flags content with failed distribution points and states the counts' {
+        $data = New-HygContentData -ContentStatus @(New-HygContentRow -Name 'Broken' -Targeted 300 -NumberSuccess 288 -NumberErrors 12)
+        $f = @(Test-HygContentDistribution -Data $data)
+        $f.Count | Should -Be 1
+        $f[0].CheckId | Should -Be 'CNT-01'
+        $f[0].Evidence | Should -BeLike '*12 of 300*'
+    }
+
+    It 'CNT-01 stays quiet on fully distributed content' {
+        $data = New-HygContentData -ContentStatus @(New-HygContentRow)
+        @(Test-HygContentDistribution -Data $data).Count | Should -Be 0
+    }
+
+    It 'CNT-02 flags only in-progress content older than the threshold' {
+        $data = New-HygContentData -ContentStatus @(
+            (New-HygContentRow -PackageID 'MCM00C02' -Name 'Stalled' -NumberSuccess 8 -NumberInProgress 2 -LastUpdateDate (Get-Date).AddDays(-9)),
+            (New-HygContentRow -PackageID 'MCM00C03' -Name 'Just sent' -NumberSuccess 8 -NumberInProgress 2 -LastUpdateDate (Get-Date).AddHours(-3))
+        )
+        $f = @(Test-HygContentDistribution -Data $data)
+        $f.Count | Should -Be 1
+        $f[0].CheckId | Should -Be 'CNT-02'
+        $f[0].ObjectName | Should -Be 'Stalled'
+    }
+
+    It 'CNT-03 flags a deployed application whose content targets no distribution point' {
+        $app = New-HygApp -Name 'Deployed App' -IsDeployed $true
+        $data = New-HygContentData -Applications @($app) -ContentStatus @(
+            New-HygContentRow -ObjectID $app.ModelName -PackageID 'MCM00C04' -Name 'Deployed App' -ObjectType 512 -Targeted 0 -NumberSuccess 0
+        )
+        $f = @(Test-HygContentDistribution -Data $data)
+        $f.Count | Should -Be 1
+        $f[0].CheckId | Should -Be 'CNT-03'
+        $f[0].Severity | Should -Be 'Error'
+    }
+
+    It 'CNT-03 ignores undistributed content that is not deployed or has no source files' {
+        $idle = New-HygApp -Name 'Idle App' -ModelName 'ScopeId_X/Application_Idle' -IsDeployed $false
+        $script = New-HygApp -Name 'Script App' -ModelName 'ScopeId_X/Application_Script' -IsDeployed $true
+        $data = New-HygContentData -Applications @($idle, $script) -ContentStatus @(
+            (New-HygContentRow -ObjectID $idle.ModelName -Name 'Idle App' -ObjectType 512 -Targeted 0 -NumberSuccess 0),
+            (New-HygContentRow -ObjectID $script.ModelName -Name 'Script App' -ObjectType 512 -Targeted 0 -NumberSuccess 0 -SourceSize 0)
+        )
+        @(Test-HygContentDistribution -Data $data).Count | Should -Be 0
+    }
+
+    It 'CNT-03 flags a package with a program deployment and no distribution point' {
+        $data = New-HygContentData -Deployments @(New-HygDeployment -PackageID 'MCM00C05' -FeatureType 2) -ContentStatus @(
+            New-HygContentRow -PackageID 'MCM00C05' -Name 'Legacy Pkg' -Targeted 0 -NumberSuccess 0
+        )
+        @(Test-HygContentDistribution -Data $data | Where-Object CheckId -eq 'CNT-03').Count | Should -Be 1
+    }
+
+    It 'offers only display-only fix guidance' {
+        $data = New-HygContentData -ContentStatus @(New-HygContentRow -NumberErrors 1)
+        $f = @(Test-HygContentDistribution -Data $data)
+        Test-HygieneFixExecutable -FixScript $f[0].FixScript | Should -BeFalse
+    }
+
+    It 'is skipped by the runner when the content status query failed' {
+        $data = New-HygContentData -ContentStatus @()
+        $data.FailedDatasets = @('ContentStatus')
+        $f = @(Invoke-HygieneScan -Data $data -Scopes 'Content')
+        @($f | Where-Object { $_.CheckId -like 'CNT-0*' }).Count | Should -Be 0
+        @($f | Where-Object { $_.Category -eq 'Scan' }).Count | Should -Be 1
     }
 }

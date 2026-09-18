@@ -11,6 +11,8 @@ deployments. A scan is read-only, every finding carries the evidence that
 produced it, and every finding shows the exact PowerShell a fix would
 take — displayed, never executed, by this tool.
 
+![Site Hygiene findings view](screenshot.png)
+
 ## Requirements
 
 - Windows 10 / 11 or Server 2016+
@@ -45,6 +47,9 @@ Stable check IDs so findings and reports stay comparable across scans:
 | APP-02 | Error | Retired (expired) applications that still have active deployments |
 | APP-03 | Warning | Superseded applications whose own deployments are still active |
 | PKG-01 | Warning | Legacy packages with no programs, no deployments, and no task sequence references |
+| CNT-01 | Warning | Content that failed on one or more distribution points, with the failed/targeted counts |
+| CNT-02 | Info | Content still distributing more than two days after its last update |
+| CNT-03 | Error | Deployed applications and packages with source files but no targeted distribution point |
 | COL-01 | Info | Empty collections nothing references: no deployments, no include/exclude rules from other collections, not a limiting parent, no collection variables |
 | COL-02 | Warning | Deployments targeting a collection with zero members |
 | COL-03 | Warning | Incremental-evaluation collection count over the recommended ceiling |
@@ -86,7 +91,7 @@ sensible defaults in `Get-HygieneDefaultThresholds`.
 ## How a scan works
 
 One prefetch pass pulls the datasets the selected scan areas need — bulk
-`Get-CM*` reads and five column-restricted WQL queries (collections,
+`Get-CM*` reads and six column-restricted WQL queries (collections, content status,
 application deployments, collection settings, application dependency
 relations, collection reference edges), all over the console's provider
 connection under your Configuration Manager role — and the checks run as pure functions over that data. A dataset that fails
