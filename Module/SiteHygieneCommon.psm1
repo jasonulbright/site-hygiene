@@ -82,6 +82,7 @@ function Get-HygieneCheckCatalog {
         [pscustomobject]@{ Id = 'COL-01'; Category = 'Collections';  Severity = 'Info';    Title = 'Empty collection nothing references' }
         [pscustomobject]@{ Id = 'COL-02'; Category = 'Collections';  Severity = 'Warning'; Title = 'Deployment targeting an empty collection' }
         [pscustomobject]@{ Id = 'COL-03'; Category = 'Collections';  Severity = 'Warning'; Title = 'Incremental-evaluation collection count over ceiling' }
+        [pscustomobject]@{ Id = 'COL-04'; Category = 'Collections';  Severity = 'Warning'; Title = 'Collection evaluation run time over threshold' }
         [pscustomobject]@{ Id = 'COL-05'; Category = 'Collections';  Severity = 'Warning'; Title = 'Sub-daily full evaluation on an incremental collection' }
         [pscustomobject]@{ Id = 'COL-06'; Category = 'Collections';  Severity = 'Info';    Title = 'Scheduled evaluation on a direct-rule-only collection' }
         [pscustomobject]@{ Id = 'COL-07'; Category = 'Collections';  Severity = 'Warning'; Title = 'Include/exclude reference chain over depth threshold' }
@@ -112,6 +113,7 @@ function Get-HygieneDefaultThresholds {
         ColRefDepthMax            = 3
         ColFullEvalHotSpotCount   = 10
         ContentStuckDays          = 2
+        ColEvalSlowMs             = 5000
     }
 }
 
@@ -196,6 +198,7 @@ function Get-HygScanPlan {
         @{ Id = 'COL-01'; Scopes = @('Collections'); Requires = @('Collections','Deployments','CollectionsWithSettings','CollectionDependencies'); Run = { param($d) Test-HygCollectionEmptyUnused -Data $d } }
         @{ Id = 'COL-02'; Scopes = @('Collections'); Requires = @('Collections','Deployments'); Run = { param($d) Test-HygDeploymentEmptyCollection -Data $d } }
         @{ Id = 'COL-03'; Scopes = @('Collections'); Requires = @('Collections'); Run = { param($d, $t) Test-HygIncrementalCeiling -Data $d -Thresholds $t } }
+        @{ Id = 'COL-04'; Scopes = @('Collections'); Requires = @('CollectionEvalFull','CollectionEvalIncremental'); Run = { param($d, $t) Test-HygCollectionEvaluationRunTime -Data $d -Thresholds $t } }
         @{ Id = 'COL-EVAL'; Scopes = @('Collections','CollectionSchedules'); Requires = @('Collections','CollectionDependencies'); Run = { param($d, $t) Test-HygCollectionEvaluationChecks -Data $d -Thresholds $t } }
         @{ Id = 'DPL-01'; Scopes = @('Deployments'); Requires = @('AppDeployments'); Run = { param($d) Test-HygDeploymentExpired -Data $d } }
         @{ Id = 'DPL-02'; Scopes = @('Deployments'); Requires = @('Deployments'); Run = { param($d, $t) Test-HygDeploymentPastDeadlineFailures -Data $d -Thresholds $t } }
@@ -520,6 +523,19 @@ function Get-HygieneData {
                     EnforcementDeadline = $_.EnforcementDeadline
                     CreationTime        = $_.CreationTime
                 }
+            }
+        } }
+        # Last-run evaluation timings, present on site version 2010 and
+        # later. Kept out of the Collections query so an older site loses
+        # only COL-04, not every collection check.
+        CollectionEvalFull = @{ Label = 'full evaluation timings'; FailureHint = 'COL-04 is skipped; the class needs site version 2010 or later'; Run = {
+            Invoke-CMWmiQuery -Query 'SELECT CollectionID, CollectionName, Length, MemberChanges FROM SMS_CollectionEvaluationFull' -Option Fast -ErrorAction Stop | ForEach-Object {
+                [pscustomobject]@{ CollectionID = [string]$_.CollectionID; Name = [string]$_.CollectionName; LengthMs = [long]$_.Length; MemberChanges = [long]$_.MemberChanges }
+            }
+        } }
+        CollectionEvalIncremental = @{ Label = 'incremental evaluation timings'; FailureHint = 'COL-04 is skipped; the class needs site version 2010 or later'; Run = {
+            Invoke-CMWmiQuery -Query 'SELECT CollectionID, CollectionName, Length, MemberChanges FROM SMS_CollectionEvaluationIncremental' -Option Fast -ErrorAction Stop | ForEach-Object {
+                [pscustomobject]@{ CollectionID = [string]$_.CollectionID; Name = [string]$_.CollectionName; LengthMs = [long]$_.Length; MemberChanges = [long]$_.MemberChanges }
             }
         } }
         # One row per content object with per-state distribution point
@@ -1783,6 +1799,46 @@ function Test-HygAppContentPath {
                 -Recommendation 'Verify from the site server; restore the source folder, correct the deployment type content location, or fix share permissions.' `
                 -FixScript ("# Console: '{0}' > Deployment Types > '{1}' > Content - correct the content location" -f $loc.AppName, $loc.DTName)
         }
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Collection evaluation run time (COL-04)
+# ---------------------------------------------------------------------------
+
+function Test-HygCollectionEvaluationRunTime {
+    <#
+    .SYNOPSIS
+        COL-04: collections whose last full or incremental evaluation ran
+        longer than the threshold, slowest first. One finding per
+        collection so the suppression key stays stable when both
+        evaluation types are slow.
+    #>
+    param(
+        [Parameter(Mandatory)]$Data,
+        [hashtable]$Thresholds = (Get-HygieneDefaultThresholds)
+    )
+
+    $limit = [long]$Thresholds.ColEvalSlowMs
+    $slow = @{}
+    foreach ($pair in @(@{ Kind = 'full'; Rows = $Data.CollectionEvalFull }, @{ Kind = 'incremental'; Rows = $Data.CollectionEvalIncremental })) {
+        foreach ($row in @($pair.Rows)) {
+            if (-not $row -or $row.LengthMs -le $limit) { continue }
+            $id = [string]$row.CollectionID
+            if (-not $slow.ContainsKey($id)) { $slow[$id] = [pscustomobject]@{ CollectionID = $id; Name = $row.Name; WorstMs = 0; Parts = @() } }
+            $entry = $slow[$id]
+            if ($row.LengthMs -gt $entry.WorstMs) { $entry.WorstMs = $row.LengthMs }
+            $changeText = $(if ($row.MemberChanges -eq 0) { 'no membership change' } else { "$($row.MemberChanges) membership change(s)" })
+            $entry.Parts += ("last {0} evaluation ran {1:n1}s with {2}" -f $pair.Kind, ($row.LengthMs / 1000), $changeText)
+        }
+    }
+
+    foreach ($entry in ($slow.Values | Sort-Object WorstMs -Descending)) {
+        New-HygieneFinding -CheckId 'COL-04' -Severity Warning -Category 'Collections' `
+            -ObjectType 'Collection' -ObjectId $entry.CollectionID -ObjectName $entry.Name `
+            -Evidence ("{0} (threshold {1:n1}s). Evaluations run one at a time per queue, so a slow collection delays every collection queued behind it." -f (($entry.Parts -join '; ') -replace '^l', 'L'), ($limit / 1000)) `
+            -Recommendation 'Review the membership query: avoid LIKE wildcards and nested subselects on large classes, limit to the smallest suitable collection, and drop incremental updates where membership rarely changes.' `
+            -FixScript ("# Review: (Get-CMCollection -Id '{0}').CollectionRules | Select-Object RuleName, QueryExpression" -f $entry.CollectionID)
     }
 }
 

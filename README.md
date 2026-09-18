@@ -53,6 +53,7 @@ Stable check IDs so findings and reports stay comparable across scans:
 | COL-01 | Info | Empty collections nothing references: no deployments, no include/exclude rules from other collections, not a limiting parent, no collection variables |
 | COL-02 | Warning | Deployments targeting a collection with zero members |
 | COL-03 | Warning | Incremental-evaluation collection count over the recommended ceiling |
+| COL-04 | Warning | Collections whose last full or incremental evaluation ran longer than five seconds, slowest first (site version 2010 or later) |
 | DPL-01 | Info | Application deployments past their expiration time |
 | DPL-02 | Error | Required deployments past deadline with a failure rate over threshold |
 | DPL-03 | Info | Available deployments old enough to judge with zero installs and nothing in progress |
@@ -91,7 +92,7 @@ sensible defaults in `Get-HygieneDefaultThresholds`.
 ## How a scan works
 
 One prefetch pass pulls the datasets the selected scan areas need — bulk
-`Get-CM*` reads and six column-restricted WQL queries (collections, content status,
+`Get-CM*` reads and eight column-restricted WQL queries (collections, full and incremental evaluation timings, content status,
 application deployments, collection settings, application dependency
 relations, collection reference edges), all over the console's provider
 connection under your Configuration Manager role — and the checks run as pure functions over that data. A dataset that fails
