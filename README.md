@@ -30,7 +30,10 @@ take — displayed, never executed, by this tool.
    powershell -ExecutionPolicy Bypass -File start-sitehygiene.ps1
    ```
 3. Click **Options** on the sidebar and set Site Code and SMS Provider.
-4. Click **Scan**.
+4. Optional: under **Options > Scan scope**, clear the areas you do not
+   need. On a large site, leave the two areas marked slow for a separate
+   run.
+5. Click **Scan**. **Cancel scan** on the progress overlay stops it.
 
 ## Checks
 
@@ -82,12 +85,22 @@ sensible defaults in `Get-HygieneDefaultThresholds`.
 
 ## How a scan works
 
-One prefetch pass pulls every dataset the checks need — bulk `Get-CM*`
-reads plus three read-only CIM queries (collection settings, application
-dependency relations, collection reference edges) — and the checks run
-as pure functions over that data. A dataset that fails to load degrades to an empty set with a note
-in the Summary view instead of killing the scan; the note also says which
-check may over- or under-report because of it.
+One prefetch pass pulls the datasets the selected scan areas need — bulk
+`Get-CM*` reads, two column-restricted WQL queries (collections,
+application deployments), and three read-only CIM queries (collection
+settings, application dependency relations, collection reference edges) —
+and the checks run as pure functions over that data. A dataset that fails
+to load degrades to an empty set with a note in the Summary view instead
+of killing the scan; the note also says which check may over- or
+under-report because of it.
+
+Two areas cost one SMS Provider read per object and are marked slow in
+the scope list: **Application relationships and content paths** reads
+every application definition, and **Collection evaluation schedules**
+reads every custom collection that has a full-update schedule. Everything
+else is one query per dataset. Each dataset logs its row count and
+duration to the log pane, the console window, and the log file as it
+completes. A scoped scan leaves the rescan-delta baseline unchanged.
 
 ## Views
 

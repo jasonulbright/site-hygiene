@@ -1326,3 +1326,118 @@ Describe 'Collection reference graph source' {
         $f.Count | Should -Be 2
     }
 }
+
+Describe 'Scan scopes' {
+    It 'maps a scope to only the datasets its checks read' {
+        $keys = @(Get-HygieneRequiredDataset -Scopes 'Boundaries')
+        ($keys | Sort-Object) -join ',' | Should -Be 'Boundaries,BoundaryGroups'
+    }
+
+    It 'requests the per-object datasets only for the slow scopes' {
+        $fast = @(Get-HygieneRequiredDataset -Scopes 'Applications','Collections','Deployments')
+        $fast | Should -Not -Contain 'Relationships'
+        $fast | Should -Not -Contain 'CollectionDetails'
+        @(Get-HygieneRequiredDataset -Scopes 'AppRelationships') | Should -Contain 'Relationships'
+        @(Get-HygieneRequiredDataset -Scopes 'CollectionSchedules') | Should -Contain 'CollectionDetails'
+    }
+
+    It 'treats no scope as every scope' {
+        $all = @(Get-HygieneRequiredDataset)
+        $all | Should -Contain 'Devices'
+        $all | Should -Contain 'Relationships'
+        $all | Should -Contain 'CollectionDetails'
+    }
+
+    It 'rejects an unknown scope' {
+        { Get-HygieneRequiredDataset -Scopes 'Nope' } | Should -Throw '*Unknown scan scope*'
+    }
+
+    It 'runs only the checks of the selected scope' {
+        $data = New-HygData `
+            -Applications @(New-HygApp -Name 'Zombie' -IsExpired $true -IsDeployed $true) `
+            -Packages @([pscustomobject]@{ PackageID = 'MCM00PKG'; Name = 'Dead Package' })
+        $f = @(Invoke-HygieneScan -Data $data -Scopes 'Packages')
+        @($f | Where-Object CheckId -eq 'PKG-01').Count | Should -Be 1
+        @($f | Where-Object CheckId -like 'APP-*').Count | Should -Be 0
+    }
+
+    It 'never runs a check over a dataset the prefetch left out' {
+        $data = New-HygData -Packages @([pscustomobject]@{ PackageID = 'MCM00PKG'; Name = 'Dead Package' })
+        $data | Add-Member -NotePropertyName NotCollectedDatasets -NotePropertyValue @('Deployments')
+        $f = @(Invoke-HygieneScan -Data $data -Scopes 'Packages')
+        $f.Count | Should -Be 0
+    }
+
+    It 'counts an include reference from the dependency edges as a COL-01 reference' {
+        $data = New-HygData `
+            -Collections @((New-HygCollection -CollectionID 'MCM00A01' -Name 'Empty but included' -MemberCount 0), (New-HygCollection -CollectionID 'MCM00A02' -Name 'Parent' -MemberCount 5)) `
+            -CollectionDependencies @([pscustomobject]@{ From = 'MCM00A02'; To = 'MCM00A01'; Kind = 'include' })
+        @(Test-HygCollectionEmptyUnused -Data $data).Count | Should -Be 0
+    }
+}
+
+Describe 'Scoped prefetch' {
+    BeforeAll {
+        # The ConfigurationManager module is absent on a test host; Pester
+        # can only mock commands that exist.
+        $stubs = 'Get-CMApplication','Get-CMPackage','Get-CMProgram','Get-CMTaskSequence','Get-CMDevice','Get-CMBoundary',
+            'Get-CMBoundaryGroup','Get-CMBootImage','Get-CMOperatingSystemImage','Get-CMOperatingSystemInstaller','Get-CMDriverPackage',
+            'Get-CMSoftwareUpdateGroup','Get-CMSoftwareUpdateDeploymentPackage','Get-CMAutoDeploymentRule','Get-CMSiteMaintenanceTask',
+            'Get-CMCollection','Get-CMDeployment','Get-CMApplicationDeployment','Invoke-CMWmiQuery'
+        foreach ($s in $stubs) { Set-Item -Path "function:global:$s" -Value { [CmdletBinding()] param($Query, $Option, $Id, [switch]$Fast) } }
+    }
+    AfterAll {
+        foreach ($s in $stubs) { Remove-Item -Path "function:global:$s" -ErrorAction SilentlyContinue }
+    }
+    BeforeEach {
+        Mock -ModuleName SiteHygieneCommon Get-CMConnectionInfo { [pscustomobject]@{ SiteCode = 'MCM'; SMSProvider = 'cm01' } }
+        Mock -ModuleName SiteHygieneCommon Get-CimInstance {
+            [pscustomobject]@{ DependentCollectionID = 'MCM00002'; SourceCollectionID = 'MCM00001'; RelationshipType = 2 }
+        } -ParameterFilter { $Query -like '*SMS_CollectionDependencies*' }
+        Mock -ModuleName SiteHygieneCommon Get-CimInstance { }
+        Mock -ModuleName SiteHygieneCommon Get-CMDevice { throw 'devices must not be queried' }
+        Mock -ModuleName SiteHygieneCommon Get-CMApplication { throw 'applications must not be queried' }
+        Mock -ModuleName SiteHygieneCommon Get-CMCollection {
+            [pscustomobject]@{ CollectionRules = @(); RefreshSchedule = @([pscustomobject]@{ DaySpan = 1; HourSpan = 0; MinuteSpan = 0; StartTime = [datetime]'2026-01-01 03:00' }) }
+        }
+        Mock -ModuleName SiteHygieneCommon Invoke-CMWmiQuery {
+            [pscustomobject]@{ CollectionID = 'MCM00001'; Name = 'Manual';    MemberCount = 1; RefreshType = 1; LimitToCollectionID = 'SMS00001' }
+            [pscustomobject]@{ CollectionID = 'MCM00002'; Name = 'Scheduled'; MemberCount = 1; RefreshType = 2; LimitToCollectionID = 'SMS00001' }
+            [pscustomobject]@{ CollectionID = 'SMS00001'; Name = 'All Systems'; MemberCount = 9; RefreshType = 6; LimitToCollectionID = '' }
+        } -ParameterFilter { $Query -like '*FROM SMS_Collection' }
+    }
+
+    It 'queries nothing outside the requested datasets' {
+        $data = Get-HygieneData -Datasets 'Collections'
+        @($data.Collections).Count | Should -Be 3
+        $data.NotCollectedDatasets | Should -Contain 'Devices'
+        $data.NotCollectedDatasets | Should -Contain 'Applications'
+        $data.FailedDatasets.Count | Should -Be 0
+        Should -Invoke -ModuleName SiteHygieneCommon Get-CMDevice -Times 0
+    }
+
+    It 'reads collections with one non-lazy query and no per-collection read' {
+        $null = Get-HygieneData -Datasets 'Collections'
+        Should -Invoke -ModuleName SiteHygieneCommon Invoke-CMWmiQuery -Times 1 -Exactly -ParameterFilter { $Option -eq 'Fast' -and $Query -notlike '*`**' }
+        Should -Invoke -ModuleName SiteHygieneCommon Get-CMCollection -Times 0
+    }
+
+    It 'takes include ids from the dependency edges' {
+        $data = Get-HygieneData -Datasets 'Collections'
+        @(($data.Collections | Where-Object CollectionID -eq 'MCM00002').IncludeIDs) | Should -Be @('MCM00001')
+    }
+
+    It 'reads schedule details only for custom collections with a full-update schedule' {
+        $progress = [hashtable]::Synchronized(@{ Step = '' })
+        $data = Get-HygieneData -Datasets 'CollectionDetails' -ProgressState $progress
+        Should -Invoke -ModuleName SiteHygieneCommon Get-CMCollection -Times 1 -Exactly
+        ($data.Collections | Where-Object CollectionID -eq 'MCM00002').FullStartHour | Should -Be 3
+        $progress.Step | Should -BeLike '*1 of 1*'
+    }
+
+    It 'marks a throwing dataset failed instead of returning it empty' {
+        $data = Get-HygieneData -Datasets 'Devices'
+        $data.FailedDatasets | Should -Contain 'Devices'
+        @($data.DatasetNotes | Where-Object { $_ -like '*devices unavailable*' }).Count | Should -Be 1
+    }
+}
