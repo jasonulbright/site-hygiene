@@ -13,8 +13,8 @@
       - Scan orchestration (Invoke-HygieneScan)
       - Findings export to CSV, HTML, and plain-text summary
 
-    A scan is read-only: the prefetch uses Get-CM* cmdlets plus two CIM
-    reads and never mutates the site. Every finding carries the evidence
+    A scan is read-only: the prefetch uses Get-CM* cmdlets plus WQL
+    queries over the same provider connection and never mutates the site. Every finding carries the evidence
     that produced it, a recommendation, and the PowerShell a fix would
     run - the script is displayed, never executed, by this module.
 
@@ -246,9 +246,11 @@ function Get-HygieneData {
     .DESCRIPTION
         Each dataset degrades to an empty set on failure with a note in
         DatasetNotes so one missing class or right never kills the whole
-        scan. Requires an established CM connection (Connect-CMSite)
-        because the CIM queries read the provider recorded by
-        Get-CMConnectionInfo.
+        scan. Requires an established CM connection (Connect-CMSite).
+        Every read goes through that connection, so the account needs a
+        Configuration Manager role only: a direct WMI connection to the
+        provider also needs remote WMI rights on the server, which a
+        read-only analyst typically lacks.
 
         Collections and application deployments are read with
         column-restricted WQL and the Fast option: the matching Get-CM*
@@ -278,8 +280,6 @@ function Get-HygieneData {
     $failed = New-Object System.Collections.Generic.List[string]
     $notCollected = New-Object System.Collections.Generic.List[string]
 
-    $conn = Get-CMConnectionInfo
-    $ns = $(if ($conn) { "root\SMS\site_$($conn.SiteCode)" } else { '' })
     $result = [ordered]@{}
 
     # Ordered: Collections reads CollectionDependencies for include/exclude
@@ -413,22 +413,19 @@ function Get-HygieneData {
         # Collections that carry variables/settings live in
         # SMS_CollectionSettings; one query beats N per-collection cmdlet
         # round-trips.
-        CollectionsWithSettings = @{ Label = 'collection-settings rows'; NeedsCim = $true; FailureHint = 'COL-01 cannot rule out variables'; Run = {
-            Get-CimInstance -ComputerName $conn.SMSProvider -Namespace $ns `
-                -Query 'SELECT CollectionID FROM SMS_CollectionSettings' -ErrorAction Stop |
+        CollectionsWithSettings = @{ Label = 'collection-settings rows'; FailureHint = 'COL-01 cannot rule out variables'; Run = {
+            Invoke-CMWmiQuery -Query 'SELECT CollectionID FROM SMS_CollectionSettings' -Option Fast -ErrorAction Stop |
             ForEach-Object { [string]$_.CollectionID }
         } }
-        DependencyTargetCIIDs = @{ Label = 'dependency relations'; NeedsCim = $true; FailureHint = 'APP-01 may over-report dependency-only applications'; Run = {
-            Get-CimInstance -ComputerName $conn.SMSProvider -Namespace $ns `
-                -Query 'SELECT ToApplicationCIID FROM SMS_AppDependenceRelation' -ErrorAction Stop |
+        DependencyTargetCIIDs = @{ Label = 'dependency relations'; FailureHint = 'APP-01 may over-report dependency-only applications'; Run = {
+            Invoke-CMWmiQuery -Query 'SELECT ToApplicationCIID FROM SMS_AppDependenceRelation' -Option Fast -ErrorAction Stop |
             ForEach-Object { [int]$_.ToApplicationCIID }
         } }
         # SMS_CollectionDependencies is authoritative for every reference
         # edge. RelationshipType: 1 = limiting, 2 = include, 3 = exclude;
         # Dependent references Source.
-        CollectionDependencies = @{ Label = 'collection reference edges'; NeedsCim = $true; FailureHint = 'COL-01 and COL-05..COL-09 are skipped'; Run = {
-            Get-CimInstance -ComputerName $conn.SMSProvider -Namespace $ns `
-                -Query 'SELECT DependentCollectionID, SourceCollectionID, RelationshipType FROM SMS_CollectionDependencies' -ErrorAction Stop |
+        CollectionDependencies = @{ Label = 'collection reference edges'; FailureHint = 'COL-01 and COL-05..COL-09 are skipped'; Run = {
+            Invoke-CMWmiQuery -Query 'SELECT DependentCollectionID, SourceCollectionID, RelationshipType FROM SMS_CollectionDependencies' -Option Fast -ErrorAction Stop |
             ForEach-Object {
                 [pscustomobject]@{
                     From = [string]$_.DependentCollectionID
@@ -550,10 +547,6 @@ function Get-HygieneData {
         $index++
         if ($ProgressState) { $ProgressState.Step = "Collecting $($collector.Label) ($index of $total)..." }
         $hint = $(if ($collector.FailureHint) { " ($($collector.FailureHint))" } else { '' })
-        if ($collector.NeedsCim -and -not $conn) {
-            $failed.Add($key); $notes.Add("No CM connection recorded; $($collector.Label) skipped$hint.")
-            continue
-        }
         $sw = [System.Diagnostics.Stopwatch]::StartNew()
         try {
             $result[$key] = @(& $collector.Run)
