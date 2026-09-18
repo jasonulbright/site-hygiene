@@ -1,6 +1,6 @@
 @{
     RootModule        = 'SiteHygieneCommon.psm1'
-    ModuleVersion     = '0.9.3'
+    ModuleVersion     = '2026.09.18.0013'
     GUID              = 'e94b7c15-2f6a-4d38-8b0c-51a9d3e6f284'
     Author            = 'Jason Ulbright'
     Description       = 'MECM site hygiene: read-only scanning for unused applications and packages, dead collections, stale and failing deployments, with confirmed per-finding fix execution.'
@@ -41,6 +41,15 @@
         'Test-HygMaintenanceTasks'
         'Test-HygContentDistribution'
         'Test-HygCollectionEvaluationRunTime'
+        'Test-HygDeploymentBroadRequired'
+        'Test-HygDeployedDisabledObject'
+        'Test-HygUpdateGroupSize'
+        'Test-HygUpdatePackageExpiredContent'
+        'Test-HygDistributionPointChecks'
+        'Test-HygComplianceChecks'
+        'Test-HygDriverUnpackaged'
+        'Test-HygAdminDeletedAccount'
+        'Test-HygMaintenanceWindowExpired'
 
         # Relationships (absorbed from the supersedence-auditor tool)
         'ConvertTo-HygRelationships'

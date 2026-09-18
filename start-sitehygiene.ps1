@@ -18,7 +18,7 @@
 
 .NOTES
     ScriptName : start-sitehygiene.ps1
-    Version    : 0.9.3
+    Version    : 2026.09.18.0013
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', '', Justification='PS51-WPF-001..003: $global: survives closure scope-strip.')]
@@ -792,7 +792,9 @@ function Show-OptionsDialog {
                 <TextBlock Text="A scan queries only the datasets the selected areas need. Areas marked slow read one object at a time from the SMS Provider and scale with object count."
                            FontSize="11" TextWrapping="Wrap" Margin="0,0,0,10"
                            Foreground="{DynamicResource MahApps.Brushes.Gray1}"/>
-                <StackPanel x:Name="panelScopes"/>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="170">
+                    <StackPanel x:Name="panelScopes"/>
+                </ScrollViewer>
                 <TextBlock Text="Rescan deltas are recorded only when every area is selected."
                            FontSize="11" TextWrapping="Wrap" Margin="0,10,0,0"
                            Foreground="{DynamicResource MahApps.Brushes.Gray1}"/>
