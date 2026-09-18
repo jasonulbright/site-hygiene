@@ -386,7 +386,6 @@
 
                 <Border x:Name="progressOverlay"
                         Visibility="Collapsed"
-                        IsHitTestVisible="False"
                         Background="{DynamicResource MahApps.Brushes.ThemeBackground}"
                         Opacity="0.92">
                     <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
@@ -403,6 +402,13 @@
                                    HorizontalAlignment="Center"
                                    Margin="0,6,0,0"
                                    Foreground="{DynamicResource MahApps.Brushes.Gray1}"/>
+                        <Button x:Name="btnCancelScan"
+                                Content="Cancel scan"
+                                Style="{StaticResource SquareInlineButtonStyle}"
+                                MinWidth="120"
+                                HorizontalAlignment="Center"
+                                Margin="0,16,0,0"
+                                ToolTip="Stop the scan; no further queries are sent to the site"/>
                     </StackPanel>
                 </Border>
             </Grid>

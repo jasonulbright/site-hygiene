@@ -6,7 +6,9 @@
     Import this module to get:
       - Structured logging and CM site connection management via the
         vendored SuiteCommon module (Lib\SuiteCommon)
-      - One-pass site data prefetch (Get-HygieneData)
+      - Scan scopes (Get-HygieneScanScope, Get-HygieneRequiredDataset)
+      - Site data prefetch limited to the datasets a scope needs
+        (Get-HygieneData)
       - Pure hygiene checks over the prefetched data (Test-Hyg*)
       - Scan orchestration (Invoke-HygieneScan)
       - Findings export to CSV, HTML, and plain-text summary
@@ -141,375 +143,435 @@ function New-HygieneFinding {
 }
 
 # ---------------------------------------------------------------------------
-# Data prefetch (the only CM-touching part of a scan)
+# Scan scopes and data prefetch (the only CM-touching part of a scan)
 # ---------------------------------------------------------------------------
+
+function Get-HygieneScanScope {
+    <#
+    .SYNOPSIS
+        Returns the selectable scan scopes: Id, Title, Slow. A scope marked
+        Slow costs one provider round-trip per object instead of one query
+        per dataset.
+    #>
+    return @(
+        [pscustomobject]@{ Id = 'Applications';        Title = 'Applications';                                Slow = $false }
+        [pscustomobject]@{ Id = 'AppRelationships';    Title = 'Application relationships and content paths'; Slow = $true }
+        [pscustomobject]@{ Id = 'Packages';            Title = 'Packages';                                    Slow = $false }
+        [pscustomobject]@{ Id = 'Collections';         Title = 'Collections';                                 Slow = $false }
+        [pscustomobject]@{ Id = 'CollectionSchedules'; Title = 'Collection evaluation schedules';             Slow = $true }
+        [pscustomobject]@{ Id = 'Deployments';         Title = 'Deployments';                                 Slow = $false }
+        [pscustomobject]@{ Id = 'Devices';             Title = 'Devices';                                     Slow = $false }
+        [pscustomobject]@{ Id = 'Boundaries';          Title = 'Boundaries';                                  Slow = $false }
+        [pscustomobject]@{ Id = 'TaskSequences';       Title = 'Task sequences';                              Slow = $false }
+        [pscustomobject]@{ Id = 'Updates';             Title = 'Software updates';                            Slow = $false }
+        [pscustomobject]@{ Id = 'Site';                Title = 'Site maintenance';                            Slow = $false }
+    )
+}
+
+function Get-HygScanPlan {
+    <#
+    .SYNOPSIS
+        The check table: Id, Scopes that select the check, Requires (the
+        datasets the check reads as evidence), and the runner.
+
+    .DESCRIPTION
+        Threshold-less checks take only $d; the runner still passes every
+        argument and the extras land in $args, keeping one invocation
+        shape. A check whose Requires includes a failed or uncollected
+        dataset never runs: over an empty array it would turn a query
+        failure into "nothing references this object" plus a deletion
+        script.
+    #>
+    return @(
+        @{ Id = 'APP-01'; Scopes = @('Applications'); Requires = @('Applications','Deployments','TaskSequences','DependencyTargetCIIDs'); Run = { param($d, $t) Test-HygAppNoReferences -Data $d -Thresholds $t } }
+        @{ Id = 'APP-02'; Scopes = @('Applications'); Requires = @('Applications'); Run = { param($d) Test-HygAppRetiredDeployed -Data $d } }
+        @{ Id = 'APP-03'; Scopes = @('Applications'); Requires = @('Applications'); Run = { param($d) Test-HygAppSupersededDeployed -Data $d } }
+        @{ Id = 'PKG-01'; Scopes = @('Packages'); Requires = @('Packages','Programs','Deployments','TaskSequences'); Run = { param($d) Test-HygPackageUnused -Data $d } }
+        @{ Id = 'COL-01'; Scopes = @('Collections'); Requires = @('Collections','Deployments','CollectionsWithSettings','CollectionDependencies'); Run = { param($d) Test-HygCollectionEmptyUnused -Data $d } }
+        @{ Id = 'COL-02'; Scopes = @('Collections'); Requires = @('Collections','Deployments'); Run = { param($d) Test-HygDeploymentEmptyCollection -Data $d } }
+        @{ Id = 'COL-03'; Scopes = @('Collections'); Requires = @('Collections'); Run = { param($d, $t) Test-HygIncrementalCeiling -Data $d -Thresholds $t } }
+        @{ Id = 'COL-EVAL'; Scopes = @('Collections','CollectionSchedules'); Requires = @('Collections','CollectionDependencies'); Run = { param($d, $t) Test-HygCollectionEvaluationChecks -Data $d -Thresholds $t } }
+        @{ Id = 'DPL-01'; Scopes = @('Deployments'); Requires = @('AppDeployments'); Run = { param($d) Test-HygDeploymentExpired -Data $d } }
+        @{ Id = 'DPL-02'; Scopes = @('Deployments'); Requires = @('Deployments'); Run = { param($d, $t) Test-HygDeploymentPastDeadlineFailures -Data $d -Thresholds $t } }
+        @{ Id = 'DPL-03'; Scopes = @('Deployments'); Requires = @('Deployments'); Run = { param($d, $t) Test-HygDeploymentAvailableUnused -Data $d -Thresholds $t } }
+        @{ Id = 'DEV-01'; Scopes = @('Devices'); Requires = @('Devices','MaintenanceTasks'); Run = { param($d, $t) Test-HygDeviceInactive -Data $d -Thresholds $t } }
+        @{ Id = 'DEV-02'; Scopes = @('Devices'); Requires = @('Devices'); Run = { param($d) Test-HygDeviceDuplicates -Data $d } }
+        @{ Id = 'DEV-03'; Scopes = @('Devices'); Requires = @('Devices'); Run = { param($d) Test-HygClientVersions -Data $d } }
+        @{ Id = 'BND';    Scopes = @('Boundaries'); Requires = @('Boundaries','BoundaryGroups'); Run = { param($d) Test-HygBoundaryChecks -Data $d } }
+        @{ Id = 'TSQ';    Scopes = @('TaskSequences'); Requires = @('TaskSequences','Packages','BootImages','DriverPackages','UpdatePackages','OSImages','OSUpgradePackages','Applications'); Run = { param($d) Test-HygTaskSequenceRefs -Data $d } }
+        @{ Id = 'UPD-01'; Scopes = @('Updates'); Requires = @('UpdateGroups'); Run = { param($d, $t) Test-HygUpdateGroupChecks -Data $d -Thresholds $t } }
+        @{ Id = 'UPD-03'; Scopes = @('Updates'); Requires = @('AutoDeploymentRules'); Run = { param($d, $t) Test-HygAdrChecks -Data $d -Thresholds $t } }
+        @{ Id = 'MNT';    Scopes = @('Site'); Requires = @('MaintenanceTasks'); Run = { param($d) Test-HygMaintenanceTasks -Data $d } }
+        # $args-based: these only consume the third runner argument.
+        @{ Id = 'SUP/DEP/REL'; Scopes = @('AppRelationships'); Requires = @(); NeedsRelationships = $true; Run = { Test-HygRelationshipChecks -RelationshipData $args[2] } }
+        @{ Id = 'APP-04';      Scopes = @('AppRelationships'); Requires = @(); NeedsRelationships = $true; Run = { Test-HygAppContentPath -RelationshipData $args[2] } }
+    )
+}
+
+function Resolve-HygScanScope {
+    param([string[]]$Scopes)
+    $all = @(Get-HygieneScanScope | ForEach-Object { $_.Id })
+    $picked = @($Scopes | Where-Object { $_ })
+    if ($picked.Count -eq 0) { return $all }
+    $unknown = @($picked | Where-Object { $_ -notin $all })
+    if ($unknown.Count -gt 0) { throw ("Unknown scan scope(s): {0}. Valid: {1}" -f ($unknown -join ', '), ($all -join ', ')) }
+    return $picked
+}
+
+function Get-HygieneRequiredDataset {
+    <#
+    .SYNOPSIS
+        Maps scan scopes to the dataset keys Get-HygieneData must collect.
+        'Relationships' in the result means Get-HygieneRelationshipData is
+        needed; it is not a Get-HygieneData key.
+    #>
+    param([string[]]$Scopes)
+
+    $picked = @(Resolve-HygScanScope -Scopes $Scopes)
+    $keys = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($check in (Get-HygScanPlan)) {
+        if (-not @($check.Scopes | Where-Object { $_ -in $picked })) { continue }
+        foreach ($k in @($check.Requires)) { [void]$keys.Add($k) }
+        if ($check.NeedsRelationships) { [void]$keys.Add('Relationships') }
+    }
+    if ('CollectionSchedules' -in $picked) { [void]$keys.Add('CollectionDetails') }
+    return @($keys | Sort-Object)
+}
 
 function Get-HygieneData {
     <#
     .SYNOPSIS
-        Pulls every dataset the checks need in one pass.
+        Pulls the datasets the selected checks need, one query per dataset.
 
     .DESCRIPTION
-        Bulk cmdlet reads plus two CIM queries; each dataset degrades to an
-        empty set on failure with a note in DatasetNotes so one missing
-        class or right never kills the whole scan. Requires an established
-        CM connection (Connect-CMSite) because the CIM queries read the
-        provider recorded by Get-CMConnectionInfo.
+        Each dataset degrades to an empty set on failure with a note in
+        DatasetNotes so one missing class or right never kills the whole
+        scan. Requires an established CM connection (Connect-CMSite)
+        because the CIM queries read the provider recorded by
+        Get-CMConnectionInfo.
+
+        Collections and application deployments are read with
+        column-restricted WQL and the Fast option: the matching Get-CM*
+        cmdlets issue one extra provider round-trip per object to fill
+        lazy properties, which scales with object count. The only
+        per-object reads left are in the CollectionDetails dataset, and
+        only for collections with a full-update schedule.
+
+    .PARAMETER Datasets
+        Dataset keys to collect (see Get-HygieneRequiredDataset). Omitted
+        or empty collects everything. Keys not collected are listed in
+        NotCollectedDatasets so the scan runner never reads their empty
+        arrays as evidence.
+
+    .PARAMETER ProgressState
+        Optional synchronized hashtable; Step receives the current dataset.
     #>
-    param()
+    param(
+        [string[]]$Datasets,
+        [hashtable]$ProgressState
+    )
 
     $notes = New-Object System.Collections.Generic.List[string]
     # Dataset keys whose collection query failed; the scan runner skips
     # checks whose inputs are on this list instead of treating an empty
     # array as evidence.
     $failed = New-Object System.Collections.Generic.List[string]
-
-    $apps = @()
-    try {
-        $apps = @(Get-CMApplication -Fast -ErrorAction Stop | ForEach-Object {
-            [pscustomobject]@{
-                CI_ID         = [int]$_.CI_ID
-                ModelName     = [string]$_.ModelName
-                Name          = [string]$_.LocalizedDisplayName
-                IsDeployed    = [bool]$_.IsDeployed
-                IsExpired     = [bool]$_.IsExpired
-                IsSuperseded  = [bool]$_.IsSuperseded
-                IsSuperseding = [bool]$_.IsSuperseding
-                PackageID     = [string]$_.PackageID
-                DateCreated   = $_.DateCreated
-            }
-        })
-        Write-Log "Loaded $($apps.Count) applications"
-    } catch { $failed.Add('Applications'); $notes.Add("Applications unavailable: $($_.Exception.Message)"); Write-Log "Applications unavailable: $($_.Exception.Message)" -Level WARN }
-
-    $packages = @()
-    try {
-        $packages = @(Get-CMPackage -Fast -ErrorAction Stop | ForEach-Object {
-            [pscustomobject]@{ PackageID = [string]$_.PackageID; Name = [string]$_.Name }
-        })
-        Write-Log "Loaded $($packages.Count) packages"
-    } catch { $failed.Add('Packages'); $notes.Add("Packages unavailable: $($_.Exception.Message)"); Write-Log "Packages unavailable: $($_.Exception.Message)" -Level WARN }
-
-    $programs = @()
-    try {
-        $programs = @(Get-CMProgram -ErrorAction Stop | ForEach-Object {
-            [pscustomobject]@{ PackageID = [string]$_.PackageID; ProgramName = [string]$_.ProgramName }
-        })
-        Write-Log "Loaded $($programs.Count) programs"
-    } catch { $failed.Add('Programs'); $notes.Add("Programs unavailable: $($_.Exception.Message)"); Write-Log "Programs unavailable: $($_.Exception.Message)" -Level WARN }
-
-    $taskSequences = @()
-    try {
-        $taskSequences = @(Get-CMTaskSequence -ErrorAction Stop | ForEach-Object {
-            $refs = @()
-            if ($_.References) { $refs = @($_.References | ForEach-Object { [string]$_.Package }) }
-            $bootImage = ''
-            $p = $_.PSObject.Properties['BootImageID']
-            if ($p) { $bootImage = [string]$p.Value }
-            [pscustomobject]@{ PackageID = [string]$_.PackageID; Name = [string]$_.Name; ReferencedIDs = $refs; BootImageID = $bootImage }
-        })
-        Write-Log "Loaded $($taskSequences.Count) task sequences"
-    } catch { $failed.Add('TaskSequences'); $notes.Add("Task sequences unavailable: $($_.Exception.Message)"); Write-Log "Task sequences unavailable: $($_.Exception.Message)" -Level WARN }
-
-    $devices = @()
-    try {
-        $devices = @(Get-CMDevice -Fast -ErrorAction Stop | ForEach-Object {
-            $smbios = ''
-            $p = $_.PSObject.Properties['SMBIOSGUID']
-            if ($p) { $smbios = [string]$p.Value }
-            $lastActive = $null
-            $p = $_.PSObject.Properties['LastActiveTime']
-            if ($p) { $lastActive = $p.Value }
-            [pscustomobject]@{
-                ResourceID     = [int]$_.ResourceID
-                Name           = [string]$_.Name
-                IsClient       = [bool]$_.IsClient
-                ClientVersion  = [string]$_.ClientVersion
-                LastActiveTime = $lastActive
-                SMBIOSGUID     = $smbios
-            }
-        })
-        Write-Log "Loaded $($devices.Count) devices"
-    } catch { $failed.Add('Devices'); $notes.Add("Devices unavailable: $($_.Exception.Message)"); Write-Log "Devices unavailable: $($_.Exception.Message)" -Level WARN }
-
-    $boundaries = @()
-    try {
-        $boundaries = @(Get-CMBoundary -ErrorAction Stop | ForEach-Object {
-            # -1 sentinel: GroupCount is a provider-computed count that may
-            # be absent; [int]$null would read as 0 and BND-01 would flag
-            # every boundary in the site.
-            $groupCount = -1
-            $p = $_.PSObject.Properties['GroupCount']
-            if ($p -and $null -ne $p.Value) { $groupCount = [int]$p.Value }
-            [pscustomobject]@{
-                DisplayName  = [string]$_.DisplayName
-                Value        = [string]$_.Value
-                BoundaryType = [int]$_.BoundaryType
-                GroupCount   = $groupCount
-            }
-        })
-        Write-Log "Loaded $($boundaries.Count) boundaries"
-    } catch { $failed.Add('Boundaries'); $notes.Add("Boundaries unavailable: $($_.Exception.Message)"); Write-Log "Boundaries unavailable: $($_.Exception.Message)" -Level WARN }
-
-    $boundaryGroups = @()
-    try {
-        $boundaryGroups = @(Get-CMBoundaryGroup -ErrorAction Stop | ForEach-Object {
-            $ssCount = -1
-            $p = $_.PSObject.Properties['SiteSystemCount']
-            if ($p) { $ssCount = [int]$p.Value }
-            [pscustomobject]@{ GroupID = [int]$_.GroupID; Name = [string]$_.Name; SiteSystemCount = $ssCount }
-        })
-        Write-Log "Loaded $($boundaryGroups.Count) boundary groups"
-    } catch { $failed.Add('BoundaryGroups'); $notes.Add("Boundary groups unavailable: $($_.Exception.Message)"); Write-Log "Boundary groups unavailable: $($_.Exception.Message)" -Level WARN }
-
-    $bootImages = @()
-    try {
-        $bootImages = @(Get-CMBootImage -ErrorAction Stop | ForEach-Object {
-            [pscustomobject]@{ PackageID = [string]$_.PackageID; Name = [string]$_.Name }
-        })
-        Write-Log "Loaded $($bootImages.Count) boot images"
-    } catch { $failed.Add('BootImages'); $notes.Add("Boot images unavailable: $($_.Exception.Message)"); Write-Log "Boot images unavailable: $($_.Exception.Message)" -Level WARN }
-
-    $osImages = @()
-    try {
-        $osImages = @(Get-CMOperatingSystemImage -ErrorAction Stop | ForEach-Object {
-            [pscustomobject]@{ PackageID = [string]$_.PackageID; Name = [string]$_.Name }
-        })
-        Write-Log "Loaded $($osImages.Count) OS images"
-    } catch { $failed.Add('OSImages'); $notes.Add("OS images unavailable: $($_.Exception.Message)"); Write-Log "OS images unavailable: $($_.Exception.Message)" -Level WARN }
-
-    $osUpgradePackages = @()
-    try {
-        $osUpgradePackages = @(Get-CMOperatingSystemInstaller -ErrorAction Stop | ForEach-Object {
-            [pscustomobject]@{ PackageID = [string]$_.PackageID; Name = [string]$_.Name }
-        })
-        Write-Log "Loaded $($osUpgradePackages.Count) OS upgrade packages"
-    } catch { $failed.Add('OSUpgradePackages'); $notes.Add("OS upgrade packages unavailable: $($_.Exception.Message)"); Write-Log "OS upgrade packages unavailable: $($_.Exception.Message)" -Level WARN }
-
-    $driverPackages = @()
-    try {
-        $driverPackages = @(Get-CMDriverPackage -Fast -ErrorAction Stop | ForEach-Object {
-            [pscustomobject]@{ PackageID = [string]$_.PackageID; Name = [string]$_.Name }
-        })
-        Write-Log "Loaded $($driverPackages.Count) driver packages"
-    } catch { $failed.Add('DriverPackages'); $notes.Add("Driver packages unavailable: $($_.Exception.Message)"); Write-Log "Driver packages unavailable: $($_.Exception.Message)" -Level WARN }
-
-    $updateGroups = @()
-    try {
-        $updateGroups = @(Get-CMSoftwareUpdateGroup -ErrorAction Stop | ForEach-Object {
-            $n = 0; $e = 0; $sup = $false
-            $p = $_.PSObject.Properties['NumberOfUpdates'];           if ($p) { $n = [int]$p.Value }
-            $p = $_.PSObject.Properties['NumberOfExpiredUpdates'];    if ($p) { $e = [int]$p.Value }
-            $sup = [bool]$_.ContainsSupersededUpdates
-            [pscustomobject]@{ Name = [string]$_.LocalizedDisplayName; CI_ID = [int]$_.CI_ID; NumberOfUpdates = $n; NumberOfExpiredUpdates = $e; ContainsSupersededUpdates = $sup }
-        })
-        Write-Log "Loaded $($updateGroups.Count) software update groups"
-    } catch { $failed.Add('UpdateGroups'); $notes.Add("Software update groups unavailable: $($_.Exception.Message)"); Write-Log "Software update groups unavailable: $($_.Exception.Message)" -Level WARN }
-
-    $updatePackages = @()
-    try {
-        $updatePackages = @(Get-CMSoftwareUpdateDeploymentPackage -ErrorAction Stop | ForEach-Object {
-            [pscustomobject]@{ PackageID = [string]$_.PackageID; Name = [string]$_.Name }
-        })
-        Write-Log "Loaded $($updatePackages.Count) update deployment packages"
-    } catch { $failed.Add('UpdatePackages'); $notes.Add("Update deployment packages unavailable: $($_.Exception.Message)"); Write-Log "Update deployment packages unavailable: $($_.Exception.Message)" -Level WARN }
-
-    $adrs = @()
-    try {
-        $adrs = @(Get-CMAutoDeploymentRule -Fast -ErrorAction Stop | ForEach-Object {
-            $lastRun = $null; $lastError = 0; $enabled = $true
-            $p = $_.PSObject.Properties['LastRunTime'];           if ($p) { $lastRun = $p.Value }
-            $p = $_.PSObject.Properties['LastErrorCode'];         if ($p) { $lastError = [int]$p.Value }
-            $p = $_.PSObject.Properties['AutoDeploymentEnabled']; if ($p) { $enabled = [bool]$p.Value }
-            [pscustomobject]@{ Name = [string]$_.Name; AutoDeploymentEnabled = $enabled; LastRunTime = $lastRun; LastErrorCode = $lastError }
-        })
-        Write-Log "Loaded $($adrs.Count) automatic deployment rules"
-    } catch { $failed.Add('AutoDeploymentRules'); $notes.Add("Automatic deployment rules unavailable: $($_.Exception.Message)"); Write-Log "Automatic deployment rules unavailable: $($_.Exception.Message)" -Level WARN }
-
-    $maintTasks = @()
-    try {
-        $maintTasks = @(Get-CMSiteMaintenanceTask -ErrorAction Stop | ForEach-Object {
-            [pscustomobject]@{ TaskName = [string]$_.TaskName; Enabled = [bool]$_.Enabled }
-        })
-        Write-Log "Loaded $($maintTasks.Count) site maintenance tasks"
-    } catch { $failed.Add('MaintenanceTasks'); $notes.Add("Site maintenance tasks unavailable: $($_.Exception.Message)"); Write-Log "Site maintenance tasks unavailable: $($_.Exception.Message)" -Level WARN }
-
-    $collections = @()
-    try {
-        $collections = @(Get-CMCollection -ErrorAction Stop | ForEach-Object {
-            $includeIds = @()
-            $excludeIds = @()
-            $directRules = 0
-            $queryRules = 0
-            if ($_.CollectionRules) {
-                foreach ($rule in $_.CollectionRules) {
-                    # Embedded rule objects frequently carry an empty
-                    # SmsProviderObjectPath; the .NET type name is the
-                    # reliable discriminator. Without the fallback no rule
-                    # ever classifies and COL-01 flags collections that
-                    # include/exclude rules still reference.
-                    $typeName = $null
-                    try { $typeName = [string]$rule.SmsProviderObjectPath } catch { $typeName = $null }
-                    if (-not $typeName) { try { $typeName = $rule.GetType().Name } catch { continue } }
-                    if ($typeName -match 'IncludeCollection') { $includeIds += [string]$rule.IncludeCollectionID }
-                    elseif ($typeName -match 'ExcludeCollection') { $excludeIds += [string]$rule.ExcludeCollectionID }
-                    elseif ($typeName -match 'Direct') { $directRules++ }
-                    elseif ($typeName -match 'Query') { $queryRules++ }
-                }
-            }
-            # RefreshSchedule is an embedded SMS_ST_RecurInterval; spans of
-            # zero with no start time mean "no full schedule recorded".
-            $fullDaySpan = 0; $fullHourSpan = 0; $fullMinuteSpan = 0; $fullStartHour = -1
-            try {
-                $sched = @($_.RefreshSchedule)[0]
-                if ($sched) {
-                    if ($sched.PSObject.Properties['DaySpan'])    { $fullDaySpan    = [int]$sched.DaySpan }
-                    if ($sched.PSObject.Properties['HourSpan'])   { $fullHourSpan   = [int]$sched.HourSpan }
-                    if ($sched.PSObject.Properties['MinuteSpan']) { $fullMinuteSpan = [int]$sched.MinuteSpan }
-                    if ($sched.PSObject.Properties['StartTime'] -and $sched.StartTime) { $fullStartHour = ([datetime]$sched.StartTime).Hour }
-                }
-            } catch { $null = $_ }
-            [pscustomobject]@{
-                CollectionID        = [string]$_.CollectionID
-                Name                = [string]$_.Name
-                MemberCount         = [int]$_.MemberCount
-                RefreshType         = [int]$_.RefreshType
-                LimitToCollectionID = [string]$_.LimitToCollectionID
-                IsBuiltIn           = ([string]$_.CollectionID -like 'SMS*')
-                IncludeIDs          = $includeIds
-                ExcludeIDs          = $excludeIds
-                DirectRuleCount     = $directRules
-                QueryRuleCount      = $queryRules
-                FullDaySpan         = $fullDaySpan
-                FullHourSpan        = $fullHourSpan
-                FullMinuteSpan      = $fullMinuteSpan
-                FullStartHour       = $fullStartHour
-            }
-        })
-        Write-Log "Loaded $($collections.Count) collections"
-    } catch { $failed.Add('Collections'); $notes.Add("Collections unavailable: $($_.Exception.Message)"); Write-Log "Collections unavailable: $($_.Exception.Message)" -Level WARN }
-
-    $deployments = @()
-    try {
-        $deployments = @(Get-CMDeployment -ErrorAction Stop | ForEach-Object {
-            [pscustomobject]@{
-                SoftwareName        = [string]$_.SoftwareName
-                PackageID           = [string]$_.PackageID
-                CollectionID        = [string]$_.CollectionID
-                CollectionName      = [string]$_.CollectionName
-                DeploymentIntent    = [int]$_.DeploymentIntent
-                FeatureType         = [int]$_.FeatureType
-                NumberTargeted      = [int]$_.NumberTargeted
-                NumberSuccess       = [int]$_.NumberSuccess
-                NumberInProgress    = [int]$_.NumberInProgress
-                NumberErrors        = [int]$_.NumberErrors
-                EnforcementDeadline = $_.EnforcementDeadline
-                CreationTime        = $_.CreationTime
-            }
-        })
-        Write-Log "Loaded $($deployments.Count) deployment summaries"
-    } catch { $failed.Add('Deployments'); $notes.Add("Deployment summaries unavailable: $($_.Exception.Message)"); Write-Log "Deployment summaries unavailable: $($_.Exception.Message)" -Level WARN }
-
-    $appDeployments = @()
-    try {
-        $appDeployments = @(Get-CMApplicationDeployment -ErrorAction Stop | ForEach-Object {
-            # SMS_ApplicationAssignment documents ExpirationTime only; a
-            # deployment without an expiration reads null.
-            $expTime = $null
-            $p = $_.PSObject.Properties['ExpirationTime']
-            if ($p) { $expTime = $p.Value }
-            [pscustomobject]@{
-                ApplicationName       = [string]$_.ApplicationName
-                CollectionName        = [string]$_.CollectionName
-                TargetCollectionID    = [string]$_.TargetCollectionID
-                ExpirationTime        = $expTime
-            }
-        })
-        Write-Log "Loaded $($appDeployments.Count) application deployments"
-    } catch { $failed.Add('AppDeployments'); $notes.Add("Application deployments unavailable: $($_.Exception.Message)"); Write-Log "Application deployments unavailable: $($_.Exception.Message)" -Level WARN }
+    $notCollected = New-Object System.Collections.Generic.List[string]
 
     $conn = Get-CMConnectionInfo
-    $collectionDependencies = @()
-    $collectionsWithSettings = @()
-    $dependencyTargetCIIDs = @()
+    $ns = $(if ($conn) { "root\SMS\site_$($conn.SiteCode)" } else { '' })
+    $result = [ordered]@{}
 
-    if ($conn) {
-        $ns = "root\SMS\site_$($conn.SiteCode)"
-
+    # Ordered: Collections reads CollectionDependencies for include/exclude
+    # ids, and CollectionDetails mutates the rows Collections produced.
+    $collectors = [ordered]@{
+        Applications = @{ Label = 'applications'; Run = {
+            Get-CMApplication -Fast -ErrorAction Stop | ForEach-Object {
+                [pscustomobject]@{
+                    CI_ID         = [int]$_.CI_ID
+                    ModelName     = [string]$_.ModelName
+                    Name          = [string]$_.LocalizedDisplayName
+                    IsDeployed    = [bool]$_.IsDeployed
+                    IsExpired     = [bool]$_.IsExpired
+                    IsSuperseded  = [bool]$_.IsSuperseded
+                    IsSuperseding = [bool]$_.IsSuperseding
+                    PackageID     = [string]$_.PackageID
+                    DateCreated   = $_.DateCreated
+                }
+            }
+        } }
+        Packages = @{ Label = 'packages'; Run = {
+            Get-CMPackage -Fast -ErrorAction Stop | ForEach-Object {
+                [pscustomobject]@{ PackageID = [string]$_.PackageID; Name = [string]$_.Name }
+            }
+        } }
+        Programs = @{ Label = 'programs'; Run = {
+            Get-CMProgram -ErrorAction Stop | ForEach-Object {
+                [pscustomobject]@{ PackageID = [string]$_.PackageID; ProgramName = [string]$_.ProgramName }
+            }
+        } }
+        TaskSequences = @{ Label = 'task sequences'; Run = {
+            Get-CMTaskSequence -ErrorAction Stop | ForEach-Object {
+                $refs = @()
+                if ($_.References) { $refs = @($_.References | ForEach-Object { [string]$_.Package }) }
+                $bootImage = ''
+                $p = $_.PSObject.Properties['BootImageID']
+                if ($p) { $bootImage = [string]$p.Value }
+                [pscustomobject]@{ PackageID = [string]$_.PackageID; Name = [string]$_.Name; ReferencedIDs = $refs; BootImageID = $bootImage }
+            }
+        } }
+        Devices = @{ Label = 'devices'; Run = {
+            Get-CMDevice -Fast -ErrorAction Stop | ForEach-Object {
+                $smbios = ''
+                $p = $_.PSObject.Properties['SMBIOSGUID']
+                if ($p) { $smbios = [string]$p.Value }
+                $lastActive = $null
+                $p = $_.PSObject.Properties['LastActiveTime']
+                if ($p) { $lastActive = $p.Value }
+                [pscustomobject]@{
+                    ResourceID     = [int]$_.ResourceID
+                    Name           = [string]$_.Name
+                    IsClient       = [bool]$_.IsClient
+                    ClientVersion  = [string]$_.ClientVersion
+                    LastActiveTime = $lastActive
+                    SMBIOSGUID     = $smbios
+                }
+            }
+        } }
+        Boundaries = @{ Label = 'boundaries'; Run = {
+            Get-CMBoundary -ErrorAction Stop | ForEach-Object {
+                # -1 sentinel: GroupCount is a provider-computed count that may
+                # be absent; [int]$null would read as 0 and BND-01 would flag
+                # every boundary in the site.
+                $groupCount = -1
+                $p = $_.PSObject.Properties['GroupCount']
+                if ($p -and $null -ne $p.Value) { $groupCount = [int]$p.Value }
+                [pscustomobject]@{
+                    DisplayName  = [string]$_.DisplayName
+                    Value        = [string]$_.Value
+                    BoundaryType = [int]$_.BoundaryType
+                    GroupCount   = $groupCount
+                }
+            }
+        } }
+        BoundaryGroups = @{ Label = 'boundary groups'; Run = {
+            Get-CMBoundaryGroup -ErrorAction Stop | ForEach-Object {
+                $ssCount = -1
+                $p = $_.PSObject.Properties['SiteSystemCount']
+                if ($p) { $ssCount = [int]$p.Value }
+                [pscustomobject]@{ GroupID = [int]$_.GroupID; Name = [string]$_.Name; SiteSystemCount = $ssCount }
+            }
+        } }
+        BootImages = @{ Label = 'boot images'; Run = {
+            Get-CMBootImage -ErrorAction Stop | ForEach-Object {
+                [pscustomobject]@{ PackageID = [string]$_.PackageID; Name = [string]$_.Name }
+            }
+        } }
+        OSImages = @{ Label = 'OS images'; Run = {
+            Get-CMOperatingSystemImage -ErrorAction Stop | ForEach-Object {
+                [pscustomobject]@{ PackageID = [string]$_.PackageID; Name = [string]$_.Name }
+            }
+        } }
+        OSUpgradePackages = @{ Label = 'OS upgrade packages'; Run = {
+            Get-CMOperatingSystemInstaller -ErrorAction Stop | ForEach-Object {
+                [pscustomobject]@{ PackageID = [string]$_.PackageID; Name = [string]$_.Name }
+            }
+        } }
+        DriverPackages = @{ Label = 'driver packages'; Run = {
+            Get-CMDriverPackage -Fast -ErrorAction Stop | ForEach-Object {
+                [pscustomobject]@{ PackageID = [string]$_.PackageID; Name = [string]$_.Name }
+            }
+        } }
+        UpdateGroups = @{ Label = 'software update groups'; Run = {
+            Get-CMSoftwareUpdateGroup -ErrorAction Stop | ForEach-Object {
+                $n = 0; $e = 0; $sup = $false
+                $p = $_.PSObject.Properties['NumberOfUpdates'];           if ($p) { $n = [int]$p.Value }
+                $p = $_.PSObject.Properties['NumberOfExpiredUpdates'];    if ($p) { $e = [int]$p.Value }
+                $sup = [bool]$_.ContainsSupersededUpdates
+                [pscustomobject]@{ Name = [string]$_.LocalizedDisplayName; CI_ID = [int]$_.CI_ID; NumberOfUpdates = $n; NumberOfExpiredUpdates = $e; ContainsSupersededUpdates = $sup }
+            }
+        } }
+        UpdatePackages = @{ Label = 'update deployment packages'; Run = {
+            Get-CMSoftwareUpdateDeploymentPackage -ErrorAction Stop | ForEach-Object {
+                [pscustomobject]@{ PackageID = [string]$_.PackageID; Name = [string]$_.Name }
+            }
+        } }
+        AutoDeploymentRules = @{ Label = 'automatic deployment rules'; Run = {
+            Get-CMAutoDeploymentRule -Fast -ErrorAction Stop | ForEach-Object {
+                $lastRun = $null; $lastError = 0; $enabled = $true
+                $p = $_.PSObject.Properties['LastRunTime'];           if ($p) { $lastRun = $p.Value }
+                $p = $_.PSObject.Properties['LastErrorCode'];         if ($p) { $lastError = [int]$p.Value }
+                $p = $_.PSObject.Properties['AutoDeploymentEnabled']; if ($p) { $enabled = [bool]$p.Value }
+                [pscustomobject]@{ Name = [string]$_.Name; AutoDeploymentEnabled = $enabled; LastRunTime = $lastRun; LastErrorCode = $lastError }
+            }
+        } }
+        MaintenanceTasks = @{ Label = 'site maintenance tasks'; Run = {
+            Get-CMSiteMaintenanceTask -ErrorAction Stop | ForEach-Object {
+                [pscustomobject]@{ TaskName = [string]$_.TaskName; Enabled = [bool]$_.Enabled }
+            }
+        } }
         # Collections that carry variables/settings live in
         # SMS_CollectionSettings; one query beats N per-collection cmdlet
         # round-trips.
-        try {
-            $collectionsWithSettings = @(
-                Get-CimInstance -ComputerName $conn.SMSProvider -Namespace $ns `
-                    -Query 'SELECT CollectionID FROM SMS_CollectionSettings' -ErrorAction Stop |
-                ForEach-Object { [string]$_.CollectionID }
-            )
-            Write-Log "Loaded $($collectionsWithSettings.Count) collection-settings rows"
-        } catch { $failed.Add('CollectionsWithSettings'); $notes.Add("Collection settings unavailable (COL-01 cannot rule out variables): $($_.Exception.Message)"); Write-Log "Collection settings unavailable: $($_.Exception.Message)" -Level WARN }
-
-        try {
-            $dependencyTargetCIIDs = @(
-                Get-CimInstance -ComputerName $conn.SMSProvider -Namespace $ns `
-                    -Query 'SELECT ToApplicationCIID FROM SMS_AppDependenceRelation' -ErrorAction Stop |
-                ForEach-Object { [int]$_.ToApplicationCIID }
-            )
-            Write-Log "Loaded $($dependencyTargetCIIDs.Count) dependency relations"
-        } catch { $failed.Add('DependencyTargetCIIDs'); $notes.Add("Dependency relations unavailable (APP-01 may over-report dependency-only applications): $($_.Exception.Message)"); Write-Log "Dependency relations unavailable: $($_.Exception.Message)" -Level WARN }
-
-        # The embedded CollectionRules array returns include/exclude rules
-        # as null lazy elements often enough to make it unusable as a
-        # graph source; SMS_CollectionDependencies is authoritative for
-        # every reference edge. RelationshipType: 1 = limiting,
-        # 2 = include, 3 = exclude; Dependent references Source.
-        try {
-            $collectionDependencies = @(
-                Get-CimInstance -ComputerName $conn.SMSProvider -Namespace $ns `
-                    -Query 'SELECT DependentCollectionID, SourceCollectionID, RelationshipType FROM SMS_CollectionDependencies' -ErrorAction Stop |
-                ForEach-Object {
-                    [pscustomobject]@{
-                        From = [string]$_.DependentCollectionID
-                        To   = [string]$_.SourceCollectionID
-                        Kind = switch ([int]$_.RelationshipType) { 1 { 'limit' } 2 { 'include' } 3 { 'exclude' } default { "type$([int]$_.RelationshipType)" } }
-                    }
+        CollectionsWithSettings = @{ Label = 'collection-settings rows'; NeedsCim = $true; FailureHint = 'COL-01 cannot rule out variables'; Run = {
+            Get-CimInstance -ComputerName $conn.SMSProvider -Namespace $ns `
+                -Query 'SELECT CollectionID FROM SMS_CollectionSettings' -ErrorAction Stop |
+            ForEach-Object { [string]$_.CollectionID }
+        } }
+        DependencyTargetCIIDs = @{ Label = 'dependency relations'; NeedsCim = $true; FailureHint = 'APP-01 may over-report dependency-only applications'; Run = {
+            Get-CimInstance -ComputerName $conn.SMSProvider -Namespace $ns `
+                -Query 'SELECT ToApplicationCIID FROM SMS_AppDependenceRelation' -ErrorAction Stop |
+            ForEach-Object { [int]$_.ToApplicationCIID }
+        } }
+        # SMS_CollectionDependencies is authoritative for every reference
+        # edge. RelationshipType: 1 = limiting, 2 = include, 3 = exclude;
+        # Dependent references Source.
+        CollectionDependencies = @{ Label = 'collection reference edges'; NeedsCim = $true; FailureHint = 'COL-01 and COL-05..COL-09 are skipped'; Run = {
+            Get-CimInstance -ComputerName $conn.SMSProvider -Namespace $ns `
+                -Query 'SELECT DependentCollectionID, SourceCollectionID, RelationshipType FROM SMS_CollectionDependencies' -ErrorAction Stop |
+            ForEach-Object {
+                [pscustomobject]@{
+                    From = [string]$_.DependentCollectionID
+                    To   = [string]$_.SourceCollectionID
+                    Kind = switch ([int]$_.RelationshipType) { 1 { 'limit' } 2 { 'include' } 3 { 'exclude' } default { "type$([int]$_.RelationshipType)" } }
                 }
-            )
-            Write-Log "Loaded $($collectionDependencies.Count) collection reference edges"
-        } catch { $failed.Add('CollectionDependencies'); $notes.Add("Collection reference edges unavailable (COL-07/COL-08 fall back to embedded rules, which under-report): $($_.Exception.Message)"); Write-Log "Collection reference edges unavailable: $($_.Exception.Message)" -Level WARN }
-    }
-    else {
-        $failed.Add('CollectionsWithSettings')
-        $failed.Add('DependencyTargetCIIDs')
-        $failed.Add('CollectionDependencies')
-        $notes.Add('No CM connection recorded; CIM datasets (collection settings, dependency relations, collection reference edges) skipped.')
+            }
+        } }
+        Collections = @{ Label = 'collections'; Run = {
+            $includes = @{}; $excludes = @{}
+            foreach ($e in @($result['CollectionDependencies'])) {
+                if ($e.Kind -eq 'include')     { $includes[$e.From] = @($includes[$e.From]) + $e.To }
+                elseif ($e.Kind -eq 'exclude') { $excludes[$e.From] = @($excludes[$e.From]) + $e.To }
+            }
+            # CollectionRules and RefreshSchedule are lazy; selecting only
+            # the plain columns keeps this to one provider query.
+            Invoke-CMWmiQuery -Query 'SELECT CollectionID, Name, MemberCount, RefreshType, LimitToCollectionID FROM SMS_Collection' -Option Fast -ErrorAction Stop | ForEach-Object {
+                $id = [string]$_.CollectionID
+                [pscustomobject]@{
+                    CollectionID        = $id
+                    Name                = [string]$_.Name
+                    MemberCount         = [int]$_.MemberCount
+                    RefreshType         = [int]$_.RefreshType
+                    LimitToCollectionID = [string]$_.LimitToCollectionID
+                    IsBuiltIn           = ($id -like 'SMS*')
+                    IncludeIDs          = @($includes[$id] | Where-Object { $_ })
+                    ExcludeIDs          = @($excludes[$id] | Where-Object { $_ })
+                    DirectRuleCount     = 0
+                    QueryRuleCount      = 0
+                    FullDaySpan         = 0
+                    FullHourSpan        = 0
+                    FullMinuteSpan      = 0
+                    FullStartHour       = -1
+                }
+            }
+        } }
+        # Rule counts and the full-update schedule are lazy properties: one
+        # provider read per collection. Limited to collections that have a
+        # full-update schedule, the only ones COL-05/06/09 can flag.
+        CollectionDetails = @{ Label = 'collection schedule details'; FailureHint = 'COL-05, COL-06, and COL-09 report nothing this scan'; Run = {
+            $targets = @($result['Collections'] | Where-Object { -not $_.IsBuiltIn -and $_.RefreshType -in 2, 6 })
+            $i = 0
+            foreach ($c in $targets) {
+                $i++
+                if ($ProgressState) { $ProgressState.Step = "Reading collection schedules ($i of $($targets.Count))..." }
+                $full = Get-CMCollection -Id $c.CollectionID -ErrorAction Stop
+                if (-not $full) { continue }
+                foreach ($rule in @($full.CollectionRules)) {
+                    if (-not $rule) { continue }
+                    # Embedded rule objects frequently carry an empty
+                    # SmsProviderObjectPath; the .NET type name is the
+                    # reliable discriminator.
+                    $typeName = $null
+                    try { $typeName = [string]$rule.SmsProviderObjectPath } catch { $typeName = $null }
+                    if (-not $typeName) { try { $typeName = $rule.GetType().Name } catch { continue } }
+                    if ($typeName -match 'Direct') { $c.DirectRuleCount++ }
+                    elseif ($typeName -match 'Query') { $c.QueryRuleCount++ }
+                }
+                # RefreshSchedule is an embedded SMS_ST_RecurInterval; spans of
+                # zero with no start time mean "no full schedule recorded".
+                try {
+                    $sched = @($full.RefreshSchedule)[0]
+                    if ($sched) {
+                        if ($sched.PSObject.Properties['DaySpan'])    { $c.FullDaySpan    = [int]$sched.DaySpan }
+                        if ($sched.PSObject.Properties['HourSpan'])   { $c.FullHourSpan   = [int]$sched.HourSpan }
+                        if ($sched.PSObject.Properties['MinuteSpan']) { $c.FullMinuteSpan = [int]$sched.MinuteSpan }
+                        if ($sched.PSObject.Properties['StartTime'] -and $sched.StartTime) { $c.FullStartHour = ([datetime]$sched.StartTime).Hour }
+                    }
+                } catch { $null = $_ }
+                $c.CollectionID
+            }
+        } }
+        Deployments = @{ Label = 'deployment summaries'; Run = {
+            Get-CMDeployment -ErrorAction Stop | ForEach-Object {
+                [pscustomobject]@{
+                    SoftwareName        = [string]$_.SoftwareName
+                    PackageID           = [string]$_.PackageID
+                    CollectionID        = [string]$_.CollectionID
+                    CollectionName      = [string]$_.CollectionName
+                    DeploymentIntent    = [int]$_.DeploymentIntent
+                    FeatureType         = [int]$_.FeatureType
+                    NumberTargeted      = [int]$_.NumberTargeted
+                    NumberSuccess       = [int]$_.NumberSuccess
+                    NumberInProgress    = [int]$_.NumberInProgress
+                    NumberErrors        = [int]$_.NumberErrors
+                    EnforcementDeadline = $_.EnforcementDeadline
+                    CreationTime        = $_.CreationTime
+                }
+            }
+        } }
+        AppDeployments = @{ Label = 'application deployments'; Run = {
+            Invoke-CMWmiQuery -Query 'SELECT ApplicationName, CollectionName, TargetCollectionID, ExpirationTime FROM SMS_ApplicationAssignment' -Option Fast -ErrorAction Stop | ForEach-Object {
+                # A deployment without an expiration reads null.
+                $expTime = $null
+                $p = $_.PSObject.Properties['ExpirationTime']
+                if ($p) { $expTime = $p.Value }
+                [pscustomobject]@{
+                    ApplicationName    = [string]$_.ApplicationName
+                    CollectionName     = [string]$_.CollectionName
+                    TargetCollectionID = [string]$_.TargetCollectionID
+                    ExpirationTime     = $expTime
+                }
+            }
+        } }
     }
 
-    return [pscustomobject]@{
-        Applications            = $apps
-        Packages                = $packages
-        Programs                = $programs
-        TaskSequences           = $taskSequences
-        Collections             = $collections
-        Deployments             = $deployments
-        AppDeployments          = $appDeployments
-        CollectionsWithSettings = $collectionsWithSettings
-        DependencyTargetCIIDs   = $dependencyTargetCIIDs
-        CollectionDependencies  = $collectionDependencies
-        Devices                 = $devices
-        Boundaries              = $boundaries
-        BoundaryGroups          = $boundaryGroups
-        BootImages              = $bootImages
-        OSImages                = $osImages
-        OSUpgradePackages       = $osUpgradePackages
-        DriverPackages          = $driverPackages
-        UpdateGroups            = $updateGroups
-        UpdatePackages          = $updatePackages
-        AutoDeploymentRules     = $adrs
-        MaintenanceTasks        = $maintTasks
-        DatasetNotes            = $notes.ToArray()
-        FailedDatasets          = $failed.ToArray()
-        CollectedAt             = Get-Date
+    $wanted = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($k in @($Datasets | Where-Object { $_ })) { [void]$wanted.Add($k) }
+    if ($wanted.Count -eq 0) { foreach ($k in $collectors.Keys) { [void]$wanted.Add($k) } }
+    if ($wanted.Contains('CollectionDetails')) { [void]$wanted.Add('Collections') }
+    if ($wanted.Contains('Collections')) { [void]$wanted.Add('CollectionDependencies') }
+
+    $total = @($collectors.Keys | Where-Object { $wanted.Contains($_) }).Count
+    $index = 0
+    foreach ($key in @($collectors.Keys)) {
+        $result[$key] = @()
+        if (-not $wanted.Contains($key)) { $notCollected.Add($key); continue }
+        $collector = $collectors[$key]
+        $index++
+        if ($ProgressState) { $ProgressState.Step = "Collecting $($collector.Label) ($index of $total)..." }
+        $hint = $(if ($collector.FailureHint) { " ($($collector.FailureHint))" } else { '' })
+        if ($collector.NeedsCim -and -not $conn) {
+            $failed.Add($key); $notes.Add("No CM connection recorded; $($collector.Label) skipped$hint.")
+            continue
+        }
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        try {
+            $result[$key] = @(& $collector.Run)
+            Write-Log ("Loaded {0} {1} in {2:n1}s" -f @($result[$key]).Count, $collector.Label, $sw.Elapsed.TotalSeconds)
+        }
+        catch {
+            $result[$key] = @()
+            $failed.Add($key)
+            $notes.Add("$($collector.Label) unavailable${hint}: $($_.Exception.Message)")
+            Write-Log "$($collector.Label) unavailable after $([int]$sw.Elapsed.TotalSeconds)s: $($_.Exception.Message)" -Level WARN
+        }
     }
+
+    $result['DatasetNotes']         = $notes.ToArray()
+    $result['FailedDatasets']       = $failed.ToArray()
+    $result['NotCollectedDatasets'] = $notCollected.ToArray()
+    $result['CollectedAt']          = Get-Date
+    return [pscustomobject]$result
 }
 
 # ---------------------------------------------------------------------------
@@ -651,6 +713,9 @@ function Test-HygCollectionEmptyUnused {
         foreach ($id in @($c.IncludeIDs)) { [void]$referenced.Add([string]$id) }
         foreach ($id in @($c.ExcludeIDs)) { [void]$referenced.Add([string]$id) }
         if ($c.LimitToCollectionID) { [void]$referenced.Add([string]$c.LimitToCollectionID) }
+    }
+    if ($Data.PSObject.Properties['CollectionDependencies']) {
+        foreach ($e in @($Data.CollectionDependencies)) { if ($e.To) { [void]$referenced.Add([string]$e.To) } }
     }
 
     $withSettings = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
@@ -1315,11 +1380,21 @@ function Get-HygieneRelationshipData {
         followed by the pure parser. Requires an established CM
         connection. Returns $null on total failure with the reason logged.
     #>
-    param()
+    param(
+        [hashtable]$ProgressState,
+        [int]$ExpectedCount = 0
+    )
 
     try {
-        Write-Log 'Loading applications with SDMPackageXML for relationship analysis...'
+        Write-Log 'Loading applications with SDMPackageXML for relationship analysis (one provider read per application)...'
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        $read = 0
         $apps = @(Get-CMApplication -ErrorAction Stop | ForEach-Object {
+            $read++
+            if ($ProgressState) {
+                $ProgressState.Step = $(if ($ExpectedCount -gt 0) { "Reading application definitions ($read of $ExpectedCount)..." } else { "Reading application definitions ($read)..." })
+            }
+            if ($read % 100 -eq 0) { Write-Log ("Read {0} application definitions in {1:n0}s" -f $read, $sw.Elapsed.TotalSeconds) }
             [pscustomobject]@{
                 CI_ID                   = [int]$_.CI_ID
                 ModelName               = [string]$_.ModelName
@@ -1696,65 +1771,52 @@ function Test-HygAppContentPath {
 function Invoke-HygieneScan {
     <#
     .SYNOPSIS
-        Runs every implemented check over a prefetched dataset and returns
-        findings sorted by severity, then check id, then object name.
+        Runs the checks the selected scopes cover over a prefetched dataset
+        and returns findings sorted by severity, then check id, then object
+        name.
 
     .DESCRIPTION
         Pure over its input: pass real data from Get-HygieneData or
         synthetic data of the same shape. A check that throws is recorded
         as a finding against the scan itself rather than aborting the run.
+
+    .PARAMETER Scopes
+        Scope ids from Get-HygieneScanScope. Omitted or empty runs every
+        check.
     #>
     param(
         [Parameter(Mandatory)]$Data,
         [hashtable]$Thresholds = (Get-HygieneDefaultThresholds),
-        $RelationshipData = $null
+        $RelationshipData = $null,
+        [string[]]$Scopes
     )
 
-    # Threshold-less checks take only $d; the runner still passes every
-    # argument and the extras land in $args, keeping one invocation shape.
-    # Requires lists the datasets a check reads as evidence: a failed
-    # dataset skips the check with a visible Scan finding, because running
-    # it over an empty array would turn a query failure into "nothing
-    # references this object" plus a deletion script.
-    $checks = @(
-        @{ Id = 'APP-01'; Requires = @('Applications','Deployments','TaskSequences','DependencyTargetCIIDs'); Run = { param($d, $t) Test-HygAppNoReferences -Data $d -Thresholds $t } }
-        @{ Id = 'APP-02'; Requires = @('Applications'); Run = { param($d) Test-HygAppRetiredDeployed -Data $d } }
-        @{ Id = 'APP-03'; Requires = @('Applications'); Run = { param($d) Test-HygAppSupersededDeployed -Data $d } }
-        @{ Id = 'PKG-01'; Requires = @('Packages','Programs','Deployments','TaskSequences'); Run = { param($d) Test-HygPackageUnused -Data $d } }
-        @{ Id = 'COL-01'; Requires = @('Collections','Deployments','CollectionsWithSettings'); Run = { param($d) Test-HygCollectionEmptyUnused -Data $d } }
-        @{ Id = 'COL-02'; Requires = @('Collections','Deployments'); Run = { param($d) Test-HygDeploymentEmptyCollection -Data $d } }
-        @{ Id = 'COL-03'; Requires = @('Collections'); Run = { param($d, $t) Test-HygIncrementalCeiling -Data $d -Thresholds $t } }
-        @{ Id = 'COL-EVAL'; Requires = @('Collections'); Run = { param($d, $t) Test-HygCollectionEvaluationChecks -Data $d -Thresholds $t } }
-        @{ Id = 'DPL-01'; Requires = @('AppDeployments'); Run = { param($d) Test-HygDeploymentExpired -Data $d } }
-        @{ Id = 'DPL-02'; Requires = @('Deployments'); Run = { param($d, $t) Test-HygDeploymentPastDeadlineFailures -Data $d -Thresholds $t } }
-        @{ Id = 'DPL-03'; Requires = @('Deployments'); Run = { param($d, $t) Test-HygDeploymentAvailableUnused -Data $d -Thresholds $t } }
-        @{ Id = 'DEV-01'; Requires = @('Devices','MaintenanceTasks'); Run = { param($d, $t) Test-HygDeviceInactive -Data $d -Thresholds $t } }
-        @{ Id = 'DEV-02'; Requires = @('Devices'); Run = { param($d) Test-HygDeviceDuplicates -Data $d } }
-        @{ Id = 'DEV-03'; Requires = @('Devices'); Run = { param($d) Test-HygClientVersions -Data $d } }
-        @{ Id = 'BND';    Requires = @('Boundaries','BoundaryGroups'); Run = { param($d) Test-HygBoundaryChecks -Data $d } }
-        @{ Id = 'TSQ';    Requires = @('TaskSequences','Packages','BootImages','DriverPackages','UpdatePackages','OSImages','OSUpgradePackages','Applications'); Run = { param($d) Test-HygTaskSequenceRefs -Data $d } }
-        @{ Id = 'UPD-01'; Requires = @('UpdateGroups'); Run = { param($d, $t) Test-HygUpdateGroupChecks -Data $d -Thresholds $t } }
-        @{ Id = 'UPD-03'; Requires = @('AutoDeploymentRules'); Run = { param($d, $t) Test-HygAdrChecks -Data $d -Thresholds $t } }
-        @{ Id = 'MNT';    Requires = @('MaintenanceTasks'); Run = { param($d) Test-HygMaintenanceTasks -Data $d } }
-    )
-    if ($RelationshipData) {
-        # $args-based: these only consume the third runner argument.
-        $checks += @(
-            @{ Id = 'SUP/DEP/REL'; Run = { Test-HygRelationshipChecks -RelationshipData $args[2] } }
-            @{ Id = 'APP-04';      Run = { Test-HygAppContentPath -RelationshipData $args[2] } }
-        )
-    }
-    else {
-        Write-Log 'Relationship data not collected; SUP/DEP/REL and APP-04 checks skipped this scan.' -Level WARN
+    $picked = @(Resolve-HygScanScope -Scopes $Scopes)
+    $checks = @(Get-HygScanPlan | Where-Object { @($_.Scopes | Where-Object { $_ -in $picked }).Count -gt 0 })
+    if (-not $RelationshipData) {
+        if (@($checks | Where-Object { $_.NeedsRelationships }).Count -gt 0) {
+            Write-Log 'Relationship data not collected; SUP/DEP/REL and APP-04 checks skipped this scan.' -Level WARN
+        }
+        $checks = @($checks | Where-Object { -not $_.NeedsRelationships })
     }
 
     # Synthetic fixtures may predate FailedDatasets; absent means none.
     $failedSet = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
     $fp = $Data.PSObject.Properties['FailedDatasets']
     if ($fp -and $fp.Value) { foreach ($k in @($fp.Value)) { [void]$failedSet.Add([string]$k) } }
+    $notCollectedSet = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    $np = $Data.PSObject.Properties['NotCollectedDatasets']
+    if ($np -and $np.Value) { foreach ($k in @($np.Value)) { [void]$notCollectedSet.Add([string]$k) } }
 
     $findings = New-Object System.Collections.Generic.List[object]
     foreach ($check in $checks) {
+        # A dataset left out of the prefetch on purpose is a scope mismatch,
+        # not a site problem: no finding, but the check still must not run.
+        $outOfScope = @(@($check.Requires) | Where-Object { $notCollectedSet.Contains($_) })
+        if ($outOfScope.Count -gt 0) {
+            Write-Log ("Check {0} skipped: dataset(s) {1} not collected for this scan scope" -f $check.Id, ($outOfScope -join ', ')) -Level WARN
+            continue
+        }
         $missing = @(@($check.Requires) | Where-Object { $failedSet.Contains($_) })
         if ($missing.Count -gt 0) {
             Write-Log ("Check {0} skipped: dataset(s) {1} unavailable" -f $check.Id, ($missing -join ', ')) -Level WARN

@@ -2,6 +2,24 @@
 
 All notable changes to Site Hygiene are documented in this file.
 
+## [0.9.0] - 2026-09-18
+
+### Added
+
+- Choose which site areas a scan covers under Options > Scan scope.
+- Cancel a running scan from the progress overlay.
+- Show each dataset's row count and duration in the log pane, console, and log file.
+- Show elapsed time and per-object progress on the progress overlay.
+
+### Changed
+
+- Read collections with one query instead of one read per collection.
+- Read application deployments with one query instead of one read per deployment.
+- Read collection schedules only for custom collections that have a full-update schedule.
+- Skip the application definition read unless the relationships area is selected.
+- Count collection dependency references when deciding whether an empty collection is unused.
+- Leave the rescan-delta baseline unchanged after a scoped scan.
+
 ## [0.8.1] - 2026-09-04
 
 ### Changed

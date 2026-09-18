@@ -18,7 +18,7 @@
 
 .NOTES
     ScriptName : start-sitehygiene.ps1
-    Version    : 0.8.1
+    Version    : 0.9.0
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', '', Justification='PS51-WPF-001..003: $global: survives closure scope-strip.')]
@@ -63,7 +63,7 @@ $global:PrefsPath = Join-Path $PSScriptRoot 'SiteHygiene.prefs.json'
 function Get-ShPreferences {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Returns the full preferences hashtable by design.')]
     param()
-    return Read-SuiteSettings -Path $global:PrefsPath -Defaults @{ DarkMode = $true; SiteCode = ''; SMSProvider = '' }
+    return Read-SuiteSettings -Path $global:PrefsPath -Defaults @{ DarkMode = $true; SiteCode = ''; SMSProvider = ''; ScanScopes = @() }
 }
 function Save-ShPreferences {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Writes the full preferences hashtable by design.')]
@@ -147,7 +147,11 @@ if ($txtVersion) { $txtVersion.Text = "v$script:AppVersion" }
 $null = $txtAppTitle, $txtProgressTitle
 
 function Add-LogLine {
-    param([Parameter(Mandatory)][string]$Message)
+    # -FromBackground: the background runspace already wrote the line to the
+    # log file; only the pane and the console still need it.
+    param([Parameter(Mandatory)][string]$Message, [switch]$FromBackground)
+    if ($FromBackground) { Write-Host $Message; $Message = $Message -replace '^\[[^\]]+\]\s*\[(?:INFO |DEBUG)\]\s*', '' }
+    else { Write-Log $Message }
     $ts = (Get-Date).ToString('HH:mm:ss')
     $line = '{0}  {1}' -f $ts, $Message
     if ([string]::IsNullOrWhiteSpace($txtLog.Text)) { $txtLog.Text = $line }
@@ -531,7 +535,14 @@ function Invoke-Scan {
     $btnScan.IsEnabled = $false
     $txtProgressStep.Text  = 'Connecting...'
     $progressOverlay.Visibility = [System.Windows.Visibility]::Visible
-    Add-LogLine ('Scan: site={0} provider={1}' -f $global:Prefs.SiteCode, $global:Prefs.SMSProvider)
+
+    $allScopes = @(Get-HygieneScanScope | ForEach-Object { $_.Id })
+    $scopes = @(@($global:Prefs['ScanScopes']) | Where-Object { $_ -in $allScopes })
+    if ($scopes.Count -eq 0) { $scopes = $allScopes }
+    $script:ScanIsFull = ($scopes.Count -eq $allScopes.Count)
+    $script:ScanStarted = Get-Date
+    $script:BgInfoIndex = 0
+    Add-LogLine ('Scan: site={0} provider={1} scope={2}' -f $global:Prefs.SiteCode, $global:Prefs.SMSProvider, $(if ($script:ScanIsFull) { 'everything' } else { $scopes -join ', ' }))
     Set-StatusText 'Scanning...'
 
     $siteCode    = [string]$global:Prefs.SiteCode
@@ -540,25 +551,28 @@ function Invoke-Scan {
     $script:BgPowerShell = [powershell]::Create()
     $script:BgPowerShell.Runspace = $script:BgRunspace
     [void]$script:BgPowerShell.AddScript({
-        param($SiteCode, $SMSProvider, $State)
+        param($SiteCode, $SMSProvider, $State, $Scopes)
         try {
             if (-not (Test-CMConnection)) {
                 $State.Step = "Connecting to $SiteCode..."
                 $ok = Connect-CMSite -SiteCode $SiteCode -SMSProvider $SMSProvider
                 if (-not $ok) { $State.ErrorMsg = "Failed to connect to site $SiteCode (provider $SMSProvider)."; return }
             }
-            $State.Step = 'Collecting site data (applications, packages, collections, deployments)...'
-            $data = Get-HygieneData
+            $datasets = @(Get-HygieneRequiredDataset -Scopes $Scopes)
+            $data = Get-HygieneData -Datasets @($datasets | Where-Object { $_ -ne 'Relationships' }) -ProgressState $State
 
-            $State.Step = 'Parsing application relationships (SDMPackageXML)...'
-            $relData = Get-HygieneRelationshipData
+            $relData = $null
+            if ($datasets -contains 'Relationships') {
+                $State.Step = 'Reading application definitions...'
+                $relData = Get-HygieneRelationshipData -ProgressState $State -ExpectedCount @($data.Applications).Count
+            }
 
             $State.Step = 'Running hygiene checks...'
-            $findings = @(Invoke-HygieneScan -Data $data -RelationshipData $relData)
+            $findings = @(Invoke-HygieneScan -Data $data -RelationshipData $relData -Scopes $Scopes)
 
             $notes = @($data.DatasetNotes)
             if ($relData) { $notes += @($relData.DatasetNotes) }
-            else { $notes += 'Relationship data unavailable; SUP/DEP/REL and APP-04 checks were skipped.' }
+            elseif ($datasets -contains 'Relationships') { $notes += 'Relationship data unavailable; SUP/DEP/REL and APP-04 checks were skipped.' }
 
             $State.Findings = $findings
             $State.Summary  = @(Get-HygieneScanSummary -Findings $findings)
@@ -567,13 +581,25 @@ function Invoke-Scan {
         }
         catch { $State.ErrorMsg = $_.Exception.Message }
         finally { $State.Done = $true }
-    }).AddArgument($siteCode).AddArgument($smsProvider).AddArgument($script:BgState)
+    }).AddArgument($siteCode).AddArgument($smsProvider).AddArgument($script:BgState).AddArgument([string[]]$scopes)
 
     $script:BgInvokeHandle = $script:BgPowerShell.BeginInvoke()
     $script:BgTimer = New-Object System.Windows.Threading.DispatcherTimer
     $script:BgTimer.Interval = [TimeSpan]::FromMilliseconds(150)
     $script:BgTimer.Add_Tick({
-        if ($script:BgState) { $current = [string]$script:BgState.Step; if ($txtProgressStep.Text -ne $current) { $txtProgressStep.Text = $current } }
+        if ($script:BgState) {
+            $current = '{0}  [{1:mm\:ss}]' -f [string]$script:BgState.Step, ((Get-Date) - $script:ScanStarted)
+            if ($txtProgressStep.Text -ne $current) { $txtProgressStep.Text = $current }
+        }
+        # The background runspace has no console host: its Write-Log output
+        # lands on the Information stream and is surfaced from here.
+        if ($script:BgPowerShell) {
+            $info = $script:BgPowerShell.Streams.Information
+            while ($script:BgInfoIndex -lt $info.Count) {
+                $record = $info[$script:BgInfoIndex]; $script:BgInfoIndex++
+                if ($record -and $record.MessageData) { Add-LogLine ([string]$record.MessageData) -FromBackground }
+            }
+        }
         if ($script:BgState -and $script:BgState.Done) {
             $script:BgTimer.Stop()
             try { [void]$script:BgPowerShell.EndInvoke($script:BgInvokeHandle) } catch { $null = $_ }
@@ -590,10 +616,14 @@ function Invoke-Scan {
             }
 
             $script:LastScanTime = Get-Date
-            $previous = Read-HygieneScanResult -Path $global:LastScanPath
+            # A scoped scan is not comparable to the full baseline: every
+            # out-of-scope finding would read as resolved, and saving it
+            # would make the next full scan report them all as new.
+            $previous = $(if ($script:ScanIsFull) { Read-HygieneScanResult -Path $global:LastScanPath } else { $null })
             $delta = Get-HygieneScanDelta -Findings @($script:BgState.Findings) -Previous $previous
-            Save-HygieneScanResult -Findings @($script:BgState.Findings) -Path $global:LastScanPath
-            if ($delta.HasBaseline) {
+            if ($script:ScanIsFull) { Save-HygieneScanResult -Findings @($script:BgState.Findings) -Path $global:LastScanPath }
+            if (-not $script:ScanIsFull) { Add-LogLine 'Scoped scan: delta baseline left unchanged.' }
+            elseif ($delta.HasBaseline) {
                 Add-LogLine ('Delta vs previous scan: {0} new, {1} resolved.' -f $delta.NewKeys.Count, @($delta.Resolved).Count)
                 foreach ($r in @($delta.Resolved)) { Add-LogLine ('  Resolved: [{0}] {1}' -f $r.CheckId, $r.ObjectName) }
             }
@@ -635,6 +665,21 @@ function Invoke-Scan {
     $script:BgTimer.Start()
 }
 $btnScan.Add_Click({ Invoke-Scan })
+
+$btnCancelScan = $window.FindName('btnCancelScan')
+$btnCancelScan.Add_Click({
+    if (-not $script:BgPowerShell) { return }
+    # The stop lands when the in-flight provider call returns; the runspace
+    # is discarded so the next scan never queues behind a stuck pipeline.
+    Dispose-BgWork
+    Close-SuiteBgRunspace -Runspace $script:BgRunspace
+    $script:BgRunspace = $null
+    $script:BgState = $null
+    $progressOverlay.Visibility = [System.Windows.Visibility]::Collapsed
+    $btnScan.IsEnabled = $true
+    Add-LogLine 'Scan cancelled.'
+    Set-StatusText 'Scan cancelled.'
+})
 
 # =============================================================================
 # Export buttons.
@@ -724,6 +769,7 @@ function Show-OptionsDialog {
         <Border Grid.Column="0" Grid.Row="0" Padding="6,12,0,12">
             <StackPanel>
                 <Button x:Name="btnCatConnection" Content="Connection" Style="{StaticResource CategoryRowStyle}"/>
+                <Button x:Name="btnCatScope"      Content="Scan scope" Style="{StaticResource CategoryRowStyle}"/>
                 <Button x:Name="btnCatAbout"      Content="About"      Style="{StaticResource CategoryRowStyle}"/>
             </StackPanel>
         </Border>
@@ -739,6 +785,16 @@ function Show-OptionsDialog {
                          Controls:TextBoxHelper.Watermark="e.g. cm01.contoso.com"/>
                 <TextBlock Text="Used for the CM PSDrive root plus two read-only CIM queries (collection settings, application dependency relations). A scan never mutates the site; the account only needs read access."
                            FontSize="11" TextWrapping="Wrap" Margin="0,16,0,0"
+                           Foreground="{DynamicResource MahApps.Brushes.Gray1}"/>
+            </StackPanel>
+            <StackPanel x:Name="paneScope" Visibility="Collapsed">
+                <TextBlock Text="Scan scope" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                <TextBlock Text="A scan queries only the datasets the selected areas need. Areas marked slow read one object at a time from the SMS Provider and scale with object count."
+                           FontSize="11" TextWrapping="Wrap" Margin="0,0,0,10"
+                           Foreground="{DynamicResource MahApps.Brushes.Gray1}"/>
+                <StackPanel x:Name="panelScopes"/>
+                <TextBlock Text="Rescan deltas are recorded only when every area is selected."
+                           FontSize="11" TextWrapping="Wrap" Margin="0,10,0,0"
                            Foreground="{DynamicResource MahApps.Brushes.Gray1}"/>
             </StackPanel>
             <StackPanel x:Name="paneAbout" Visibility="Collapsed">
@@ -777,9 +833,39 @@ function Show-OptionsDialog {
     $btnCancel        = $dlg.FindName('btnCancel')
     $txtSiteCode.Text    = [string]$global:Prefs.SiteCode
     $txtSmsProvider.Text = [string]$global:Prefs.SMSProvider
-    $btnCatConnection.Add_Click({ $paneConnection.Visibility = [System.Windows.Visibility]::Visible; $paneAbout.Visibility = [System.Windows.Visibility]::Collapsed })
-    $btnCatAbout.Add_Click({      $paneConnection.Visibility = [System.Windows.Visibility]::Collapsed; $paneAbout.Visibility = [System.Windows.Visibility]::Visible })
+    $btnCatScope      = $dlg.FindName('btnCatScope')
+    $paneScope        = $dlg.FindName('paneScope')
+    $panelScopes      = $dlg.FindName('panelScopes')
+    $savedScopes = @(@($global:Prefs['ScanScopes']) | Where-Object { $_ })
+    $scopeBoxes = @(Get-HygieneScanScope | ForEach-Object {
+        $cb = New-Object System.Windows.Controls.CheckBox
+        $cb.Content   = $(if ($_.Slow) { '{0} (slow)' -f $_.Title } else { $_.Title })
+        $cb.Tag       = $_.Id
+        $cb.FontSize  = 12
+        $cb.Margin    = [System.Windows.Thickness]::new(0, 3, 0, 3)
+        $cb.IsChecked = ($savedScopes.Count -eq 0 -or $_.Id -in $savedScopes)
+        [void]$panelScopes.Children.Add($cb)
+        $cb
+    })
+    $showPane = {
+        param($Pane)
+        foreach ($p in @($paneConnection, $paneScope, $paneAbout)) {
+            $p.Visibility = $(if ($p -eq $Pane) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed })
+        }
+    }
+    $btnCatConnection.Add_Click({ & $showPane $paneConnection })
+    $btnCatScope.Add_Click({      & $showPane $paneScope })
+    $btnCatAbout.Add_Click({      & $showPane $paneAbout })
     $btnOk.Add_Click({
+        $checked = @($scopeBoxes | Where-Object { $_.IsChecked } | ForEach-Object { [string]$_.Tag })
+        if ($checked.Count -eq 0) {
+            & $showPane $paneScope
+            [void][System.Windows.MessageBox]::Show($dlg, 'Select at least one scan area.', 'Scan scope')
+            return
+        }
+        # Empty means everything, so areas added by a later version are
+        # scanned without revisiting this dialog.
+        $global:Prefs['ScanScopes'] = $(if ($checked.Count -eq $scopeBoxes.Count) { @() } else { $checked })
         $newSite     = ([string]$txtSiteCode.Text).Trim()
         $newProvider = ([string]$txtSmsProvider.Text).Trim()
         $changed = ($newSite -ne [string]$global:Prefs.SiteCode) -or ($newProvider -ne [string]$global:Prefs.SMSProvider)
