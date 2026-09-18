@@ -2,6 +2,16 @@
 
 All notable changes to Site Hygiene are documented in this file.
 
+## [0.9.2] - 2026-09-18
+
+### Added
+
+- Flag content that failed on one or more distribution points (CNT-01).
+- Flag content still distributing more than two days after its last update (CNT-02).
+- Flag deployed applications and packages whose content is on no distribution point (CNT-03).
+- Add a Content distribution area to the scan scope and a Content category filter.
+- Add a screenshot to the README.
+
 ## [0.9.1] - 2026-09-18
 
 ### Fixed
