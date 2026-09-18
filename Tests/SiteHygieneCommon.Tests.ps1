@@ -1390,11 +1390,13 @@ Describe 'Scoped prefetch' {
         foreach ($s in $stubs) { Remove-Item -Path "function:global:$s" -ErrorAction SilentlyContinue }
     }
     BeforeEach {
-        Mock -ModuleName SiteHygieneCommon Get-CMConnectionInfo { [pscustomobject]@{ SiteCode = 'MCM'; SMSProvider = 'cm01' } }
-        Mock -ModuleName SiteHygieneCommon Get-CimInstance {
+        # A direct WMI connection needs remote WMI rights a read-only
+        # analyst lacks; every read must use the CM provider connection.
+        Mock -ModuleName SiteHygieneCommon Get-CimInstance { throw 'Access is denied.' }
+        Mock -ModuleName SiteHygieneCommon Invoke-CMWmiQuery { }
+        Mock -ModuleName SiteHygieneCommon Invoke-CMWmiQuery {
             [pscustomobject]@{ DependentCollectionID = 'MCM00002'; SourceCollectionID = 'MCM00001'; RelationshipType = 2 }
         } -ParameterFilter { $Query -like '*SMS_CollectionDependencies*' }
-        Mock -ModuleName SiteHygieneCommon Get-CimInstance { }
         Mock -ModuleName SiteHygieneCommon Get-CMDevice { throw 'devices must not be queried' }
         Mock -ModuleName SiteHygieneCommon Get-CMApplication { throw 'applications must not be queried' }
         Mock -ModuleName SiteHygieneCommon Get-CMCollection {
@@ -1418,7 +1420,8 @@ Describe 'Scoped prefetch' {
 
     It 'reads collections with one non-lazy query and no per-collection read' {
         $null = Get-HygieneData -Datasets 'Collections'
-        Should -Invoke -ModuleName SiteHygieneCommon Invoke-CMWmiQuery -Times 1 -Exactly -ParameterFilter { $Option -eq 'Fast' -and $Query -notlike '*`**' }
+        Should -Invoke -ModuleName SiteHygieneCommon Invoke-CMWmiQuery -Times 1 -Exactly -ParameterFilter { $Option -eq 'Fast' -and $Query -like '*FROM SMS_Collection' -and $Query -notlike '*`**' }
+        Should -Invoke -ModuleName SiteHygieneCommon Get-CimInstance -Times 0
         Should -Invoke -ModuleName SiteHygieneCommon Get-CMCollection -Times 0
     }
 

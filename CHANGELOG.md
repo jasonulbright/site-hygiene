@@ -2,6 +2,13 @@
 
 All notable changes to Site Hygiene are documented in this file.
 
+## [0.9.1] - 2026-09-18
+
+### Fixed
+
+- Run collection settings, dependency, and collection reference queries without remote WMI rights.
+- Show one timestamp on warning lines in the log pane.
+
 ## [0.9.0] - 2026-09-18
 
 ### Added

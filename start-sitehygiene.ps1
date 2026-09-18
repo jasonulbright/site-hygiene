@@ -18,7 +18,7 @@
 
 .NOTES
     ScriptName : start-sitehygiene.ps1
-    Version    : 0.9.0
+    Version    : 0.9.1
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', '', Justification='PS51-WPF-001..003: $global: survives closure scope-strip.')]
@@ -150,7 +150,7 @@ function Add-LogLine {
     # -FromBackground: the background runspace already wrote the line to the
     # log file; only the pane and the console still need it.
     param([Parameter(Mandatory)][string]$Message, [switch]$FromBackground)
-    if ($FromBackground) { Write-Host $Message; $Message = $Message -replace '^\[[^\]]+\]\s*\[(?:INFO |DEBUG)\]\s*', '' }
+    if ($FromBackground) { Write-Host $Message; $Message = $Message -replace '^\[[^\]]+\]\s*(?:\[(?:INFO |DEBUG)\]\s*)?', '' }
     else { Write-Log $Message }
     $ts = (Get-Date).ToString('HH:mm:ss')
     $line = '{0}  {1}' -f $ts, $Message
@@ -783,7 +783,7 @@ function Show-OptionsDialog {
                 <TextBlock Text="SMS Provider FQDN" FontSize="11" Margin="0,12,0,2" Foreground="{DynamicResource MahApps.Brushes.Gray1}"/>
                 <TextBox x:Name="txtSmsProvider" FontSize="12" Padding="6,4,6,4"
                          Controls:TextBoxHelper.Watermark="e.g. cm01.contoso.com"/>
-                <TextBlock Text="Used for the CM PSDrive root plus two read-only CIM queries (collection settings, application dependency relations). A scan never mutates the site; the account only needs read access."
+                <TextBlock Text="Used for the CM PSDrive root. Every scan query runs through that connection under your Configuration Manager role. A scan never mutates the site; the account only needs read access."
                            FontSize="11" TextWrapping="Wrap" Margin="0,16,0,0"
                            Foreground="{DynamicResource MahApps.Brushes.Gray1}"/>
             </StackPanel>
