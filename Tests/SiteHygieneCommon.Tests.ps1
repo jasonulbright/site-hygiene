@@ -1398,7 +1398,8 @@ Describe 'Scoped prefetch' {
         Mock -ModuleName SiteHygieneCommon Invoke-CMWmiQuery {
             [pscustomobject]@{ DependentCollectionID = 'MCM00002'; SourceCollectionID = 'MCM00001'; RelationshipType = 2 }
         } -ParameterFilter { $Query -like '*SMS_CollectionDependencies*' }
-        Mock -ModuleName SiteHygieneCommon Get-CMDevice { throw 'devices must not be queried' }
+        Mock -ModuleName SiteHygieneCommon Get-CMDevice { throw 'the device cmdlet reads every column' }
+        Mock -ModuleName SiteHygieneCommon Invoke-CMWmiQuery { throw 'devices must not be queried' } -ParameterFilter { $Query -like '*SMS_CM_RES_COLL_SMS00001' }
         Mock -ModuleName SiteHygieneCommon Get-CMApplication { throw 'applications must not be queried' }
         Mock -ModuleName SiteHygieneCommon Get-CMCollection {
             [pscustomobject]@{ CollectionRules = @(); RefreshSchedule = @([pscustomobject]@{ DaySpan = 1; HourSpan = 0; MinuteSpan = 0; StartTime = [datetime]'2026-01-01 03:00' }) }
@@ -1417,6 +1418,7 @@ Describe 'Scoped prefetch' {
         $data.NotCollectedDatasets | Should -Contain 'Applications'
         $data.FailedDatasets.Count | Should -Be 0
         Should -Invoke -ModuleName SiteHygieneCommon Get-CMDevice -Times 0
+        Should -Invoke -ModuleName SiteHygieneCommon Invoke-CMWmiQuery -Times 0 -ParameterFilter { $Query -like '*SMS_CM_RES_COLL_SMS00001' }
     }
 
     It 'reads collections with one non-lazy query and no per-collection read' {
@@ -1441,6 +1443,7 @@ Describe 'Scoped prefetch' {
 
     It 'marks a throwing dataset failed instead of returning it empty' {
         $data = Get-HygieneData -Datasets 'Devices'
+        Should -Invoke -ModuleName SiteHygieneCommon Get-CMDevice -Times 0
         $data.FailedDatasets | Should -Contain 'Devices'
         @($data.DatasetNotes | Where-Object { $_ -like '*devices unavailable*' }).Count | Should -Be 1
     }
@@ -1720,6 +1723,58 @@ Describe 'Distribution point, compliance, driver, security, and maintenance wind
             Should -Invoke -ModuleName SiteHygieneCommon Get-CMMaintenanceWindow -Times 2 -Exactly
             @($data.MaintenanceWindows).Count | Should -Be 2
             $data.NotCollectedDatasets | Should -Contain 'Collections'
+        }
+        finally { foreach ($s in $stubs) { Remove-Item -Path "function:global:$s" -ErrorAction SilentlyContinue } }
+    }
+
+    It 'reads devices with one six-column query against the All Systems member class' {
+        $stubs = 'Invoke-CMWmiQuery','Get-CMDevice'
+        foreach ($s in $stubs) { Set-Item -Path "function:global:$s" -Value { [CmdletBinding()] param($Query, $Option, [switch]$Fast) } }
+        try {
+            Mock -ModuleName SiteHygieneCommon Get-CMDevice { throw 'the device cmdlet reads every column' }
+            Mock -ModuleName SiteHygieneCommon Invoke-CMWmiQuery {
+                [pscustomobject]@{ ResourceID = 16777219; Name = 'PC01'; IsClient = $true; ClientVersion = '5.00.9146.1009'; LastActiveTime = (Get-Date).AddDays(-2); SMBIOSGUID = 'A1' }
+            } -ParameterFilter { $Query -like '*FROM SMS_CM_RES_COLL_SMS00001' }
+            $data = Get-HygieneData -Datasets 'Devices'
+            @($data.Devices).Count | Should -Be 1
+            $data.Devices[0].ClientVersion | Should -Be '5.00.9146.1009'
+            $data.Devices[0].SMBIOSGUID | Should -Be 'A1'
+            Should -Invoke -ModuleName SiteHygieneCommon Invoke-CMWmiQuery -Times 1 -Exactly -ParameterFilter { $Option -eq 'Fast' -and $Query -notmatch 'SELECT\s+\*' }
+        }
+        finally { foreach ($s in $stubs) { Remove-Item -Path "function:global:$s" -ErrorAction SilentlyContinue } }
+    }
+
+    It 'reads task sequence references with one query and no per-sequence read' {
+        $stubs = 'Invoke-CMWmiQuery','Get-CMTaskSequence'
+        foreach ($s in $stubs) { Set-Item -Path "function:global:$s" -Value { [CmdletBinding()] param($Query, $Option, [switch]$Fast) } }
+        try {
+            Mock -ModuleName SiteHygieneCommon Invoke-CMWmiQuery {
+                [pscustomobject]@{ PackageID = 'MCM00008'; ObjectID = 'MCM00004' }
+                [pscustomobject]@{ PackageID = 'MCM00008'; ObjectID = 'ScopeId_X/Application_Y' }
+            } -ParameterFilter { $Query -like '*SMS_TaskSequencePackageReference_All' }
+            Mock -ModuleName SiteHygieneCommon Get-CMTaskSequence {
+                [pscustomobject]@{ PackageID = 'MCM00008'; Name = 'Build'; BootImageID = 'MCM00006'; ProgramFlags = 0 }
+                [pscustomobject]@{ PackageID = 'MCM00009'; Name = 'Empty'; BootImageID = ''; ProgramFlags = 0 }
+            }
+            $data = Get-HygieneData -Datasets 'TaskSequences'
+            $build = $data.TaskSequences | Where-Object PackageID -eq 'MCM00008'
+            ($build.ReferencedIDs -join ',') | Should -Be 'MCM00004,ScopeId_X/Application_Y'
+            $build.BootImageID | Should -Be 'MCM00006'
+            @(($data.TaskSequences | Where-Object PackageID -eq 'MCM00009').ReferencedIDs).Count | Should -Be 0
+            Should -Invoke -ModuleName SiteHygieneCommon Get-CMTaskSequence -Times 1 -Exactly -ParameterFilter { $Fast }
+        }
+        finally { foreach ($s in $stubs) { Remove-Item -Path "function:global:$s" -ErrorAction SilentlyContinue } }
+    }
+
+    It 'fails the task sequence dataset when the reference query fails' {
+        $stubs = 'Invoke-CMWmiQuery','Get-CMTaskSequence'
+        foreach ($s in $stubs) { Set-Item -Path "function:global:$s" -Value { [CmdletBinding()] param($Query, $Option, [switch]$Fast) } }
+        try {
+            Mock -ModuleName SiteHygieneCommon Invoke-CMWmiQuery { throw 'Invalid class' }
+            Mock -ModuleName SiteHygieneCommon Get-CMTaskSequence { [pscustomobject]@{ PackageID = 'MCM00008'; Name = 'Build'; BootImageID = ''; ProgramFlags = 0 } }
+            $data = Get-HygieneData -Datasets 'TaskSequences'
+            $data.FailedDatasets | Should -Contain 'TaskSequences'
+            @($data.TaskSequences).Count | Should -Be 0
         }
         finally { foreach ($s in $stubs) { Remove-Item -Path "function:global:$s" -ErrorAction SilentlyContinue } }
     }

@@ -2,6 +2,13 @@
 
 All notable changes to Site Hygiene are documented in this file.
 
+## [2026.09.18.0014] - 2026-09-18
+
+### Changed
+
+- Read six device columns with one query instead of every device column.
+- Read task sequence references with one query instead of one read per task sequence.
+
 ## [2026.09.18.0013] - 2026-09-18
 
 ### Added

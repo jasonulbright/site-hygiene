@@ -348,9 +348,22 @@ function Get-HygieneData {
             }
         } }
         TaskSequences = @{ Label = 'task sequences'; Run = {
-            Get-CMTaskSequence -ErrorAction Stop | ForEach-Object {
-                $refs = @()
-                if ($_.References) { $refs = @($_.References | ForEach-Object { [string]$_.Package }) }
+            # References is a lazy property: one provider read per task
+            # sequence. This class returns every reference in one query.
+            # ObjectID holds the package id, or the model name for an
+            # application, the same values References.Package holds.
+            # RefPackageID is not used: for an application it is the
+            # content package id, which no other dataset carries, and
+            # TSQ-01 would report it as deleted content. A failure here
+            # fails the whole dataset, because a task sequence with an
+            # empty reference list makes packages read as unreferenced.
+            $refsByTs = @{}
+            Invoke-CMWmiQuery -Query 'SELECT PackageID, ObjectID FROM SMS_TaskSequencePackageReference_All' -Option Fast -ErrorAction Stop | ForEach-Object {
+                $tsId = [string]$_.PackageID
+                $refsByTs[$tsId] = @($refsByTs[$tsId]) + [string]$_.ObjectID
+            }
+            Get-CMTaskSequence -Fast -ErrorAction Stop | ForEach-Object {
+                $refs = @($refsByTs[[string]$_.PackageID] | Where-Object { $_ })
                 $bootImage = ''
                 $p = $_.PSObject.Properties['BootImageID']
                 if ($p) { $bootImage = [string]$p.Value }
@@ -361,7 +374,10 @@ function Get-HygieneData {
             }
         } }
         Devices = @{ Label = 'devices'; Run = {
-            Get-CMDevice -Fast -ErrorAction Stop | ForEach-Object {
+            # The All Systems member class is what Get-CMDevice reads, so the
+            # rows and the role-based scoping are the same. The class has
+            # over 100 columns; the checks read six.
+            Invoke-CMWmiQuery -Query 'SELECT ResourceID, Name, IsClient, ClientVersion, LastActiveTime, SMBIOSGUID FROM SMS_CM_RES_COLL_SMS00001' -Option Fast -ErrorAction Stop | ForEach-Object {
                 $smbios = ''
                 $p = $_.PSObject.Properties['SMBIOSGUID']
                 if ($p) { $smbios = [string]$p.Value }
