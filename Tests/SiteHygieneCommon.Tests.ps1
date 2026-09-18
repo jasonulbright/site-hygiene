@@ -1061,7 +1061,7 @@ Describe 'Version metadata single-sourcing' {
         $header = (Select-String (Join-Path $root 'start-sitehygiene.ps1') -Pattern 'Version    : ([0-9\.]+)' | Select-Object -First 1).Matches[0].Groups[1].Value
         $header | Should -Be $manifestVersion -Because 'the script header must match the manifest'
         (Select-String (Join-Path $root 'start-sitehygiene.ps1') -Pattern '\$script:AppVersion').Count | Should -BeGreaterThan 1 -Because 'UI version strings must render from the manifest-derived variable'
-        @(Get-HygieneCheckCatalog).Count | Should -Be 42
+        @(Get-HygieneCheckCatalog).Count | Should -Be 54
         @(Get-HygieneCheckCatalog | Where-Object { $_.Id -eq 'UPD-02' }).Count | Should -Be 0 -Because 'UPD-02 was removed; its provider join was invalid'
     }
 }
@@ -1582,5 +1582,145 @@ Describe 'COL-04 collection evaluation run time' {
         $data.FailedDatasets = @('CollectionEvalFull', 'CollectionEvalIncremental')
         $f = @(Invoke-HygieneScan -Data $data -Scopes 'Collections')
         @($f | Where-Object { $_.CheckId -eq 'COL-04' -and $_.Category -eq 'Scan' }).Count | Should -Be 1
+    }
+}
+
+Describe 'Deployment targeting and disabled objects' {
+    It 'DPL-04 flags a required deployment to All Systems and ignores an available one' {
+        $data = New-HygData -Deployments @(
+            (New-HygDeployment -SoftwareName 'Agent' -CollectionID 'SMS00001' -DeploymentIntent 1),
+            (New-HygDeployment -SoftwareName 'Optional tool' -CollectionID 'SMS00001' -DeploymentIntent 2),
+            (New-HygDeployment -SoftwareName 'Scoped' -CollectionID 'MCM00011' -DeploymentIntent 1),
+            (New-HygDeployment -SoftwareName 'Portal' -CollectionID 'SMS00004' -CollectionName 'All Users and User Groups' -DeploymentIntent 1),
+            (New-HygDeployment -SoftwareName 'Lookalike' -CollectionID 'MCM00012' -CollectionName 'All Users' -DeploymentIntent 1),
+            (New-HygDeployment -SoftwareName 'Bare metal' -CollectionID 'SMS000US' -CollectionName 'All Unknown Computers' -DeploymentIntent 1),
+            (New-HygDeployment -SoftwareName 'Client patch' -CollectionID 'SMSDM003' -CollectionName 'All Desktop and Server Clients' -DeploymentIntent 1)
+        )
+        $f = @(Test-HygDeploymentBroadRequired -Data $data)
+        $f.Count | Should -Be 3
+        $f[2].ObjectName | Should -Be 'Client patch -> All Desktop and Server Clients'
+        $f[0].ObjectName | Should -Be 'Agent -> All Systems'
+        $f[1].ObjectName | Should -Be 'Portal -> All Users and User Groups'
+    }
+
+    It 'DPL-05 flags a deployed task sequence and a deployed program that are disabled' {
+        $deployTs  = New-HygDeployment -SoftwareName 'Build' -PackageID 'MCM000T1' -FeatureType 7
+        $deployPrg = New-HygDeployment -SoftwareName 'Legacy' -PackageID 'MCM000P1' -FeatureType 2
+        $deployPrg | Add-Member -NotePropertyName ProgramName -NotePropertyValue 'Install'
+        $deployOk  = New-HygDeployment -SoftwareName 'Healthy' -PackageID 'MCM000T2' -FeatureType 7
+        $data = New-HygData -Deployments @($deployTs, $deployPrg, $deployOk) `
+            -TaskSequences @(
+                [pscustomobject]@{ PackageID = 'MCM000T1'; Name = 'Build'; ReferencedIDs = @(); BootImageID = ''; ProgramFlags = 0x1000 },
+                [pscustomobject]@{ PackageID = 'MCM000T2'; Name = 'Healthy'; ReferencedIDs = @(); BootImageID = ''; ProgramFlags = 0 }) `
+            -Programs @([pscustomobject]@{ PackageID = 'MCM000P1'; ProgramName = 'Install'; ProgramFlags = (0x1000 -bor 0x2000) })
+        $f = @(Test-HygDeployedDisabledObject -Data $data)
+        $f.Count | Should -Be 2
+        ($f.Evidence -join ' ') | Should -BeLike "*task sequence 'Build'*program 'Install'*"
+    }
+}
+
+Describe 'Update group size and expired package content' {
+    It 'UPD-04 flags only groups over the limit' {
+        $data = New-HygData -UpdateGroups @(
+            [pscustomobject]@{ Name = 'Everything'; CI_ID = 1; NumberOfUpdates = 1400; NumberOfExpiredUpdates = 0; ContainsSupersededUpdates = $false },
+            [pscustomobject]@{ Name = 'Monthly'; CI_ID = 2; NumberOfUpdates = 1000; NumberOfExpiredUpdates = 0; ContainsSupersededUpdates = $false })
+        $f = @(Test-HygUpdateGroupSize -Data $data)
+        $f.Count | Should -Be 1
+        $f[0].ObjectName | Should -Be 'Everything'
+    }
+
+    It 'UPD-05 counts expired content per package' {
+        $data = New-HygData -UpdatePackages @([pscustomobject]@{ PackageID = 'MCM000U1'; Name = 'Patches 2024' }, [pscustomobject]@{ PackageID = 'MCM000U2'; Name = 'Clean' })
+        $data | Add-Member -NotePropertyName ExpiredUpdateIds -NotePropertyValue @(501, 502)
+        $data | Add-Member -NotePropertyName UpdateContentMap -NotePropertyValue @(
+            [pscustomobject]@{ CI_ID = 501; ContentID = 9001 }, [pscustomobject]@{ CI_ID = 502; ContentID = 9002 }, [pscustomobject]@{ CI_ID = 600; ContentID = 9003 })
+        $data | Add-Member -NotePropertyName UpdatePackageContent -NotePropertyValue @(
+            [pscustomobject]@{ PackageID = 'MCM000U1'; ContentID = 9001 }, [pscustomobject]@{ PackageID = 'MCM000U1'; ContentID = 9002 },
+            [pscustomobject]@{ PackageID = 'MCM000U1'; ContentID = 9003 }, [pscustomobject]@{ PackageID = 'MCM000U2'; ContentID = 9003 })
+        $f = @(Test-HygUpdatePackageExpiredContent -Data $data)
+        $f.Count | Should -Be 1
+        $f[0].ObjectName | Should -Be 'Patches 2024'
+        $f[0].Evidence | Should -BeLike '2 of 3 content item*'
+    }
+}
+
+Describe 'Distribution point, compliance, driver, security, and maintenance window checks' {
+    BeforeAll {
+        function Add-HygDataset { param($Data, [hashtable]$Sets) foreach ($k in $Sets.Keys) { $Data | Add-Member -NotePropertyName $k -NotePropertyValue $Sets[$k] -Force }; $Data }
+    }
+
+    It 'DPT-01 and DPT-02 flag an ungrouped distribution point and an empty group' {
+        $data = Add-HygDataset (New-HygData) @{
+            DistributionPoints       = @([pscustomobject]@{ NALPath = '["Display=\\dp1\"]MSWNET:["SMS_SITE=MCM"]\\dp1\'; Name = 'dp1' }, [pscustomobject]@{ NALPath = '["Display=\\dp2\"]MSWNET:["SMS_SITE=MCM"]\\dp2\'; Name = 'dp2' })
+            BoundaryGroupSiteSystems = @('["Display=\\dp1\"]MSWNET:["SMS_SITE=MCM"]\\dp1\')
+            DistributionPointGroups  = @([pscustomobject]@{ GroupID = 'g1'; Name = 'Empty'; MembersCount = 0; AssignedContentCount = 4 }, [pscustomobject]@{ GroupID = 'g2'; Name = 'Full'; MembersCount = 3; AssignedContentCount = 4 })
+        }
+        $f = @(Test-HygDistributionPointChecks -Data $data)
+        ($f | Where-Object CheckId -eq 'DPT-01').ObjectName | Should -Be 'dp2'
+        ($f | Where-Object CheckId -eq 'DPT-02').ObjectName | Should -Be 'Empty'
+        $f.Count | Should -Be 2
+    }
+
+    It 'CFG checks skip a baseline that another baseline references' {
+        $data = Add-HygDataset (New-HygData) @{
+            Baselines          = @([pscustomobject]@{ CI_ID = 1; Name = 'Orphan'; IsAssigned = $false; InUse = $false; IsUserDefined = $true }, [pscustomobject]@{ CI_ID = 4; Name = 'Shipped baseline'; IsAssigned = $false; InUse = $false; IsUserDefined = $false }, [pscustomobject]@{ CI_ID = 2; Name = 'Child'; IsAssigned = $false; InUse = $true; IsUserDefined = $true }, [pscustomobject]@{ CI_ID = 3; Name = 'Live'; IsAssigned = $true; InUse = $false; IsUserDefined = $true })
+            ConfigurationItems = @([pscustomobject]@{ CI_ID = 10; Name = 'Loose item'; InUse = $false; IsUserDefined = $true }, [pscustomobject]@{ CI_ID = 12; Name = 'Built-In'; InUse = $false; IsUserDefined = $false }, [pscustomobject]@{ CI_ID = 11; Name = 'Used item'; InUse = $true; IsUserDefined = $true })
+            ClientSettings     = @([pscustomobject]@{ SettingsID = 5; Name = 'Unassigned'; AssignmentCount = 0 }, [pscustomobject]@{ SettingsID = 6; Name = 'Assigned'; AssignmentCount = 2 })
+        }
+        $f = @(Test-HygComplianceChecks -Data $data)
+        ($f | Sort-Object CheckId).ObjectName -join ',' | Should -Be 'Orphan,Loose item,Unassigned'
+    }
+
+    It 'DRV-01 flags only drivers outside every package and boot image' {
+        $data = Add-HygDataset (New-HygData) @{
+            Drivers            = @([pscustomobject]@{ CI_ID = 70; Name = 'Packaged NIC' }, [pscustomobject]@{ CI_ID = 71; Name = 'Loose NIC' })
+            DriverContainerIds = @(70)
+        }
+        $f = @(Test-HygDriverUnpackaged -Data $data)
+        $f.Count | Should -Be 1
+        $f[0].ObjectName | Should -Be 'Loose NIC'
+    }
+
+    It 'SEC-01 flags only administrative users the site marks deleted' {
+        $data = Add-HygDataset (New-HygData) @{
+            AdminUsers = @([pscustomobject]@{ AdminID = 1; LogonName = 'CONTOSO\gone'; IsDeleted = $true; RoleNames = @('Full Administrator') }, [pscustomobject]@{ AdminID = 2; LogonName = 'CONTOSO\here'; IsDeleted = $false; RoleNames = @() })
+        }
+        $f = @(Test-HygAdminDeletedAccount -Data $data)
+        $f.Count | Should -Be 1
+        $f[0].Evidence | Should -BeLike '*Full Administrator*'
+    }
+
+    It 'COL-10 flags an ended one-time window and ignores recurring and future windows' {
+        $data = Add-HygDataset (New-HygData -Collections @(New-HygCollection -CollectionID 'MCM000W1' -Name 'Servers')) @{
+            MaintenanceWindows = @(
+                [pscustomobject]@{ CollectionID = 'MCM000W1'; Name = 'Migration night'; RecurrenceType = 1; StartTime = (Get-Date).AddDays(-40); Duration = 240; IsEnabled = $true },
+                [pscustomobject]@{ CollectionID = 'MCM000W1'; Name = 'Weekly'; RecurrenceType = 3; StartTime = (Get-Date).AddDays(-400); Duration = 240; IsEnabled = $true },
+                [pscustomobject]@{ CollectionID = 'MCM000W1'; Name = 'Next month'; RecurrenceType = 1; StartTime = (Get-Date).AddDays(20); Duration = 240; IsEnabled = $true })
+        }
+        $f = @(Test-HygMaintenanceWindowExpired -Data $data)
+        $f.Count | Should -Be 1
+        $f[0].ObjectName | Should -Be 'Migration night on Servers'
+        Test-HygieneFixExecutable -FixScript $f[0].FixScript | Should -BeTrue
+    }
+
+    It 'maps the new scopes to their own datasets only' {
+        (@(Get-HygieneRequiredDataset -Scopes 'Security') -join ',') | Should -Be 'AdminUsers'
+        (@(Get-HygieneRequiredDataset -Scopes 'Drivers') -join ',') | Should -Be 'DriverContainerIds,Drivers'
+        @(Get-HygieneRequiredDataset -Scopes 'MaintenanceWindows') | Should -Contain 'MaintenanceWindows'
+    }
+
+    It 'reads maintenance windows only for collections that have settings' {
+        $stubs = 'Invoke-CMWmiQuery','Get-CMMaintenanceWindow'
+        foreach ($s in $stubs) { Set-Item -Path "function:global:$s" -Value { [CmdletBinding()] param($Query, $Option, $CollectionId) } }
+        try {
+            Mock -ModuleName SiteHygieneCommon Invoke-CMWmiQuery { }
+            Mock -ModuleName SiteHygieneCommon Invoke-CMWmiQuery { [pscustomobject]@{ CollectionID = 'MCM000W1' }; [pscustomobject]@{ CollectionID = 'MCM000W2' } } -ParameterFilter { $Query -like '*SMS_CollectionSettings' }
+            Mock -ModuleName SiteHygieneCommon Get-CMMaintenanceWindow { [pscustomobject]@{ Name = 'W'; RecurrenceType = 1; StartTime = (Get-Date).AddDays(-5); Duration = 60; IsEnabled = $true } }
+            $data = Get-HygieneData -Datasets 'MaintenanceWindows'
+            Should -Invoke -ModuleName SiteHygieneCommon Get-CMMaintenanceWindow -Times 2 -Exactly
+            @($data.MaintenanceWindows).Count | Should -Be 2
+            $data.NotCollectedDatasets | Should -Contain 'Collections'
+        }
+        finally { foreach ($s in $stubs) { Remove-Item -Path "function:global:$s" -ErrorAction SilentlyContinue } }
     }
 }

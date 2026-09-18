@@ -90,7 +90,19 @@ function Get-HygieneCheckCatalog {
         [pscustomobject]@{ Id = 'COL-09'; Category = 'Collections';  Severity = 'Info';    Title = 'Full-update start-time hot spot' }
         [pscustomobject]@{ Id = 'DPL-01'; Category = 'Deployments';  Severity = 'Info';    Title = 'Deployment past its expiration time' }
         [pscustomobject]@{ Id = 'DPL-02'; Category = 'Deployments';  Severity = 'Error';   Title = 'Required deployment past deadline with high failures' }
+        [pscustomobject]@{ Id = 'COL-10'; Category = 'Collections';  Severity = 'Info';    Title = 'Expired one-time maintenance window' }
         [pscustomobject]@{ Id = 'DPL-03'; Category = 'Deployments';  Severity = 'Info';    Title = 'Available deployment with no takers' }
+        [pscustomobject]@{ Id = 'DPL-04'; Category = 'Deployments';  Severity = 'Warning'; Title = 'Required deployment to a built-in all-resources collection' }
+        [pscustomobject]@{ Id = 'DPL-05'; Category = 'Deployments';  Severity = 'Warning'; Title = 'Deployment of a disabled task sequence or program' }
+        [pscustomobject]@{ Id = 'UPD-04'; Category = 'Updates';      Severity = 'Warning'; Title = 'Update group over the per-deployment update limit' }
+        [pscustomobject]@{ Id = 'UPD-05'; Category = 'Updates';      Severity = 'Info';    Title = 'Deployment package holding expired update content' }
+        [pscustomobject]@{ Id = 'DPT-01'; Category = 'Distribution Points'; Severity = 'Warning'; Title = 'Distribution point in no boundary group' }
+        [pscustomobject]@{ Id = 'DPT-02'; Category = 'Distribution Points'; Severity = 'Info';    Title = 'Distribution point group with no members' }
+        [pscustomobject]@{ Id = 'CFG-01'; Category = 'Compliance';   Severity = 'Info';    Title = 'Configuration baseline deployed nowhere' }
+        [pscustomobject]@{ Id = 'CFG-02'; Category = 'Compliance';   Severity = 'Info';    Title = 'Configuration item in no baseline' }
+        [pscustomobject]@{ Id = 'CFG-03'; Category = 'Compliance';   Severity = 'Info';    Title = 'Custom client settings deployed to no collection' }
+        [pscustomobject]@{ Id = 'DRV-01'; Category = 'Drivers';      Severity = 'Info';    Title = 'Driver in no driver package or boot image' }
+        [pscustomobject]@{ Id = 'SEC-01'; Category = 'Security';     Severity = 'Warning'; Title = 'Administrative user with a deleted directory account' }
     )
 }
 
@@ -114,6 +126,7 @@ function Get-HygieneDefaultThresholds {
         ColFullEvalHotSpotCount   = 10
         ContentStuckDays          = 2
         ColEvalSlowMs             = 5000
+        SugMaxUpdates             = 1000
     }
 }
 
@@ -171,6 +184,12 @@ function Get-HygieneScanScope {
         [pscustomobject]@{ Id = 'Boundaries';          Title = 'Boundaries';                                  Slow = $false }
         [pscustomobject]@{ Id = 'TaskSequences';       Title = 'Task sequences';                              Slow = $false }
         [pscustomobject]@{ Id = 'Updates';             Title = 'Software updates';                            Slow = $false }
+        [pscustomobject]@{ Id = 'UpdateContent';       Title = 'Software update package content';             Slow = $false }
+        [pscustomobject]@{ Id = 'DistributionPoints';  Title = 'Distribution points';                         Slow = $false }
+        [pscustomobject]@{ Id = 'Compliance';          Title = 'Compliance and client settings';              Slow = $false }
+        [pscustomobject]@{ Id = 'Drivers';             Title = 'Drivers';                                     Slow = $false }
+        [pscustomobject]@{ Id = 'Security';            Title = 'Administrative users';                        Slow = $false }
+        [pscustomobject]@{ Id = 'MaintenanceWindows';  Title = 'Maintenance windows';                         Slow = $true }
         [pscustomobject]@{ Id = 'Site';                Title = 'Site maintenance';                            Slow = $false }
     )
 }
@@ -210,6 +229,15 @@ function Get-HygScanPlan {
         @{ Id = 'TSQ';    Scopes = @('TaskSequences'); Requires = @('TaskSequences','Packages','BootImages','DriverPackages','UpdatePackages','OSImages','OSUpgradePackages','Applications'); Run = { param($d) Test-HygTaskSequenceRefs -Data $d } }
         @{ Id = 'UPD-01'; Scopes = @('Updates'); Requires = @('UpdateGroups'); Run = { param($d, $t) Test-HygUpdateGroupChecks -Data $d -Thresholds $t } }
         @{ Id = 'UPD-03'; Scopes = @('Updates'); Requires = @('AutoDeploymentRules'); Run = { param($d, $t) Test-HygAdrChecks -Data $d -Thresholds $t } }
+        @{ Id = 'DPL-04'; Scopes = @('Deployments'); Requires = @('Deployments'); Run = { param($d) Test-HygDeploymentBroadRequired -Data $d } }
+        @{ Id = 'DPL-05'; Scopes = @('Deployments'); Requires = @('Deployments','Programs','TaskSequences'); Run = { param($d) Test-HygDeployedDisabledObject -Data $d } }
+        @{ Id = 'UPD-04'; Scopes = @('Updates'); Requires = @('UpdateGroups'); Run = { param($d, $t) Test-HygUpdateGroupSize -Data $d -Thresholds $t } }
+        @{ Id = 'UPD-05'; Scopes = @('UpdateContent'); Requires = @('ExpiredUpdateIds','UpdateContentMap','UpdatePackageContent','UpdatePackages'); Run = { param($d) Test-HygUpdatePackageExpiredContent -Data $d } }
+        @{ Id = 'DPT';    Scopes = @('DistributionPoints'); Requires = @('DistributionPoints','BoundaryGroupSiteSystems','DistributionPointGroups'); Run = { param($d) Test-HygDistributionPointChecks -Data $d } }
+        @{ Id = 'CFG';    Scopes = @('Compliance'); Requires = @('Baselines','ConfigurationItems','ClientSettings'); Run = { param($d) Test-HygComplianceChecks -Data $d } }
+        @{ Id = 'DRV-01'; Scopes = @('Drivers'); Requires = @('Drivers','DriverContainerIds'); Run = { param($d) Test-HygDriverUnpackaged -Data $d } }
+        @{ Id = 'SEC-01'; Scopes = @('Security'); Requires = @('AdminUsers'); Run = { param($d) Test-HygAdminDeletedAccount -Data $d } }
+        @{ Id = 'COL-10'; Scopes = @('MaintenanceWindows'); Requires = @('MaintenanceWindows','CollectionsWithSettings','Collections'); Run = { param($d) Test-HygMaintenanceWindowExpired -Data $d } }
         @{ Id = 'MNT';    Scopes = @('Site'); Requires = @('MaintenanceTasks'); Run = { param($d) Test-HygMaintenanceTasks -Data $d } }
         # $args-based: these only consume the third runner argument.
         @{ Id = 'SUP/DEP/REL'; Scopes = @('AppRelationships'); Requires = @(); NeedsRelationships = $true; Run = { Test-HygRelationshipChecks -RelationshipData $args[2] } }
@@ -316,7 +344,7 @@ function Get-HygieneData {
         } }
         Programs = @{ Label = 'programs'; Run = {
             Get-CMProgram -ErrorAction Stop | ForEach-Object {
-                [pscustomobject]@{ PackageID = [string]$_.PackageID; ProgramName = [string]$_.ProgramName }
+                [pscustomobject]@{ PackageID = [string]$_.PackageID; ProgramName = [string]$_.ProgramName; ProgramFlags = [long]$_.ProgramFlags }
             }
         } }
         TaskSequences = @{ Label = 'task sequences'; Run = {
@@ -326,7 +354,10 @@ function Get-HygieneData {
                 $bootImage = ''
                 $p = $_.PSObject.Properties['BootImageID']
                 if ($p) { $bootImage = [string]$p.Value }
-                [pscustomobject]@{ PackageID = [string]$_.PackageID; Name = [string]$_.Name; ReferencedIDs = $refs; BootImageID = $bootImage }
+                $flags = 0
+                $p = $_.PSObject.Properties['ProgramFlags']
+                if ($p -and $null -ne $p.Value) { $flags = [long]$p.Value }
+                [pscustomobject]@{ PackageID = [string]$_.PackageID; Name = [string]$_.Name; ReferencedIDs = $refs; BootImageID = $bootImage; ProgramFlags = $flags }
             }
         } }
         Devices = @{ Label = 'devices'; Run = {
@@ -511,6 +542,7 @@ function Get-HygieneData {
             Get-CMDeployment -ErrorAction Stop | ForEach-Object {
                 [pscustomobject]@{
                     SoftwareName        = [string]$_.SoftwareName
+                    ProgramName         = [string]$_.ProgramName
                     PackageID           = [string]$_.PackageID
                     CollectionID        = [string]$_.CollectionID
                     CollectionName      = [string]$_.CollectionName
@@ -561,6 +593,86 @@ function Get-HygieneData {
                 }
             }
         } }
+        DistributionPoints = @{ Label = 'distribution points'; Run = {
+            Invoke-CMWmiQuery -Query 'SELECT NALPath, Name FROM SMS_DistributionPointInfo' -Option Fast -ErrorAction Stop | ForEach-Object {
+                [pscustomobject]@{ NALPath = [string]$_.NALPath; Name = ([string]$_.Name).TrimStart('\') }
+            }
+        } }
+        BoundaryGroupSiteSystems = @{ Label = 'boundary group site systems'; Run = {
+            Invoke-CMWmiQuery -Query 'SELECT ServerNALPath FROM SMS_BoundaryGroupSiteSystems' -Option Fast -ErrorAction Stop |
+            ForEach-Object { [string]$_.ServerNALPath }
+        } }
+        DistributionPointGroups = @{ Label = 'distribution point groups'; Run = {
+            Invoke-CMWmiQuery -Query 'SELECT GroupID, Name, MembersCount, AssignedContentCount FROM SMS_DPGroupInfo' -Option Fast -ErrorAction Stop | ForEach-Object {
+                [pscustomobject]@{ GroupID = [string]$_.GroupID; Name = [string]$_.Name; MembersCount = [int]$_.MembersCount; AssignedContentCount = [int]$_.AssignedContentCount }
+            }
+        } }
+        Baselines = @{ Label = 'configuration baselines'; Run = {
+            Invoke-CMWmiQuery -Query 'SELECT CI_ID, LocalizedDisplayName, IsAssigned, InUse, IsUserDefined FROM SMS_ConfigurationBaselineInfo' -Option Fast -ErrorAction Stop | ForEach-Object {
+                [pscustomobject]@{ CI_ID = [int]$_.CI_ID; Name = [string]$_.LocalizedDisplayName; IsAssigned = [bool]$_.IsAssigned; InUse = [bool]$_.InUse; IsUserDefined = [bool]$_.IsUserDefined }
+            }
+        } }
+        ConfigurationItems = @{ Label = 'configuration items'; Run = {
+            Get-CMConfigurationItem -Fast -ErrorAction Stop | ForEach-Object {
+                [pscustomobject]@{ CI_ID = [int]$_.CI_ID; Name = [string]$_.LocalizedDisplayName; InUse = [bool]$_.InUse; IsUserDefined = [bool]$_.IsUserDefined }
+            }
+        } }
+        ClientSettings = @{ Label = 'custom client settings'; Run = {
+            Invoke-CMWmiQuery -Query 'SELECT SettingsID, Name, AssignmentCount FROM SMS_ClientSettings' -Option Fast -ErrorAction Stop | ForEach-Object {
+                [pscustomobject]@{ SettingsID = [int]$_.SettingsID; Name = [string]$_.Name; AssignmentCount = [int]$_.AssignmentCount }
+            }
+        } }
+        Drivers = @{ Label = 'drivers'; Run = {
+            Invoke-CMWmiQuery -Query 'SELECT CI_ID, LocalizedDisplayName FROM SMS_Driver' -Option Fast -ErrorAction Stop | ForEach-Object {
+                [pscustomobject]@{ CI_ID = [int]$_.CI_ID; Name = [string]$_.LocalizedDisplayName }
+            }
+        } }
+        DriverContainerIds = @{ Label = 'driver package memberships'; Run = {
+            Invoke-CMWmiQuery -Query 'SELECT CI_ID FROM SMS_DriverContainer' -Option Fast -ErrorAction Stop |
+            ForEach-Object { [int]$_.CI_ID }
+        } }
+        AdminUsers = @{ Label = 'administrative users'; Run = {
+            Invoke-CMWmiQuery -Query 'SELECT AdminID, LogonName, IsDeleted, RoleNames FROM SMS_Admin' -Option Fast -ErrorAction Stop | ForEach-Object {
+                [pscustomobject]@{ AdminID = [int]$_.AdminID; LogonName = [string]$_.LogonName; IsDeleted = [bool]$_.IsDeleted; RoleNames = @($_.RoleNames | Where-Object { $_ } | ForEach-Object { [string]$_ }) }
+            }
+        } }
+        ExpiredUpdateIds = @{ Label = 'expired updates'; Run = {
+            Invoke-CMWmiQuery -Query 'SELECT CI_ID FROM SMS_SoftwareUpdate WHERE IsExpired = 1' -Option Fast -ErrorAction Stop |
+            ForEach-Object { [int]$_.CI_ID }
+        } }
+        # ContentDownloaded limits the map to content that is in a package;
+        # the unfiltered class has a row for every content item of every
+        # synchronized update.
+        UpdateContentMap = @{ Label = 'downloaded update content rows'; Run = {
+            Invoke-CMWmiQuery -Query 'SELECT CI_ID, ContentID FROM SMS_CIToContent WHERE ContentDownloaded = 1' -Option Fast -ErrorAction Stop | ForEach-Object {
+                [pscustomobject]@{ CI_ID = [int]$_.CI_ID; ContentID = [int]$_.ContentID }
+            }
+        } }
+        UpdatePackageContent = @{ Label = 'update package content rows'; Run = {
+            Invoke-CMWmiQuery -Query 'SELECT PackageID, ContentID FROM SMS_PackageToContent WHERE PackageType = 5' -Option Fast -ErrorAction Stop | ForEach-Object {
+                [pscustomobject]@{ PackageID = [string]$_.PackageID; ContentID = [int]$_.ContentID }
+            }
+        } }
+        # Maintenance windows are a lazy array on the collection settings:
+        # one provider read per collection that has settings.
+        MaintenanceWindows = @{ Label = 'maintenance windows'; FailureHint = 'COL-10 is skipped'; Run = {
+            $targets = @($result['CollectionsWithSettings'])
+            $i = 0
+            foreach ($id in $targets) {
+                $i++
+                if ($ProgressState) { $ProgressState.Step = "Reading maintenance windows ($i of $($targets.Count))..." }
+                Get-CMMaintenanceWindow -CollectionId $id -ErrorAction Stop | ForEach-Object {
+                    [pscustomobject]@{
+                        CollectionID   = [string]$id
+                        Name           = [string]$_.Name
+                        RecurrenceType = [int]$_.RecurrenceType
+                        StartTime      = $_.StartTime
+                        Duration       = [int]$_.Duration
+                        IsEnabled      = [bool]$_.IsEnabled
+                    }
+                }
+            }
+        } }
         AppDeployments = @{ Label = 'application deployments'; Run = {
             Invoke-CMWmiQuery -Query 'SELECT ApplicationName, CollectionName, TargetCollectionID, ExpirationTime FROM SMS_ApplicationAssignment' -Option Fast -ErrorAction Stop | ForEach-Object {
                 # A deployment without an expiration reads null.
@@ -580,6 +692,7 @@ function Get-HygieneData {
     $wanted = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
     foreach ($k in @($Datasets | Where-Object { $_ })) { [void]$wanted.Add($k) }
     if ($wanted.Count -eq 0) { foreach ($k in $collectors.Keys) { [void]$wanted.Add($k) } }
+    if ($wanted.Contains('MaintenanceWindows')) { [void]$wanted.Add('CollectionsWithSettings') }
     if ($wanted.Contains('CollectionDetails')) { [void]$wanted.Add('Collections') }
     if ($wanted.Contains('Collections')) { [void]$wanted.Add('CollectionDependencies') }
 
@@ -1907,6 +2020,291 @@ function Test-HygContentDistribution {
             -Evidence 'This content has an active deployment and source files, but it is targeted to no distribution point. Every client that tries to install it fails to locate content.' `
             -Recommendation 'Distribute the content to the distribution point groups that serve the deployment''s collection.' `
             -FixScript ("# Console: Software Library > '{0}' > Distribute Content - choose the distribution point group(s) for the targeted clients" -f $row.Name)
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Deployment targeting and disabled deployed objects (DPL-04, DPL-05)
+# ---------------------------------------------------------------------------
+
+function Test-HygDeploymentBroadRequired {
+    <#
+    .SYNOPSIS
+        DPL-04: required deployments that target a built-in all-resources
+        collection. DeploymentIntent 1 = required.
+    #>
+    param([Parameter(Mandatory)]$Data)
+
+    # The remaining all-resources collections match by name plus the
+    # built-in id prefix, so a custom collection of the same name never
+    # matches. All Unknown Computers is left out: a required task sequence
+    # to it is the normal bare-metal deployment.
+    $broadIds = @{ 'SMS00001' = 'All Systems'; 'SMS00002' = 'All Users'; 'SMSDM003' = 'All Desktop and Server Clients' }
+    $broadNames = 'All Systems', 'All Users', 'All User Groups', 'All Users and User Groups', 'All Desktop and Server Clients'
+    foreach ($d in @($Data.Deployments)) {
+        if ($d.DeploymentIntent -ne 1) { continue }
+        $id = ([string]$d.CollectionID).ToUpperInvariant()
+        $name = $null
+        if ($broadIds.ContainsKey($id)) { $name = $broadIds[$id] }
+        elseif ($id -like 'SMS*' -and $broadNames -contains [string]$d.CollectionName) { $name = [string]$d.CollectionName }
+        if (-not $name) { continue }
+        New-HygieneFinding -CheckId 'DPL-04' -Severity Warning -Category 'Deployments' `
+            -ObjectType 'Deployment' -ObjectId ("{0}|{1}" -f $d.SoftwareName, $id) -ObjectName ("{0} -> {1}" -f $d.SoftwareName, $name) `
+            -Evidence ("Required deployment of '{0}' targets the built-in collection '{1}' ({2}). Every current and future resource in the site receives it, with no pilot group and no way to exclude a resource." -f $d.SoftwareName, $name, $id) `
+            -Recommendation 'Re-target the deployment to a custom collection limited to the intended resources, then remove this deployment.' `
+            -FixScript ("# Review first: Get-CMDeployment -CollectionName '{0}' | Where-Object SoftwareName -eq '{1}'" -f $name, ($d.SoftwareName -replace "'", "''"))
+    }
+}
+
+function Test-HygDeployedDisabledObject {
+    <#
+    .SYNOPSIS
+        DPL-05: deployments whose task sequence or program is disabled.
+        ProgramFlags bit 12 (0x1000) = DISABLED. FeatureType 2 = program,
+        7 = task sequence; PackageID carries the package id for both.
+    #>
+    param([Parameter(Mandatory)]$Data)
+
+    $disabledFlag = 0x1000
+    $disabledTs = @{}
+    foreach ($ts in @($Data.TaskSequences)) {
+        if ($ts.PSObject.Properties['ProgramFlags'] -and (([long]$ts.ProgramFlags) -band $disabledFlag)) { $disabledTs[[string]$ts.PackageID] = $ts.Name }
+    }
+    $disabledPrograms = @{}
+    foreach ($p in @($Data.Programs)) {
+        if ($p.PSObject.Properties['ProgramFlags'] -and (([long]$p.ProgramFlags) -band $disabledFlag)) { $disabledPrograms[("{0}|{1}" -f $p.PackageID, $p.ProgramName)] = $true }
+    }
+
+    foreach ($d in @($Data.Deployments)) {
+        $pkg = [string]$d.PackageID
+        if (-not $pkg) { continue }
+        $what = $null
+        if ($d.FeatureType -eq 7 -and $disabledTs.ContainsKey($pkg)) { $what = "task sequence '$($disabledTs[$pkg])'" }
+        elseif ($d.FeatureType -eq 2 -and $d.PSObject.Properties['ProgramName'] -and $disabledPrograms.ContainsKey(("{0}|{1}" -f $pkg, $d.ProgramName))) { $what = "program '$($d.ProgramName)' of package $pkg" }
+        if (-not $what) { continue }
+        New-HygieneFinding -CheckId 'DPL-05' -Severity Warning -Category 'Deployments' `
+            -ObjectType 'Deployment' -ObjectId ("{0}|{1}" -f $pkg, $d.CollectionID) -ObjectName ("{0} -> {1}" -f $d.SoftwareName, $d.CollectionName) `
+            -Evidence ("The deployment to '{0}' runs the {1}, which is disabled. Clients receive the policy and never run it." -f $d.CollectionName, $what) `
+            -Recommendation 'Enable the object if the deployment is still wanted; otherwise remove the deployment.' `
+            -FixScript ("# Review: Get-CMDeployment -CollectionName '{0}' | Where-Object PackageID -eq '{1}'" -f ($d.CollectionName -replace "'", "''"), $pkg)
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Software update group size and expired package content (UPD-04, UPD-05)
+# ---------------------------------------------------------------------------
+
+function Test-HygUpdateGroupSize {
+    <#
+    .SYNOPSIS
+        UPD-04: software update groups over the documented limit of
+        updates in one deployment.
+    #>
+    param(
+        [Parameter(Mandatory)]$Data,
+        [hashtable]$Thresholds = (Get-HygieneDefaultThresholds)
+    )
+
+    $max = [int]$Thresholds.SugMaxUpdates
+    foreach ($sug in @($Data.UpdateGroups)) {
+        if ($sug.NumberOfUpdates -le $max) { continue }
+        New-HygieneFinding -CheckId 'UPD-04' -Severity Warning -Category 'Updates' `
+            -ObjectType 'UpdateGroup' -ObjectId ([string]$sug.CI_ID) -ObjectName $sug.Name `
+            -Evidence ("The group holds {0} updates; a software update deployment supports at most {1}. A deployment of this group fails or cannot be created." -f $sug.NumberOfUpdates, $max) `
+            -Recommendation 'Split the group, for example by year or product, and remove expired and superseded members.' `
+            -FixScript ("# Console: Software Library > Software Update Groups > '{0}' - split the membership" -f $sug.Name)
+    }
+}
+
+function Test-HygUpdatePackageExpiredContent {
+    <#
+    .SYNOPSIS
+        UPD-05: deployment packages that still hold content for expired
+        updates. Joins expired update ids to downloaded content ids to
+        package content ids in memory.
+    #>
+    param([Parameter(Mandatory)]$Data)
+
+    $expired = New-Object 'System.Collections.Generic.HashSet[int]'
+    foreach ($id in @($Data.ExpiredUpdateIds)) { [void]$expired.Add([int]$id) }
+    if ($expired.Count -eq 0) { return }
+
+    $expiredContent = New-Object 'System.Collections.Generic.HashSet[int]'
+    foreach ($row in @($Data.UpdateContentMap)) { if ($row -and $expired.Contains([int]$row.CI_ID)) { [void]$expiredContent.Add([int]$row.ContentID) } }
+
+    $perPackage = @{}
+    $totals = @{}
+    foreach ($row in @($Data.UpdatePackageContent)) {
+        if (-not $row) { continue }
+        $pkg = [string]$row.PackageID
+        $totals[$pkg] = 1 + [int]$totals[$pkg]
+        if ($expiredContent.Contains([int]$row.ContentID)) { $perPackage[$pkg] = 1 + [int]$perPackage[$pkg] }
+    }
+
+    $names = @{}
+    foreach ($p in @($Data.UpdatePackages)) { $names[[string]$p.PackageID] = $p.Name }
+    foreach ($pkg in ($perPackage.Keys | Sort-Object { $perPackage[$_] } -Descending)) {
+        $name = $(if ($names.ContainsKey($pkg)) { $names[$pkg] } else { $pkg })
+        New-HygieneFinding -CheckId 'UPD-05' -Severity Info -Category 'Updates' `
+            -ObjectType 'UpdatePackage' -ObjectId $pkg -ObjectName $name `
+            -Evidence ("{0} of {1} content item(s) in the package belong to expired updates. The files stay in the package source and on every distribution point that holds the package." -f $perPackage[$pkg], $totals[$pkg]) `
+            -Recommendation 'Remove the expired updates from the package, or let the site remove them: expired updates leave packages only when no deployment references them.' `
+            -FixScript ("# Console: Software Library > Deployment Packages > '{0}' > Show Members - remove expired updates, then refresh distribution points" -f $name)
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Distribution points (DPT-01, DPT-02)
+# ---------------------------------------------------------------------------
+
+function Test-HygDistributionPointChecks {
+    <#
+    .SYNOPSIS
+        DPT-01: distribution points in no boundary group. DPT-02:
+        distribution point groups with no members.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Runs the distribution point check family by design.')]
+    param([Parameter(Mandatory)]$Data)
+
+    $inGroup = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($row in @($Data.BoundaryGroupSiteSystems)) { if ($row) { [void]$inGroup.Add([string]$row) } }
+
+    foreach ($dp in @($Data.DistributionPoints)) {
+        if (-not $dp -or $inGroup.Contains([string]$dp.NALPath)) { continue }
+        New-HygieneFinding -CheckId 'DPT-01' -Severity Warning -Category 'Distribution Points' `
+            -ObjectType 'DistributionPoint' -ObjectId ([string]$dp.NALPath) -ObjectName $dp.Name `
+            -Evidence 'The distribution point is a site system of no boundary group. Clients select content sources through boundary groups, so no client selects this server except through the default site boundary group fallback.' `
+            -Recommendation 'Add the distribution point to the boundary group(s) for the locations it serves, or remove the role if the server is retired.' `
+            -FixScript ("# Set-CMBoundaryGroup -Name '<boundary group>' -AddSiteSystemServerName '{0}'" -f $dp.Name)
+    }
+
+    foreach ($g in @($Data.DistributionPointGroups)) {
+        if (-not $g -or $g.MembersCount -ne 0) { continue }
+        New-HygieneFinding -CheckId 'DPT-02' -Severity Info -Category 'Distribution Points' `
+            -ObjectType 'DistributionPointGroup' -ObjectId ([string]$g.GroupID) -ObjectName $g.Name `
+            -Evidence ("The distribution point group has no members and {0} content item(s) assigned. Content distributed to it reaches no server." -f $g.AssignedContentCount) `
+            -Recommendation 'Add the intended distribution points, or delete the group.' `
+            -FixScript ("# Review: Get-CMDistributionPointGroup -Name '{0}'" -f ($g.Name -replace "'", "''"))
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Compliance settings and client settings (CFG-01..CFG-03)
+# ---------------------------------------------------------------------------
+
+function Test-HygComplianceChecks {
+    <#
+    .SYNOPSIS
+        CFG-01: configuration baselines deployed nowhere. CFG-02:
+        configuration items no baseline references. CFG-03: custom client
+        settings deployed to no collection.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Runs the compliance check family by design.')]
+    param([Parameter(Mandatory)]$Data)
+
+    foreach ($b in @($Data.Baselines)) {
+        # InUse: another baseline references this one, which deploys it
+        # indirectly.
+        if (-not $b -or -not $b.IsUserDefined -or $b.IsAssigned -or $b.InUse) { continue }
+        New-HygieneFinding -CheckId 'CFG-01' -Severity Info -Category 'Compliance' `
+            -ObjectType 'Baseline' -ObjectId ([string]$b.CI_ID) -ObjectName $b.Name `
+            -Evidence 'The configuration baseline has no deployment and no other baseline references it. No client evaluates it.' `
+            -Recommendation 'Deploy the baseline, or delete it if it is no longer needed.' `
+            -FixScript ("# Review: Get-CMBaseline -Id {0} -Fast" -f $b.CI_ID)
+    }
+
+    foreach ($ci in @($Data.ConfigurationItems)) {
+        # Items the product ships are not the administrator's to clean up.
+        if (-not $ci -or -not $ci.IsUserDefined -or $ci.InUse) { continue }
+        New-HygieneFinding -CheckId 'CFG-02' -Severity Info -Category 'Compliance' `
+            -ObjectType 'ConfigurationItem' -ObjectId ([string]$ci.CI_ID) -ObjectName $ci.Name `
+            -Evidence 'No configuration baseline references this configuration item. No client evaluates it.' `
+            -Recommendation 'Add the item to a baseline, or delete it if it is no longer needed.' `
+            -FixScript ("# Review: Get-CMConfigurationItem -Id {0} -Fast" -f $ci.CI_ID)
+    }
+
+    foreach ($s in @($Data.ClientSettings)) {
+        if (-not $s -or $s.AssignmentCount -ne 0) { continue }
+        New-HygieneFinding -CheckId 'CFG-03' -Severity Info -Category 'Compliance' `
+            -ObjectType 'ClientSettings' -ObjectId ([string]$s.SettingsID) -ObjectName $s.Name `
+            -Evidence 'The custom client settings object is deployed to no collection. It applies to no client.' `
+            -Recommendation 'Deploy the settings to the intended collection, or delete them.' `
+            -FixScript ("# Review: Get-CMClientSetting -Name '{0}'" -f ($s.Name -replace "'", "''"))
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Drivers (DRV-01)
+# ---------------------------------------------------------------------------
+
+function Test-HygDriverUnpackaged {
+    <#
+    .SYNOPSIS
+        DRV-01: drivers that belong to no driver package and no boot image.
+    #>
+    param([Parameter(Mandatory)]$Data)
+
+    $contained = New-Object 'System.Collections.Generic.HashSet[int]'
+    foreach ($id in @($Data.DriverContainerIds)) { [void]$contained.Add([int]$id) }
+    foreach ($drv in @($Data.Drivers)) {
+        if (-not $drv -or $contained.Contains([int]$drv.CI_ID)) { continue }
+        New-HygieneFinding -CheckId 'DRV-01' -Severity Info -Category 'Drivers' `
+            -ObjectType 'Driver' -ObjectId ([string]$drv.CI_ID) -ObjectName $drv.Name `
+            -Evidence 'The driver is in the catalog but in no driver package and no boot image. A task sequence can install a driver only from a driver package on a distribution point.' `
+            -Recommendation 'Add the driver to a driver package, or delete it from the catalog.' `
+            -FixScript ("# Review: Get-CMDriver -Id {0} -Fast" -f $drv.CI_ID)
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Administrative users (SEC-01)
+# ---------------------------------------------------------------------------
+
+function Test-HygAdminDeletedAccount {
+    <#
+    .SYNOPSIS
+        SEC-01: administrative users whose Active Directory account the
+        site reports as deleted.
+    #>
+    param([Parameter(Mandatory)]$Data)
+
+    foreach ($a in @($Data.AdminUsers)) {
+        if (-not $a -or -not $a.IsDeleted) { continue }
+        $roles = $(if (@($a.RoleNames).Count -gt 0) { @($a.RoleNames) -join ', ' } else { 'none recorded' })
+        New-HygieneFinding -CheckId 'SEC-01' -Severity Warning -Category 'Security' `
+            -ObjectType 'AdministrativeUser' -ObjectId ([string]$a.AdminID) -ObjectName $a.LogonName `
+            -Evidence ("The site reports that the Active Directory account for this administrative user is deleted. Roles: {0}." -f $roles) `
+            -Recommendation 'Remove the administrative user from the site.' `
+            -FixScript ("# Review, then remove: Get-CMAdministrativeUser -Name '{0}'" -f ($a.LogonName -replace "'", "''"))
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Maintenance windows (COL-10)
+# ---------------------------------------------------------------------------
+
+function Test-HygMaintenanceWindowExpired {
+    <#
+    .SYNOPSIS
+        COL-10: one-time maintenance windows that ended in the past.
+        RecurrenceType 1 = no recurrence. One day of grace covers windows
+        whose start time is recorded in UTC.
+    #>
+    param([Parameter(Mandatory)]$Data)
+
+    $names = @{}
+    foreach ($c in @($Data.Collections)) { $names[[string]$c.CollectionID] = $c.Name }
+    $now = Get-Date
+    foreach ($w in @($Data.MaintenanceWindows)) {
+        if (-not $w -or $w.RecurrenceType -ne 1 -or -not $w.StartTime) { continue }
+        $end = ([datetime]$w.StartTime).AddMinutes([int]$w.Duration)
+        if ($end.AddDays(1) -ge $now) { continue }
+        $colName = $(if ($names.ContainsKey([string]$w.CollectionID)) { $names[[string]$w.CollectionID] } else { [string]$w.CollectionID })
+        New-HygieneFinding -CheckId 'COL-10' -Severity Info -Category 'Collections' `
+            -ObjectType 'MaintenanceWindow' -ObjectId ("{0}|{1}" -f $w.CollectionID, $w.Name) -ObjectName ("{0} on {1}" -f $w.Name, $colName) `
+            -Evidence ("The one-time maintenance window ended {0:yyyy-MM-dd HH:mm} and never recurs. A collection with any maintenance window, including an expired one, blocks required deployments outside a window." -f $end) `
+            -Recommendation 'Delete the expired window. If the collection needs no window at all, delete every window on it.' `
+            -FixScript ("Remove-CMMaintenanceWindow -CollectionId '{0}' -MaintenanceWindowName '{1}' -Force" -f $w.CollectionID, ($w.Name -replace "'", "''"))
     }
 }
 

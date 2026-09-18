@@ -33,7 +33,7 @@ take — displayed, never executed, by this tool.
    ```
 3. Click **Options** on the sidebar and set Site Code and SMS Provider.
 4. Optional: under **Options > Scan scope**, clear the areas you do not
-   need. On a large site, leave the two areas marked slow for a separate
+   need. On a large site, leave the three areas marked slow for a separate
    run.
 5. Click **Scan**. **Cancel scan** on the progress overlay stops it.
 
@@ -57,6 +57,9 @@ Stable check IDs so findings and reports stay comparable across scans:
 | DPL-01 | Info | Application deployments past their expiration time |
 | DPL-02 | Error | Required deployments past deadline with a failure rate over threshold |
 | DPL-03 | Info | Available deployments old enough to judge with zero installs and nothing in progress |
+| DPL-04 | Warning | Required deployments that target All Systems, All Desktop and Server Clients, All Users, All User Groups, or All Users and User Groups |
+| DPL-05 | Warning | Deployments of a disabled task sequence or a disabled program |
+| COL-10 | Info | One-time maintenance windows that ended in the past |
 | APP-04 | Warning/Info | Deployment-type content sources missing or unreachable, with timed-out probes reported as Unknown at Info |
 | SUP-01 | Error | Supersedence referencing a deleted application |
 | SUP-02 | Error | Circular supersedence chain |
@@ -78,6 +81,15 @@ Stable check IDs so findings and reports stay comparable across scans:
 | TSQ-02 | Warning | Custom boot images / driver packages nothing references |
 | UPD-01 | Warning | Update group over the documented expired-update ratio threshold; superseded presence is reported separately |
 | UPD-03 | Error/Warning/Info | ADR erroring / stale / disabled |
+| UPD-04 | Warning | Update groups over the limit of 1000 updates in one deployment |
+| UPD-05 | Info | Deployment packages that still hold content for expired updates |
+| DPT-01 | Warning | Distribution points in no boundary group |
+| DPT-02 | Info | Distribution point groups with no members |
+| CFG-01 | Info | Configuration baselines with no deployment and no referencing baseline |
+| CFG-02 | Info | Configuration items no baseline references |
+| CFG-03 | Info | Custom client settings deployed to no collection |
+| DRV-01 | Info | Drivers in no driver package and no boot image |
+| SEC-01 | Warning | Administrative users whose directory account the site reports as deleted |
 | MNT-01 | Info | Recommended cleanup maintenance tasks disabled |
 | MNT-02 | Warning | Backup Site Server task disabled |
 
@@ -91,20 +103,22 @@ sensible defaults in `Get-HygieneDefaultThresholds`.
 
 ## How a scan works
 
-One prefetch pass pulls the datasets the selected scan areas need — bulk
-`Get-CM*` reads and eight column-restricted WQL queries (collections, full and incremental evaluation timings, content status,
-application deployments, collection settings, application dependency
-relations, collection reference edges), all over the console's provider
-connection under your Configuration Manager role — and the checks run as pure functions over that data. A dataset that fails
+One prefetch pass pulls the datasets the selected scan areas need. The
+reads are bulk `Get-CM*` cmdlets and column-restricted WQL queries. All
+reads use the console's provider connection under your Configuration
+Manager role. The checks run as pure functions over that data. A dataset that fails
 to load degrades to an empty set with a note in the Summary view instead
 of killing the scan; the note also says which check may over- or
 under-report because of it.
 
-Two areas cost one SMS Provider read per object and are marked slow in
-the scope list: **Application relationships and content paths** reads
-every application definition, and **Collection evaluation schedules**
-reads every custom collection that has a full-update schedule. Everything
-else is one query per dataset. Each dataset logs its row count and
+Three areas cost one SMS Provider read per object and are marked slow in
+the scope list. **Application relationships and content paths** reads
+every application definition. **Collection evaluation schedules** reads
+every custom collection that has a full-update schedule. **Maintenance
+windows** reads every collection that has collection settings. Everything
+else is one query per dataset. **Software update package content** runs
+three queries; their row counts grow with the number of downloaded
+updates. Each dataset logs its row count and
 duration to the log pane, the console window, and the log file as it
 completes. A scoped scan leaves the rescan-delta baseline unchanged.
 

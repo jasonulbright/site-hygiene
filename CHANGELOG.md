@@ -2,6 +2,29 @@
 
 All notable changes to Site Hygiene are documented in this file.
 
+## [2026.09.18.0013] - 2026-09-18
+
+### Added
+
+- Flag required deployments that target a built-in all-resources collection (DPL-04).
+- Flag deployments of a disabled task sequence or program (DPL-05).
+- Flag update groups over the 1000-update deployment limit (UPD-04).
+- Flag deployment packages that hold content for expired updates (UPD-05).
+- Flag distribution points in no boundary group (DPT-01).
+- Flag distribution point groups with no members (DPT-02).
+- Flag configuration baselines deployed nowhere (CFG-01).
+- Flag configuration items in no baseline (CFG-02).
+- Flag custom client settings deployed to no collection (CFG-03).
+- Flag drivers in no driver package or boot image (DRV-01).
+- Flag administrative users whose directory account is deleted (SEC-01).
+- Flag one-time maintenance windows that ended in the past (COL-10).
+- Add six scan areas and four category filters for the new checks.
+
+### Changed
+
+- Change the version number to the release date plus a build number.
+- Update the shared SuiteCommon module to 0.5.5.
+
 ## [0.9.3] - 2026-09-18
 
 ### Added

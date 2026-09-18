@@ -249,6 +249,10 @@
                         <ComboBoxItem Content="Boundaries"/>
                         <ComboBoxItem Content="Task Sequences"/>
                         <ComboBoxItem Content="Updates"/>
+                        <ComboBoxItem Content="Distribution Points"/>
+                        <ComboBoxItem Content="Compliance"/>
+                        <ComboBoxItem Content="Drivers"/>
+                        <ComboBoxItem Content="Security"/>
                         <ComboBoxItem Content="Site"/>
                         <ComboBoxItem Content="Scan"/>
                     </ComboBox>
