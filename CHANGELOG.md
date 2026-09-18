@@ -2,6 +2,12 @@
 
 All notable changes to Site Hygiene are documented in this file.
 
+## [0.9.3] - 2026-09-18
+
+### Added
+
+- Flag collections whose last full or incremental evaluation ran longer than five seconds (COL-04).
+
 ## [0.9.2] - 2026-09-18
 
 ### Added

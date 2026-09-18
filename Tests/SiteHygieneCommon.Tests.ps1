@@ -1061,7 +1061,7 @@ Describe 'Version metadata single-sourcing' {
         $header = (Select-String (Join-Path $root 'start-sitehygiene.ps1') -Pattern 'Version    : ([0-9\.]+)' | Select-Object -First 1).Matches[0].Groups[1].Value
         $header | Should -Be $manifestVersion -Because 'the script header must match the manifest'
         (Select-String (Join-Path $root 'start-sitehygiene.ps1') -Pattern '\$script:AppVersion').Count | Should -BeGreaterThan 1 -Because 'UI version strings must render from the manifest-derived variable'
-        @(Get-HygieneCheckCatalog).Count | Should -Be 41
+        @(Get-HygieneCheckCatalog).Count | Should -Be 42
         @(Get-HygieneCheckCatalog | Where-Object { $_.Id -eq 'UPD-02' }).Count | Should -Be 0 -Because 'UPD-02 was removed; its provider join was invalid'
     }
 }
@@ -1531,5 +1531,56 @@ Describe 'Content distribution checks' {
         $f = @(Invoke-HygieneScan -Data $data -Scopes 'Content')
         @($f | Where-Object { $_.CheckId -like 'CNT-0*' }).Count | Should -Be 0
         @($f | Where-Object { $_.Category -eq 'Scan' }).Count | Should -Be 1
+    }
+}
+
+Describe 'COL-04 collection evaluation run time' {
+    BeforeAll {
+        function New-HygEvalData {
+            param([object[]]$Full = @(), [object[]]$Incremental = @())
+            $data = New-HygData
+            $data | Add-Member -NotePropertyName CollectionEvalFull -NotePropertyValue $Full
+            $data | Add-Member -NotePropertyName CollectionEvalIncremental -NotePropertyValue $Incremental -PassThru
+        }
+        function New-HygEvalRow {
+            param([string]$CollectionID, [string]$Name, [long]$LengthMs, [long]$MemberChanges = 0)
+            [pscustomobject]@{ CollectionID = $CollectionID; Name = $Name; LengthMs = $LengthMs; MemberChanges = $MemberChanges }
+        }
+    }
+
+    It 'flags only evaluations over the threshold, slowest first' {
+        $data = New-HygEvalData -Full @(
+            (New-HygEvalRow -CollectionID 'MCM00E01' -Name 'Quick' -LengthMs 900),
+            (New-HygEvalRow -CollectionID 'MCM00E02' -Name 'Slow' -LengthMs 12000),
+            (New-HygEvalRow -CollectionID 'MCM00E03' -Name 'Slowest' -LengthMs 95000 -MemberChanges 4)
+        )
+        $f = @(Test-HygCollectionEvaluationRunTime -Data $data)
+        $f.Count | Should -Be 2
+        $f[0].ObjectName | Should -Be 'Slowest'
+        $f[0].Evidence | Should -BeLike '*95.0s*4 membership change*'
+        $f[1].Evidence | Should -BeLike '*no membership change*'
+    }
+
+    It 'reports one finding when both evaluation types are slow' {
+        $data = New-HygEvalData `
+            -Full @(New-HygEvalRow -CollectionID 'MCM00E04' -Name 'Both' -LengthMs 8000) `
+            -Incremental @(New-HygEvalRow -CollectionID 'MCM00E04' -Name 'Both' -LengthMs 6000)
+        $f = @(Test-HygCollectionEvaluationRunTime -Data $data)
+        $f.Count | Should -Be 1
+        $f[0].Evidence | Should -BeLike '*full evaluation*incremental evaluation*'
+    }
+
+    It 'honors a custom threshold' {
+        $data = New-HygEvalData -Full @(New-HygEvalRow -CollectionID 'MCM00E05' -Name 'Medium' -LengthMs 3000)
+        $t = Get-HygieneDefaultThresholds; $t.ColEvalSlowMs = 2000
+        @(Test-HygCollectionEvaluationRunTime -Data $data -Thresholds $t).Count | Should -Be 1
+        @(Test-HygCollectionEvaluationRunTime -Data $data).Count | Should -Be 0
+    }
+
+    It 'is skipped, not run empty, when the timing classes are unavailable' {
+        $data = New-HygEvalData
+        $data.FailedDatasets = @('CollectionEvalFull', 'CollectionEvalIncremental')
+        $f = @(Invoke-HygieneScan -Data $data -Scopes 'Collections')
+        @($f | Where-Object { $_.CheckId -eq 'COL-04' -and $_.Category -eq 'Scan' }).Count | Should -Be 1
     }
 }
