@@ -6,7 +6,7 @@
 
 .DESCRIPTION
     Every check is pure over a prefetched data object, so the whole engine
-    is covered with synthetic data. No MECM, CIM, or elevation required.
+    is covered with synthetic data. No Configuration Manager site, CIM, or elevation required.
 
 .EXAMPLE
     Invoke-Pester .\SiteHygieneCommon.Tests.ps1
