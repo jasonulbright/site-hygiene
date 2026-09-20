@@ -25,7 +25,7 @@ A test fails if the three values differ.
 Check the vendored SuiteCommon copy for drift. Sync it if the check reports drift.
 
 ```powershell
-C:\projects\suite-core\sync-suitecommon.ps1 -Consumer C:\projects\site-hygiene -Check
+C:\projects\app-packager-suite\sync-suitecommon.ps1 -Consumer C:\projects\site-hygiene -Check
 ```
 
 ## 4. Commit, tag, and package

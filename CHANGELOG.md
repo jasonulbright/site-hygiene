@@ -2,6 +2,14 @@
 
 All notable changes to Site Hygiene are documented in this file.
 
+## [2026.09.20.0015] - 2026-09-20
+
+### Changed
+
+- State in the README and the About pane that Run Fix runs a script after confirmation.
+- State the rights that Run Fix needs in the README requirements.
+- Update the shared SuiteCommon module to 2026.09.18.0030.
+
 ## [2026.09.18.0014] - 2026-09-18
 
 ### Changed

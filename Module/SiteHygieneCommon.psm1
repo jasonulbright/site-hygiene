@@ -14,9 +14,11 @@
       - Findings export to CSV, HTML, and plain-text summary
 
     A scan is read-only: the prefetch uses Get-CM* cmdlets plus WQL
-    queries over the same provider connection and never mutates the site. Every finding carries the evidence
-    that produced it, a recommendation, and the PowerShell a fix would
-    run - the script is displayed, never executed, by this module.
+    queries over the same provider connection and never mutates the
+    site. Every finding carries the evidence that produced it, a
+    recommendation, and the PowerShell a fix would run. Only
+    Invoke-HygieneFix executes a fix script, and it refuses a
+    comment-only script.
 
 .EXAMPLE
     Import-Module "$PSScriptRoot\Module\SiteHygieneCommon.psd1" -Force

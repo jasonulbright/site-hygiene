@@ -3,11 +3,12 @@
     MahApps.Metro WPF shell for the MECM Site Hygiene scanner.
 
 .DESCRIPTION
-    Sidebar navigation across two views (Findings, Summary), inline action
-    bar (Scan, filter, category filter, severity filter, exports), and an
-    Options modal. A scan is read-only: every finding shows its evidence,
-    a recommendation, and the exact PowerShell a fix would run - the
-    script is displayed, never executed, by this tool.
+    Sidebar navigation across three views (Findings, Relationships,
+    Summary), inline action bar (Scan, filter, category filter, severity
+    filter, exports), and an Options modal. A scan is read-only: every
+    finding shows its evidence, a recommendation, and the exact PowerShell
+    a fix would run. Run Fix executes that script only after a
+    confirmation dialog that shows it.
 
     Requirements:
       - PowerShell 5.1
@@ -18,7 +19,7 @@
 
 .NOTES
     ScriptName : start-sitehygiene.ps1
-    Version    : 2026.09.18.0014
+    Version    : 2026.09.20.0015
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', '', Justification='PS51-WPF-001..003: $global: survives closure scope-strip.')]
@@ -802,7 +803,7 @@ function Show-OptionsDialog {
             <StackPanel x:Name="paneAbout" Visibility="Collapsed">
                 <TextBlock Text="About" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,10"/>
                 <TextBlock x:Name="txtAboutVersion" Text="Site Hygiene" FontSize="13" FontWeight="SemiBold"/>
-                <TextBlock Text="Read-only MECM hygiene scanning: unused applications and packages, dead collections, stale and failing deployments. Every finding carries its evidence and the PowerShell a fix would take - shown, never executed."
+                <TextBlock Text="Read-only MECM hygiene scanning: unused applications and packages, dead collections, stale and failing deployments. Every finding carries its evidence and the PowerShell a fix would run. A scan changes nothing. Run Fix runs a script only after you confirm it."
                            FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0"/>
                 <TextBlock Text="Author: Jason Ulbright. License: MIT."
                            FontSize="11" Margin="0,16,0,0" Foreground="{DynamicResource MahApps.Brushes.Gray1}"/>
