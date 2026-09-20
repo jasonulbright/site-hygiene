@@ -2,6 +2,12 @@
 
 All notable changes to Site Hygiene are documented in this file.
 
+## [2026.09.20.0016] - 2026-09-20
+
+### Changed
+
+- Use the product name Configuration Manager in the application, the README, and the changelog.
+
 ## [2026.09.20.0015] - 2026-09-20
 
 ### Changed
@@ -278,7 +284,7 @@ All notable changes to Site Hygiene are documented in this file.
 
 ## [0.1.0] - 2026-08-14
 
-First release: a read-only MECM hygiene scanner.
+First release: a read-only Configuration Manager hygiene scanner.
 
 ### Features
 

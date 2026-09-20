@@ -1,9 +1,9 @@
 @{
     RootModule        = 'SiteHygieneCommon.psm1'
-    ModuleVersion     = '2026.09.20.0015'
+    ModuleVersion     = '2026.09.20.0016'
     GUID              = 'e94b7c15-2f6a-4d38-8b0c-51a9d3e6f284'
     Author            = 'Jason Ulbright'
-    Description       = 'MECM site hygiene: read-only scanning for unused applications and packages, dead collections, stale and failing deployments, with confirmed per-finding fix execution.'
+    Description       = 'Configuration Manager site hygiene: read-only scanning for unused applications and packages, dead collections, stale and failing deployments, with confirmed per-finding fix execution.'
     PowerShellVersion = '5.1'
 
     FunctionsToExport = @(
