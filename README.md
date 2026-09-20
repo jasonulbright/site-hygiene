@@ -7,9 +7,11 @@
 
 A MahApps.Metro WPF scanner for MECM site clutter and drift: unused
 applications and packages, dead collections, stale and failing
-deployments. A scan is read-only, every finding carries the evidence that
-produced it, and every finding shows the exact PowerShell a fix would
-take — displayed, never executed, by this tool.
+deployments. A scan is read-only. Every finding carries the evidence that
+produced it and the exact PowerShell a fix would run. The tool runs a fix
+script only when you select the finding, click **Run Fix**, and confirm
+the script in a dialog. Many findings carry guidance only; the tool never
+runs those.
 
 ![Site Hygiene findings view](screenshot.png)
 
@@ -20,7 +22,9 @@ take — displayed, never executed, by this tool.
 - .NET Framework 4.7.2+
 - Configuration Manager console installed (provides the
   `ConfigurationManager` PowerShell module)
-- Read access to the SMS Provider (a scan never mutates the site)
+- Read access to the SMS Provider for a scan (a scan never mutates the
+  site). **Run Fix** needs the Configuration Manager rights that the fix
+  script itself needs.
 
 ## Quick Start
 
