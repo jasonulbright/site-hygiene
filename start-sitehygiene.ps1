@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    MahApps.Metro WPF shell for the Configuration Manager Site Hygiene scanner.
+    Main window of Site Hygiene, a scanner and repair tool for Configuration Manager sites.
 
 .DESCRIPTION
     Sidebar navigation across three views (Findings, Relationships,

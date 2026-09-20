@@ -5,9 +5,9 @@
 [![Platform](https://img.shields.io/badge/platform-Windows-0078D4)](#requirements)
 [![License](https://img.shields.io/github/license/jasonulbright/site-hygiene)](LICENSE)
 
-A MahApps.Metro WPF scanner for Configuration Manager site clutter and drift: unused
-applications and packages, dead collections, stale and failing
-deployments. A scan is read-only. Every finding carries the evidence that
+A scanner and repair tool for Configuration Manager site clutter and
+drift: unused applications and packages, dead collections, stale and
+failing deployments. A scan is read-only. Every finding carries the evidence that
 produced it and the exact PowerShell a fix would run. The tool runs a fix
 script only when you select the finding, click **Run Fix**, and confirm
 the script in a dialog. Many findings carry guidance only; the tool never
