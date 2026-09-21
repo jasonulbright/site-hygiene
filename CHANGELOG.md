@@ -2,6 +2,22 @@
 
 All notable changes to Site Hygiene are documented in this file.
 
+## [2026.09.21.0019] - 2026-09-21
+
+### Added
+
+- Flag applications that hold old revisions, with a fix that deletes them (APP-05).
+- Flag applications in a task sequence without the task sequence install setting (TSQ-03).
+- Flag applications in a task sequence with content on no distribution point (TSQ-04).
+
+### Fixed
+
+- Keep the New flag, the resolved list, and suppressions correct after an application edit.
+
+### Changed
+
+- Update the shared SuiteCommon module to 2026.09.21.0032.
+
 ## [2026.09.21.0018] - 2026-09-21
 
 ### Fixed

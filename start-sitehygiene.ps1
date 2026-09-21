@@ -19,7 +19,7 @@
 
 .NOTES
     ScriptName : start-sitehygiene.ps1
-    Version    : 2026.09.21.0018
+    Version    : 2026.09.21.0019
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', '', Justification='PS51-WPF-001..003: $global: survives closure scope-strip.')]

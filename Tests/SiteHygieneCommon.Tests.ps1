@@ -1061,7 +1061,7 @@ Describe 'Version metadata single-sourcing' {
         $header = (Select-String (Join-Path $root 'start-sitehygiene.ps1') -Pattern 'Version    : ([0-9\.]+)' | Select-Object -First 1).Matches[0].Groups[1].Value
         $header | Should -Be $manifestVersion -Because 'the script header must match the manifest'
         (Select-String (Join-Path $root 'start-sitehygiene.ps1') -Pattern '\$script:AppVersion').Count | Should -BeGreaterThan 1 -Because 'UI version strings must render from the manifest-derived variable'
-        @(Get-HygieneCheckCatalog).Count | Should -Be 54
+        @(Get-HygieneCheckCatalog).Count | Should -Be 57
         @(Get-HygieneCheckCatalog | Where-Object { $_.Id -eq 'UPD-02' }).Count | Should -Be 0 -Because 'UPD-02 was removed; its provider join was invalid'
     }
 }
@@ -1777,5 +1777,143 @@ Describe 'Distribution point, compliance, driver, security, and maintenance wind
             @($data.TaskSequences).Count | Should -Be 0
         }
         finally { foreach ($s in $stubs) { Remove-Item -Path "function:global:$s" -ErrorAction SilentlyContinue } }
+    }
+}
+
+Describe 'APP-05 old application revisions' {
+    BeforeAll {
+        function New-HygRevisionData {
+            param([object[]]$Applications = @(), [object[]]$AppRevisions = @())
+            $data = New-HygData -Applications $Applications
+            $data | Add-Member -NotePropertyName AppRevisions -NotePropertyValue $AppRevisions -PassThru
+        }
+    }
+
+    It 'flags a deployed application once and lists every old revision' {
+        $app = New-HygApp -CI_ID 501 -Name '7-Zip' -ModelName 'ScopeId_X/Application_7zip' -IsDeployed $true
+        $data = New-HygRevisionData -Applications @($app) -AppRevisions @(
+            [pscustomobject]@{ CI_ID = 480; ModelName = 'ScopeId_X/Application_7zip'; Revision = 2 },
+            [pscustomobject]@{ CI_ID = 470; ModelName = 'ScopeId_X/Application_7zip'; Revision = 1 })
+        $f = @(Test-HygAppOldRevisions -Data $data)
+        $f.Count | Should -Be 1
+        $f[0].CheckId | Should -Be 'APP-05'
+        $f[0].Evidence | Should -BeLike '*2 old revision(s): 1, 2*'
+        $f[0].FixScript | Should -BeLike '*Remove-CMApplicationRevisionHistory -Id 501 -Revision 1 -Force*'
+        $f[0].FixScript | Should -BeLike '*Remove-CMApplicationRevisionHistory -Id 501 -Revision 2 -Force*'
+        Test-HygieneFixExecutable -FixScript $f[0].FixScript | Should -BeTrue
+    }
+
+    It 'flags an application that is not deployed and ignores an application with one revision' {
+        $idle = New-HygApp -CI_ID 502 -Name 'Idle' -ModelName 'ScopeId_X/Application_idle' -IsDeployed $false
+        $single = New-HygApp -CI_ID 503 -Name 'Single' -ModelName 'ScopeId_X/Application_single' -IsDeployed $true
+        $data = New-HygRevisionData -Applications @($idle, $single) -AppRevisions @(
+            [pscustomobject]@{ CI_ID = 460; ModelName = 'ScopeId_X/Application_idle'; Revision = 3 },
+            [pscustomobject]@{ CI_ID = 461; ModelName = 'ScopeId_X/Application_idle'; Revision = 4 })
+        $f = @(Test-HygAppOldRevisions -Data $data)
+        $f.Count | Should -Be 1
+        $f[0].ObjectName | Should -Be 'Idle'
+        $f[0].Evidence | Should -BeLike '*2 old revision(s): 3, 4*'
+    }
+    It 'is skipped by the runner when the revision query failed' {
+        $app = New-HygApp -CI_ID 501 -Name '7-Zip' -ModelName 'ScopeId_X/Application_7zip' -IsDeployed $true
+        $data = New-HygRevisionData -Applications @($app)
+        $data.FailedDatasets = @('AppRevisions')
+        $f = @(Invoke-HygieneScan -Data $data -Scopes 'Applications')
+        @($f | Where-Object { $_.CheckId -eq 'APP-05' -and $_.Category -eq 'Scan' }).Count | Should -Be 1
+    }
+
+    It 'reads old revisions with one query that excludes the current revision' {
+        $stubs = 'Invoke-CMWmiQuery'
+        foreach ($s in $stubs) { Set-Item -Path "function:global:$s" -Value { [CmdletBinding()] param($Query, $Option) } }
+        try {
+            Mock -ModuleName SiteHygieneCommon Invoke-CMWmiQuery { [pscustomobject]@{ CI_ID = 470; ModelName = 'ScopeId_X/Application_7zip'; CIVersion = 1 } }
+            $data = Get-HygieneData -Datasets 'AppRevisions'
+            @($data.AppRevisions).Count | Should -Be 1
+            $data.AppRevisions[0].Revision | Should -Be 1
+            Should -Invoke -ModuleName SiteHygieneCommon Invoke-CMWmiQuery -Times 1 -Exactly -ParameterFilter { $Option -eq 'Fast' -and $Query -like '*FROM SMS_Application WHERE IsLatest = 0' }
+        }
+        finally { foreach ($s in $stubs) { Remove-Item -Path "function:global:$s" -ErrorAction SilentlyContinue } }
+    }
+}
+
+Describe 'Task sequence application checks (TSQ-03, TSQ-04)' {
+    BeforeAll {
+        function New-HygTsAppData {
+            param([object[]]$Applications, [object[]]$TaskSequences, [object[]]$TsAppDefinitions = @(), [object[]]$ContentStatus = @(), [object[]]$AppRevisions = @())
+            $data = New-HygData -Applications $Applications -TaskSequences $TaskSequences
+            $data | Add-Member -NotePropertyName TsAppDefinitions -NotePropertyValue $TsAppDefinitions
+            $data | Add-Member -NotePropertyName ContentStatus -NotePropertyValue $ContentStatus
+            $data | Add-Member -NotePropertyName AppRevisions -NotePropertyValue $AppRevisions -PassThru
+        }
+        function New-HygTs { param([string]$Name, [string[]]$Refs) [pscustomobject]@{ PackageID = 'MCM00008'; Name = $Name; ReferencedIDs = $Refs; BootImageID = ''; ProgramFlags = 0 } }
+        function New-HygContent { param([string]$Model, [int]$Targeted, [long]$SourceSize = 1960) [pscustomobject]@{ ObjectID = $Model; PackageID = 'MCM00036'; Name = 'x'; ObjectType = 512; Targeted = $Targeted; NumberSuccess = 0; NumberInProgress = 0; NumberErrors = 0; NumberUnknown = 0; SourceSize = $SourceSize; LastUpdateDate = (Get-Date) } }
+    }
+
+    It 'TSQ-03 flags only a task sequence application without the install setting' {
+        $a = New-HygApp -CI_ID 701 -Name '7-Zip' -ModelName 'ScopeId_X/Application_7zip'
+        $b = New-HygApp -CI_ID 702 -Name 'Reader' -ModelName 'ScopeId_X/Application_reader'
+        $data = New-HygTsAppData -Applications @($a, $b) -TaskSequences @(New-HygTs -Name 'Build Win11' -Refs @('ScopeId_X/Application_7zip', 'ScopeId_X/Application_reader', 'MCM00004')) `
+            -TsAppDefinitions @([pscustomobject]@{ ModelName = 'ScopeId_X/Application_7zip'; AutoInstall = $false }, [pscustomobject]@{ ModelName = 'ScopeId_X/Application_reader'; AutoInstall = $true })
+        $f = @(Test-HygTaskSequenceApplications -Data $data)
+        $f.Count | Should -Be 1
+        $f[0].CheckId | Should -Be 'TSQ-03'
+        $f[0].ObjectName | Should -Be '7-Zip'
+        $f[0].Evidence | Should -BeLike "*'Build Win11'*"
+        $f[0].FixScript | Should -BeLike "*Set-CMApplication -AutoInstall `$true"
+    }
+
+    It 'TSQ-04 flags a task sequence application with source files and no distribution point' {
+        $a = New-HygApp -CI_ID 701 -Name '7-Zip' -ModelName 'ScopeId_X/Application_7zip'
+        $b = New-HygApp -CI_ID 702 -Name 'Reader' -ModelName 'ScopeId_X/Application_reader'
+        $c = New-HygApp -CI_ID 703 -Name 'Not in a task sequence' -ModelName 'ScopeId_X/Application_other'
+        $data = New-HygTsAppData -Applications @($a, $b, $c) -TaskSequences @(New-HygTs -Name 'Build Win11' -Refs @('ScopeId_X/Application_7zip', 'ScopeId_X/Application_reader')) `
+            -ContentStatus @((New-HygContent -Model 'ScopeId_X/Application_7zip' -Targeted 0), (New-HygContent -Model 'ScopeId_X/Application_reader' -Targeted 3), (New-HygContent -Model 'ScopeId_X/Application_other' -Targeted 0))
+        $f = @(Test-HygTaskSequenceApplications -Data $data | Where-Object CheckId -eq 'TSQ-04')
+        $f.Count | Should -Be 1
+        $f[0].ObjectName | Should -Be '7-Zip'
+        $f[0].Severity | Should -Be 'Error'
+    }
+
+    It 'reads one definition per task sequence application and parses the install setting' {
+        $stubs = 'Invoke-CMWmiQuery','Get-CMTaskSequence','Get-CMApplication'
+        foreach ($s in $stubs) { Set-Item -Path "function:global:$s" -Value { [CmdletBinding()] param($Query, $Option, $ModelName, [switch]$Fast) } }
+        try {
+            $d = 'http://schemas.microsoft.com/SystemCenterConfigurationManager/2009/AppMgmtDigest'
+            Mock -ModuleName SiteHygieneCommon Invoke-CMWmiQuery {
+                [pscustomobject]@{ PackageID = 'MCM00008'; ObjectID = 'ScopeId_X/Application_on' }
+                [pscustomobject]@{ PackageID = 'MCM00008'; ObjectID = 'ScopeId_X/Application_off' }
+                [pscustomobject]@{ PackageID = 'MCM00008'; ObjectID = 'MCM00004' }
+            } -ParameterFilter { $Query -like '*SMS_TaskSequencePackageReference_All' }
+            Mock -ModuleName SiteHygieneCommon Get-CMTaskSequence { [pscustomobject]@{ PackageID = 'MCM00008'; Name = 'Build'; BootImageID = ''; ProgramFlags = 0 } }
+            Mock -ModuleName SiteHygieneCommon Get-CMApplication { [pscustomobject]@{ SDMPackageXML = "<AppMgmtDigest xmlns='$d'><Application><AutoInstall>true</AutoInstall></Application></AppMgmtDigest>" } } -ParameterFilter { $ModelName -eq 'ScopeId_X/Application_on' }
+            Mock -ModuleName SiteHygieneCommon Get-CMApplication { [pscustomobject]@{ SDMPackageXML = "<AppMgmtDigest xmlns='$d'><Application><Title>x</Title></Application></AppMgmtDigest>" } } -ParameterFilter { $ModelName -eq 'ScopeId_X/Application_off' }
+            $data = Get-HygieneData -Datasets 'TsAppDefinitions'
+            @($data.TsAppDefinitions).Count | Should -Be 2
+            ($data.TsAppDefinitions | Where-Object ModelName -like '*_on').AutoInstall | Should -BeTrue
+            ($data.TsAppDefinitions | Where-Object ModelName -like '*_off').AutoInstall | Should -BeFalse
+            Should -Invoke -ModuleName SiteHygieneCommon Get-CMApplication -Times 2 -Exactly
+        }
+        finally { foreach ($s in $stubs) { Remove-Item -Path "function:global:$s" -ErrorAction SilentlyContinue } }
+    }
+}
+
+Describe 'Finding key across application revisions' {
+    It 'keeps the same key when an edit gives the application a new CI_ID' {
+        $model = 'ScopeId_X/Application_7zip'
+        $scan = {
+            param([int]$CiId)
+            $app = New-HygApp -CI_ID $CiId -Name '7-Zip' -ModelName $model -IsDeployed $true -IsExpired $true
+            $data = New-HygData -Applications @($app)
+            $data | Add-Member -NotePropertyName AppRevisions -NotePropertyValue @([pscustomobject]@{ CI_ID = 1; ModelName = $model; Revision = 1 })
+            @(@(Test-HygAppRetiredDeployed -Data $data) + @(Test-HygAppOldRevisions -Data $data))
+        }
+        $first  = & $scan 16779183
+        $second = & $scan 16779240
+        $first.Count | Should -Be 2
+        ($first | ForEach-Object { Get-HygieneSuppressionKey -Finding $_ }) | Should -Be ($second | ForEach-Object { Get-HygieneSuppressionKey -Finding $_ })
+        $delta = Get-HygieneScanDelta -Findings $second -Previous ([pscustomobject]@{ Findings = $first })
+        $delta.NewKeys.Count | Should -Be 0
+        @($delta.Resolved).Count | Should -Be 0
+        ($second | Where-Object CheckId -eq 'APP-05').FixScript | Should -BeLike '*-Id 16779240 -Revision 1*'
     }
 }
