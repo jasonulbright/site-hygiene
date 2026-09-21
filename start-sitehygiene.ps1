@@ -19,7 +19,7 @@
 
 .NOTES
     ScriptName : start-sitehygiene.ps1
-    Version    : 2026.09.21.0017
+    Version    : 2026.09.21.0018
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', '', Justification='PS51-WPF-001..003: $global: survives closure scope-strip.')]
@@ -72,6 +72,11 @@ function Save-ShPreferences {
     $null = Save-SuiteSettings -Path $global:PrefsPath -Settings $Prefs
 }
 $global:Prefs = Get-ShPreferences
+
+# The suite launcher hands its site code and provider to each tool it starts.
+# A value saved in this tool wins; the launcher value fills an empty one.
+if (-not $global:Prefs.SiteCode    -and $env:SUITE_CM_SITECODE) { $global:Prefs.SiteCode    = [string]$env:SUITE_CM_SITECODE }
+if (-not $global:Prefs.SMSProvider -and $env:SUITE_CM_PROVIDER) { $global:Prefs.SMSProvider = [string]$env:SUITE_CM_PROVIDER }
 
 $global:SuppressPath = Join-Path $PSScriptRoot 'SiteHygiene.suppressions.json'
 $global:LastScanPath = Join-Path $PSScriptRoot 'SiteHygiene.lastscan.json'
