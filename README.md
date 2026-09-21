@@ -50,6 +50,7 @@ Stable check IDs so findings and reports stay comparable across scans:
 | APP-01 | Warning | Applications with no deployments, no task sequence references, no supersedence role, and no dependency targeting (with an age grace window for new apps) |
 | APP-02 | Error | Retired (expired) applications that still have active deployments |
 | APP-03 | Warning | Superseded applications whose own deployments are still active |
+| APP-05 | Info | Applications that hold revisions other than the current one; the fix deletes the old revisions |
 | PKG-01 | Warning | Legacy packages with no programs, no deployments, and no task sequence references |
 | CNT-01 | Warning | Content that failed on one or more distribution points, with the failed/targeted counts |
 | CNT-02 | Info | Content still distributing more than two days after its last update |
@@ -83,6 +84,8 @@ Stable check IDs so findings and reports stay comparable across scans:
 | BND-03 | Info | Overlapping IP-range boundaries |
 | TSQ-01 | Error | Task sequence referencing deleted content |
 | TSQ-02 | Warning | Custom boot images / driver packages nothing references |
+| TSQ-03 | Warning | Applications in a task sequence without the setting that lets a task sequence install them |
+| TSQ-04 | Error | Applications in a task sequence with source files and content on no distribution point |
 | UPD-01 | Warning | Update group over the documented expired-update ratio threshold; superseded presence is reported separately |
 | UPD-03 | Error/Warning/Info | ADR erroring / stale / disabled |
 | UPD-04 | Warning | Update groups over the limit of 1000 updates in one deployment |

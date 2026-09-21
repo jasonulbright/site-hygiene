@@ -55,6 +55,7 @@ function Get-HygieneCheckCatalog {
         [pscustomobject]@{ Id = 'APP-02'; Category = 'Applications'; Severity = 'Error';   Title = 'Retired application still deployed' }
         [pscustomobject]@{ Id = 'APP-03'; Category = 'Applications'; Severity = 'Warning'; Title = 'Superseded application still deployed' }
         [pscustomobject]@{ Id = 'APP-04'; Category = 'Applications'; Severity = 'Warning'; Title = 'Deployment type content source missing or unreachable' }
+        [pscustomobject]@{ Id = 'APP-05'; Category = 'Applications'; Severity = 'Info';    Title = 'Application with old revisions' }
         [pscustomobject]@{ Id = 'PKG-01'; Category = 'Packages';     Severity = 'Warning'; Title = 'Package with no programs and no references' }
         [pscustomobject]@{ Id = 'CNT-01'; Category = 'Content';      Severity = 'Warning'; Title = 'Content failed on one or more distribution points' }
         [pscustomobject]@{ Id = 'CNT-02'; Category = 'Content';      Severity = 'Info';    Title = 'Content distribution in progress beyond threshold' }
@@ -77,6 +78,8 @@ function Get-HygieneCheckCatalog {
         [pscustomobject]@{ Id = 'BND-03'; Category = 'Boundaries';   Severity = 'Info';    Title = 'Overlapping IP-range boundaries' }
         [pscustomobject]@{ Id = 'TSQ-01'; Category = 'Task Sequences'; Severity = 'Error';   Title = 'Task sequence referencing deleted content' }
         [pscustomobject]@{ Id = 'TSQ-02'; Category = 'Task Sequences'; Severity = 'Warning'; Title = 'Boot image or driver package referenced by nothing' }
+        [pscustomobject]@{ Id = 'TSQ-03'; Category = 'Task Sequences'; Severity = 'Warning'; Title = 'Application in a task sequence without the task sequence install setting' }
+        [pscustomobject]@{ Id = 'TSQ-04'; Category = 'Task Sequences'; Severity = 'Error';   Title = 'Application in a task sequence with content on no distribution point' }
         [pscustomobject]@{ Id = 'UPD-01'; Category = 'Updates';      Severity = 'Warning'; Title = 'Update group with high expired-update ratio' }
         [pscustomobject]@{ Id = 'UPD-03'; Category = 'Updates';      Severity = 'Warning'; Title = 'Automatic deployment rule disabled, stale, or erroring' }
         [pscustomobject]@{ Id = 'MNT-01'; Category = 'Site';         Severity = 'Info';    Title = 'Recommended maintenance tasks disabled' }
@@ -214,6 +217,7 @@ function Get-HygScanPlan {
         @{ Id = 'APP-01'; Scopes = @('Applications'); Requires = @('Applications','Deployments','TaskSequences','DependencyTargetCIIDs'); Run = { param($d, $t) Test-HygAppNoReferences -Data $d -Thresholds $t } }
         @{ Id = 'APP-02'; Scopes = @('Applications'); Requires = @('Applications'); Run = { param($d) Test-HygAppRetiredDeployed -Data $d } }
         @{ Id = 'APP-03'; Scopes = @('Applications'); Requires = @('Applications'); Run = { param($d) Test-HygAppSupersededDeployed -Data $d } }
+        @{ Id = 'APP-05'; Scopes = @('Applications'); Requires = @('Applications','AppRevisions'); Run = { param($d) Test-HygAppOldRevisions -Data $d } }
         @{ Id = 'CNT';    Scopes = @('Content'); Requires = @('ContentStatus','Applications','Deployments'); Run = { param($d, $t) Test-HygContentDistribution -Data $d -Thresholds $t } }
         @{ Id = 'PKG-01'; Scopes = @('Packages'); Requires = @('Packages','Programs','Deployments','TaskSequences'); Run = { param($d) Test-HygPackageUnused -Data $d } }
         @{ Id = 'COL-01'; Scopes = @('Collections'); Requires = @('Collections','Deployments','CollectionsWithSettings','CollectionDependencies'); Run = { param($d) Test-HygCollectionEmptyUnused -Data $d } }
@@ -228,6 +232,7 @@ function Get-HygScanPlan {
         @{ Id = 'DEV-02'; Scopes = @('Devices'); Requires = @('Devices'); Run = { param($d) Test-HygDeviceDuplicates -Data $d } }
         @{ Id = 'DEV-03'; Scopes = @('Devices'); Requires = @('Devices'); Run = { param($d) Test-HygClientVersions -Data $d } }
         @{ Id = 'BND';    Scopes = @('Boundaries'); Requires = @('Boundaries','BoundaryGroups'); Run = { param($d) Test-HygBoundaryChecks -Data $d } }
+        @{ Id = 'TSQ-APP'; Scopes = @('TaskSequences'); Requires = @('TaskSequences','Applications','TsAppDefinitions','ContentStatus'); Run = { param($d) Test-HygTaskSequenceApplications -Data $d } }
         @{ Id = 'TSQ';    Scopes = @('TaskSequences'); Requires = @('TaskSequences','Packages','BootImages','DriverPackages','UpdatePackages','OSImages','OSUpgradePackages','Applications'); Run = { param($d) Test-HygTaskSequenceRefs -Data $d } }
         @{ Id = 'UPD-01'; Scopes = @('Updates'); Requires = @('UpdateGroups'); Run = { param($d, $t) Test-HygUpdateGroupChecks -Data $d -Thresholds $t } }
         @{ Id = 'UPD-03'; Scopes = @('Updates'); Requires = @('AutoDeploymentRules'); Run = { param($d, $t) Test-HygAdrChecks -Data $d -Thresholds $t } }
@@ -339,6 +344,13 @@ function Get-HygieneData {
                 }
             }
         } }
+        # SMS_Application holds every revision; SMS_ApplicationLatest and
+        # Get-CMApplication return the current one only.
+        AppRevisions = @{ Label = 'old application revisions'; FailureHint = 'APP-05 is skipped'; Run = {
+            Invoke-CMWmiQuery -Query 'SELECT CI_ID, ModelName, CIVersion FROM SMS_Application WHERE IsLatest = 0' -Option Fast -ErrorAction Stop | ForEach-Object {
+                [pscustomobject]@{ CI_ID = [int]$_.CI_ID; ModelName = [string]$_.ModelName; Revision = [int]$_.CIVersion }
+            }
+        } }
         Packages = @{ Label = 'packages'; Run = {
             Get-CMPackage -Fast -ErrorAction Stop | ForEach-Object {
                 [pscustomobject]@{ PackageID = [string]$_.PackageID; Name = [string]$_.Name }
@@ -373,6 +385,26 @@ function Get-HygieneData {
                 $p = $_.PSObject.Properties['ProgramFlags']
                 if ($p -and $null -ne $p.Value) { $flags = [long]$p.Value }
                 [pscustomobject]@{ PackageID = [string]$_.PackageID; Name = [string]$_.Name; ReferencedIDs = $refs; BootImageID = $bootImage; ProgramFlags = $flags }
+            }
+        } }
+        # The task sequence install setting exists only in the application
+        # definition XML, a lazy property: one provider read per
+        # application that a task sequence references.
+        TsAppDefinitions = @{ Label = 'task sequence application definitions'; FailureHint = 'TSQ-03 and TSQ-04 are skipped'; Run = {
+            $models = @($result['TaskSequences'] | ForEach-Object { $_.ReferencedIDs } | Where-Object { $_ -like '*/Application_*' } | Sort-Object -Unique)
+            $i = 0
+            foreach ($model in $models) {
+                $i++
+                if ($ProgressState) { $ProgressState.Step = "Reading task sequence applications ($i of $($models.Count))..." }
+                $app = Get-CMApplication -ModelName $model -ErrorAction Stop | Select-Object -First 1
+                if (-not $app) { continue }
+                $auto = $false
+                [xml]$xml = [string]$app.SDMPackageXML
+                $nsm = [System.Xml.XmlNamespaceManager]::new($xml.NameTable)
+                $nsm.AddNamespace('d', 'http://schemas.microsoft.com/SystemCenterConfigurationManager/2009/AppMgmtDigest')
+                $node = $xml.SelectSingleNode('/d:AppMgmtDigest/d:Application/d:AutoInstall', $nsm)
+                if ($node) { $auto = ([string]$node.InnerText).Trim() -eq 'true' }
+                [pscustomobject]@{ ModelName = [string]$model; AutoInstall = $auto }
             }
         } }
         Devices = @{ Label = 'devices'; Run = {
@@ -626,13 +658,13 @@ function Get-HygieneData {
             }
         } }
         Baselines = @{ Label = 'configuration baselines'; Run = {
-            Invoke-CMWmiQuery -Query 'SELECT CI_ID, LocalizedDisplayName, IsAssigned, InUse, IsUserDefined FROM SMS_ConfigurationBaselineInfo' -Option Fast -ErrorAction Stop | ForEach-Object {
-                [pscustomobject]@{ CI_ID = [int]$_.CI_ID; Name = [string]$_.LocalizedDisplayName; IsAssigned = [bool]$_.IsAssigned; InUse = [bool]$_.InUse; IsUserDefined = [bool]$_.IsUserDefined }
+            Invoke-CMWmiQuery -Query 'SELECT CI_ID, ModelName, LocalizedDisplayName, IsAssigned, InUse, IsUserDefined FROM SMS_ConfigurationBaselineInfo' -Option Fast -ErrorAction Stop | ForEach-Object {
+                [pscustomobject]@{ CI_ID = [int]$_.CI_ID; ModelName = [string]$_.ModelName; Name = [string]$_.LocalizedDisplayName; IsAssigned = [bool]$_.IsAssigned; InUse = [bool]$_.InUse; IsUserDefined = [bool]$_.IsUserDefined }
             }
         } }
         ConfigurationItems = @{ Label = 'configuration items'; Run = {
             Get-CMConfigurationItem -Fast -ErrorAction Stop | ForEach-Object {
-                [pscustomobject]@{ CI_ID = [int]$_.CI_ID; Name = [string]$_.LocalizedDisplayName; InUse = [bool]$_.InUse; IsUserDefined = [bool]$_.IsUserDefined }
+                [pscustomobject]@{ CI_ID = [int]$_.CI_ID; ModelName = [string]$_.ModelName; Name = [string]$_.LocalizedDisplayName; InUse = [bool]$_.InUse; IsUserDefined = [bool]$_.IsUserDefined }
             }
         } }
         ClientSettings = @{ Label = 'custom client settings'; Run = {
@@ -711,6 +743,7 @@ function Get-HygieneData {
     foreach ($k in @($Datasets | Where-Object { $_ })) { [void]$wanted.Add($k) }
     if ($wanted.Count -eq 0) { foreach ($k in $collectors.Keys) { [void]$wanted.Add($k) } }
     if ($wanted.Contains('MaintenanceWindows')) { [void]$wanted.Add('CollectionsWithSettings') }
+    if ($wanted.Contains('TsAppDefinitions')) { [void]$wanted.Add('TaskSequences') }
     if ($wanted.Contains('CollectionDetails')) { [void]$wanted.Add('Collections') }
     if ($wanted.Contains('Collections')) { [void]$wanted.Add('CollectionDependencies') }
 
@@ -777,7 +810,7 @@ function Test-HygAppNoReferences {
         if ($app.DateCreated -and $app.DateCreated -gt $cutoff) { continue }
 
         New-HygieneFinding -CheckId 'APP-01' -Severity Warning -Category 'Applications' `
-            -ObjectType 'Application' -ObjectId ([string]$app.CI_ID) -ObjectName $app.Name `
+            -ObjectType 'Application' -ObjectId ([string]$app.ModelName) -ObjectName $app.Name `
             -Evidence ("No deployments, no task sequence references, not part of any supersedence relationship, not a dependency target; created {0}, older than the {1}-day grace window." -f $app.DateCreated, $minAge) `
             -Recommendation 'Candidate for retirement and removal. Verify no out-of-band use (scripts, documentation) before deleting.' `
             -FixScript ("Remove-CMApplication -Name '{0}' -Force" -f ($app.Name -replace "'", "''"))
@@ -795,7 +828,7 @@ function Test-HygAppRetiredDeployed {
         if (-not ($app.IsExpired -and $app.IsDeployed)) { continue }
 
         New-HygieneFinding -CheckId 'APP-02' -Severity Error -Category 'Applications' `
-            -ObjectType 'Application' -ObjectId ([string]$app.CI_ID) -ObjectName $app.Name `
+            -ObjectType 'Application' -ObjectId ([string]$app.ModelName) -ObjectName $app.Name `
             -Evidence 'Application is retired (expired) but still has active deployments; clients targeted by them cannot install it.' `
             -Recommendation 'Remove the deployments, or reinstate the application if retiring it was a mistake.' `
             -FixScript ("Get-CMApplicationDeployment -Name '{0}' | Remove-CMApplicationDeployment -Force" -f ($app.Name -replace "'", "''"))
@@ -814,7 +847,7 @@ function Test-HygAppSupersededDeployed {
         if ($app.IsExpired) { continue }  # APP-02 already carries the louder finding
 
         New-HygieneFinding -CheckId 'APP-03' -Severity Warning -Category 'Applications' `
-            -ObjectType 'Application' -ObjectId ([string]$app.CI_ID) -ObjectName $app.Name `
+            -ObjectType 'Application' -ObjectId ([string]$app.ModelName) -ObjectName $app.Name `
             -Evidence 'Application is superseded by a newer application but its own deployments are still active.' `
             -Recommendation 'Deploy the superseding application and retire these deployments so clients converge on the replacement.' `
             -FixScript ("Get-CMApplicationDeployment -Name '{0}' | Remove-CMApplicationDeployment -Force" -f ($app.Name -replace "'", "''"))
@@ -824,6 +857,37 @@ function Test-HygAppSupersededDeployed {
 # ---------------------------------------------------------------------------
 # Checks: Packages
 # ---------------------------------------------------------------------------
+
+function Test-HygAppOldRevisions {
+    <#
+    .SYNOPSIS
+        APP-05: applications that hold revisions other than the current
+        one. One finding per application, so the suppression key does not
+        change when the revision list grows.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Reports the full old-revision set of an application by design.')]
+    param([Parameter(Mandatory)]$Data)
+
+    $oldByModel = @{}
+    foreach ($r in @($Data.AppRevisions)) {
+        if (-not $r -or -not $r.ModelName) { continue }
+        $oldByModel[[string]$r.ModelName] = @($oldByModel[[string]$r.ModelName]) + [int]$r.Revision
+    }
+
+    foreach ($app in @($Data.Applications)) {
+        if (-not $app.ModelName) { continue }
+        $old = @($oldByModel[[string]$app.ModelName] | Where-Object { $_ } | Sort-Object -Unique)
+        if ($old.Count -eq 0) { continue }
+        # The site refuses to delete a revision that another object still
+        # references; Run Fix then reports that line as the failure.
+        $lines = foreach ($rev in $old) { "Remove-CMApplicationRevisionHistory -Id {0} -Revision {1} -Force" -f $app.CI_ID, $rev }
+        New-HygieneFinding -CheckId 'APP-05' -Severity Info -Category 'Applications' `
+            -ObjectType 'Application' -ObjectId ([string]$app.ModelName) -ObjectName $app.Name `
+            -Evidence ("The application holds {0} old revision(s): {1}. Clients use the current revision only. The site keeps the definition of each old revision." -f $old.Count, ($old -join ', ')) `
+            -Recommendation 'Delete the old revisions. Keep one only if you plan to restore it.' `
+            -FixScript ($lines -join "`r`n")
+    }
+}
 
 function Test-HygPackageUnused {
     <#
@@ -1287,6 +1351,53 @@ function Test-HygTaskSequenceRefs {
 # Checks: Updates
 # ---------------------------------------------------------------------------
 
+function Test-HygTaskSequenceApplications {
+    <#
+    .SYNOPSIS
+        TSQ-03: an application in a task sequence that does not have the
+        task sequence install setting. TSQ-04: an application in a task
+        sequence whose content is on no distribution point. One finding
+        per application; the evidence names the task sequences.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Runs the task sequence application check family by design.')]
+    param([Parameter(Mandatory)]$Data)
+
+    $appByModel = @{}
+    foreach ($a in @($Data.Applications)) { if ($a.ModelName) { $appByModel[[string]$a.ModelName] = $a } }
+    $tsByModel = @{}
+    foreach ($ts in @($Data.TaskSequences)) {
+        foreach ($ref in @($ts.ReferencedIDs)) {
+            if ($appByModel.ContainsKey([string]$ref)) { $tsByModel[[string]$ref] = @($tsByModel[[string]$ref]) + $ts.Name }
+        }
+    }
+    if ($tsByModel.Count -eq 0) { return }
+
+    foreach ($def in @($Data.TsAppDefinitions)) {
+        if (-not $def -or $def.AutoInstall -or -not $tsByModel.ContainsKey([string]$def.ModelName)) { continue }
+        $app = $appByModel[[string]$def.ModelName]
+        $tsNames = @($tsByModel[[string]$def.ModelName] | Sort-Object -Unique) -join "', '"
+        New-HygieneFinding -CheckId 'TSQ-03' -Severity Warning -Category 'Task Sequences' `
+            -ObjectType 'Application' -ObjectId ([string]$app.ModelName) -ObjectName $app.Name `
+            -Evidence ("Task sequence '{0}' installs this application. The application does not have the setting 'Allow this application to be installed from the Install Application task sequence action without being deployed'." -f $tsNames) `
+            -Recommendation 'Set the option on the General tab of the application properties. The change makes a new application revision.' `
+            -FixScript ("Get-CMApplication -ModelName '{0}' | Set-CMApplication -AutoInstall `$true" -f $def.ModelName)
+    }
+
+    # SourceSize 0 covers an application with no content files.
+    foreach ($row in @($Data.ContentStatus)) {
+        if (-not $row -or $row.ObjectType -ne 512 -or $row.Targeted -ne 0 -or $row.SourceSize -le 0) { continue }
+        $model = [string]$row.ObjectID
+        if (-not $tsByModel.ContainsKey($model)) { continue }
+        $app = $appByModel[$model]
+        $tsNames = @($tsByModel[$model] | Sort-Object -Unique) -join "', '"
+        New-HygieneFinding -CheckId 'TSQ-04' -Severity Error -Category 'Task Sequences' `
+            -ObjectType 'Application' -ObjectId ([string]$app.ModelName) -ObjectName $app.Name `
+            -Evidence ("Task sequence '{0}' installs this application. The application has source files, and its content is on no distribution point. The task sequence cannot find the content." -f $tsNames) `
+            -Recommendation 'Distribute the content to the distribution point groups that serve the task sequence clients.' `
+            -FixScript ("# Console: Software Library > '{0}' > Distribute Content - select the distribution point groups" -f $app.Name)
+    }
+}
+
 function Test-HygUpdateGroupChecks {
     <#
     .SYNOPSIS
@@ -1682,6 +1793,9 @@ function Test-HygRelationshipChecks {
     )
 
     $apps = $RelationshipData.Apps
+    # A CI_ID changes with each application revision; the model name does
+    # not, so it keeps the finding key stable across edits.
+    $modelOf = { param($ciid) $a = $apps[[int]$ciid]; if ($a -and $a.ModelName) { [string]$a.ModelName } else { [string]$ciid } }
     $rels = @($RelationshipData.Relationships)
     $sup  = @($rels | Where-Object { $_.Kind -eq 'Supersedence' })
     $dep  = @($rels | Where-Object { $_.Kind -eq 'Dependency' })
@@ -1690,7 +1804,7 @@ function Test-HygRelationshipChecks {
         $pair = "'{0}' -> '{1}'" -f $r.FromAppName, $r.ToAppName
         if (-not $r.ToAppExists) {
             New-HygieneFinding -CheckId 'SUP-01' -Severity Error -Category 'Relationships' `
-                -ObjectType 'Supersedence' -ObjectId ([string]$r.FromAppCIID) -ObjectName $pair `
+                -ObjectType 'Supersedence' -ObjectId (& $modelOf $r.FromAppCIID) -ObjectName $pair `
                 -Evidence ("Supersedence on deployment type '{0}' references {1}, which no longer exists in the site." -f $r.FromDTName, $r.ToModelName) `
                 -Recommendation 'Remove the broken supersedence reference.' `
                 -FixScript ("# Console: '{0}' Properties > Supersedence tab - remove the reference to the deleted application" -f $r.FromAppName)
@@ -1700,14 +1814,14 @@ function Test-HygRelationshipChecks {
         $toApp   = $apps[[int]$r.ToAppCIID]
         if ($toApp -and $toApp.IsExpired) {
             New-HygieneFinding -CheckId 'SUP-04' -Severity Warning -Category 'Relationships' `
-                -ObjectType 'Supersedence' -ObjectId ([string]$r.FromAppCIID) -ObjectName $pair `
+                -ObjectType 'Supersedence' -ObjectId (& $modelOf $r.FromAppCIID) -ObjectName $pair `
                 -Evidence ("Superseded application '{0}' is retired; the rule still exists but its target is inactive." -f $r.ToAppName) `
                 -Recommendation 'Remove the supersedence relationship or delete the retired application once nothing references it.' `
                 -FixScript ("# Console: '{0}' Properties > Supersedence tab - review the reference to retired '{1}'" -f $r.FromAppName, $r.ToAppName)
         }
         elseif ($fromApp -and -not $fromApp.IsEnabled) {
             New-HygieneFinding -CheckId 'SUP-03' -Severity Warning -Category 'Relationships' `
-                -ObjectType 'Supersedence' -ObjectId ([string]$r.FromAppCIID) -ObjectName $pair `
+                -ObjectType 'Supersedence' -ObjectId (& $modelOf $r.FromAppCIID) -ObjectName $pair `
                 -Evidence ("Superseding application '{0}' is disabled; the replacement cannot deploy while the rule stands." -f $r.FromAppName) `
                 -Recommendation 'Enable the superseding application or remove the supersedence relationship.' `
                 -FixScript ("Get-CMApplication -Name '{0}' | Resume-CMApplication" -f ($r.FromAppName -replace "'", "''"))
@@ -1716,7 +1830,7 @@ function Test-HygRelationshipChecks {
 
     foreach ($e in (Find-HygCircularEdges -Edges $sup)) {
         New-HygieneFinding -CheckId 'SUP-02' -Severity Error -Category 'Relationships' `
-            -ObjectType 'Supersedence' -ObjectId ([string]$e.FromAppCIID) -ObjectName ("'{0}' -> '{1}'" -f $e.FromAppName, $e.ToAppName) `
+            -ObjectType 'Supersedence' -ObjectId (& $modelOf $e.FromAppCIID) -ObjectName ("'{0}' -> '{1}'" -f $e.FromAppName, $e.ToAppName) `
             -Evidence 'This supersedence edge is part of a loop: following the chain from the superseded application eventually returns to the superseding one.' `
             -Recommendation 'Break the loop by removing the relationship that closes it.' `
             -FixScript ("# Console: review the supersedence chain starting at '{0}' and remove the looping reference" -f $e.FromAppName)
@@ -1726,7 +1840,7 @@ function Test-HygRelationshipChecks {
         $pair = "'{0}' -> '{1}'" -f $r.FromAppName, $r.ToAppName
         if (-not $r.ToAppExists) {
             New-HygieneFinding -CheckId 'DEP-01' -Severity Error -Category 'Relationships' `
-                -ObjectType 'Dependency' -ObjectId ([string]$r.FromAppCIID) -ObjectName $pair `
+                -ObjectType 'Dependency' -ObjectId (& $modelOf $r.FromAppCIID) -ObjectName $pair `
                 -Evidence ("Dependency on deployment type '{0}' references {1}, which no longer exists in the site." -f $r.FromDTName, $r.ToModelName) `
                 -Recommendation 'Remove the broken dependency; installs of the parent fail while it references a deleted application.' `
                 -FixScript ("# Console: '{0}' > Deployment Types > '{1}' > Dependencies - remove the broken reference" -f $r.FromAppName, $r.FromDTName)
@@ -1735,14 +1849,14 @@ function Test-HygRelationshipChecks {
         $toApp = $apps[[int]$r.ToAppCIID]
         if ($toApp -and $toApp.IsExpired) {
             New-HygieneFinding -CheckId 'DEP-04' -Severity Warning -Category 'Relationships' `
-                -ObjectType 'Dependency' -ObjectId ([string]$r.FromAppCIID) -ObjectName $pair `
+                -ObjectType 'Dependency' -ObjectId (& $modelOf $r.FromAppCIID) -ObjectName $pair `
                 -Evidence ("Dependency target '{0}' is retired; {1} installs relying on it will fail." -f $r.ToAppName, $r.DependencyState) `
                 -Recommendation 'Point the dependency at the current application or reinstate the target.' `
                 -FixScript ("# Console: '{0}' > Deployment Types > '{1}' > Dependencies - update the reference to retired '{2}'" -f $r.FromAppName, $r.FromDTName, $r.ToAppName)
         }
         elseif ($toApp -and -not $toApp.IsEnabled) {
             New-HygieneFinding -CheckId 'DEP-03' -Severity Warning -Category 'Relationships' `
-                -ObjectType 'Dependency' -ObjectId ([string]$r.FromAppCIID) -ObjectName $pair `
+                -ObjectType 'Dependency' -ObjectId (& $modelOf $r.FromAppCIID) -ObjectName $pair `
                 -Evidence ("Dependency target '{0}' is disabled; automatic dependency installs will fail." -f $r.ToAppName) `
                 -Recommendation 'Enable the dependency target or remove the dependency.' `
                 -FixScript ("Get-CMApplication -Name '{0}' | Resume-CMApplication" -f ($r.ToAppName -replace "'", "''"))
@@ -1752,7 +1866,7 @@ function Test-HygRelationshipChecks {
             # is therefore an inventory signal, not proof that dependency
             # installation will fail or that DP distribution is missing.
             New-HygieneFinding -CheckId 'DEP-05' -Severity Info -Category 'Relationships' `
-                -ObjectType 'Dependency' -ObjectId ([string]$r.FromAppCIID) -ObjectName $pair `
+                -ObjectType 'Dependency' -ObjectId (& $modelOf $r.FromAppCIID) -ObjectName $pair `
                 -Evidence ("Dependency target '{0}' reports HasContent=false. Contentless script deployment types can be valid, so this is not evidence of an installation or distribution failure." -f $r.ToAppName) `
                 -Recommendation 'Verify the target has an enabled deployment type and that its install command does not require packaged source content.' `
                 -FixScript ("# Review deployment types for '{0}'; no automatic remediation is safe for HasContent=false" -f ($r.ToAppName -replace "'", "''"))
@@ -1761,7 +1875,7 @@ function Test-HygRelationshipChecks {
 
     foreach ($e in (Find-HygCircularEdges -Edges $dep)) {
         New-HygieneFinding -CheckId 'DEP-02' -Severity Error -Category 'Relationships' `
-            -ObjectType 'Dependency' -ObjectId ([string]$e.FromAppCIID) -ObjectName ("'{0}' -> '{1}'" -f $e.FromAppName, $e.ToAppName) `
+            -ObjectType 'Dependency' -ObjectId (& $modelOf $e.FromAppCIID) -ObjectName ("'{0}' -> '{1}'" -f $e.FromAppName, $e.ToAppName) `
             -Evidence 'This dependency edge is part of a loop: the target eventually depends back on the source, which deadlocks automatic installs.' `
             -Recommendation 'Break the loop by removing one dependency in the cycle.' `
             -FixScript ("# Console: review the dependency chain starting at '{0}' and remove the looping reference" -f $e.FromAppName)
@@ -1777,7 +1891,7 @@ function Test-HygRelationshipChecks {
         $app = $apps[[int]$ciid]
         if ($app -and [string]::IsNullOrWhiteSpace([string]$app.Manufacturer)) {
             New-HygieneFinding -CheckId 'REL-01' -Severity Info -Category 'Relationships' `
-                -ObjectType 'Application' -ObjectId ([string]$app.CI_ID) -ObjectName $app.Name `
+                -ObjectType 'Application' -ObjectId ([string]$app.ModelName) -ObjectName $app.Name `
                 -Evidence 'Application participates in supersedence/dependency relationships but has no Manufacturer set, which makes relationship views hard to audit.' `
                 -Recommendation 'Fill in the Manufacturer field.' `
                 -FixScript ("Set-CMApplication -Name '{0}' -Publisher '<manufacturer>'" -f ($app.Name -replace "'", "''"))
@@ -1890,6 +2004,10 @@ function Test-HygAppContentPath {
     # Reap probes that finished stopping after an earlier timeout.
     $script:AppContentProbeGraveyard = @(Stop-SuiteBgWork -PowerShell $null -Timer $null -Graveyard $script:AppContentProbeGraveyard)
     $checked = @{}
+    # The model name keeps the finding key stable; a CI_ID changes with
+    # each application revision.
+    $appLookup = $RelationshipData.PSObject.Properties['Apps']
+    $appIdOf = { param($ciid) $a = $(if ($appLookup -and $appLookup.Value) { $appLookup.Value[[int]$ciid] }); if ($a -and $a.ModelName) { [string]$a.ModelName } else { [string]$ciid } }
     foreach ($loc in @($RelationshipData.ContentLocations)) {
         $path = [string]$loc.Location
         if (-not $checked.ContainsKey($path)) {
@@ -1918,14 +2036,14 @@ function Test-HygAppContentPath {
 
         if ($checked[$path] -eq 'Unknown') {
             New-HygieneFinding -CheckId 'APP-04' -Severity Info -Category 'Applications' `
-                -ObjectType 'DeploymentType' -ObjectId ([string]$loc.AppCIID) -ObjectName ("{0} / {1}" -f $loc.AppName, $loc.DTName) `
+                -ObjectType 'DeploymentType' -ObjectId (& $appIdOf $loc.AppCIID) -ObjectName ("{0} / {1}" -f $loc.AppName, $loc.DTName) `
                 -Evidence ("Content source '{0}' did not answer within {1}s from this workstation; its state is unknown, not missing." -f $path, [int]($ProbeTimeoutMs / 1000)) `
                 -Recommendation 'Probe the path from the site server, where rights and routes may differ.' `
                 -FixScript ("# From the site server: Test-Path -LiteralPath '{0}'" -f ($path -replace "'", "''"))
         }
         else {
             New-HygieneFinding -CheckId 'APP-04' -Severity Warning -Category 'Applications' `
-                -ObjectType 'DeploymentType' -ObjectId ([string]$loc.AppCIID) -ObjectName ("{0} / {1}" -f $loc.AppName, $loc.DTName) `
+                -ObjectType 'DeploymentType' -ObjectId (& $appIdOf $loc.AppCIID) -ObjectName ("{0} / {1}" -f $loc.AppName, $loc.DTName) `
                 -Evidence ("Content source '{0}' is missing or unreachable from this workstation; the site server may still reach it, but content updates run from a session that cannot will fail." -f $path) `
                 -Recommendation 'Verify from the site server; restore the source folder, correct the deployment type content location, or fix share permissions.' `
                 -FixScript ("# Console: '{0}' > Deployment Types > '{1}' > Content - correct the content location" -f $loc.AppName, $loc.DTName)
@@ -2225,7 +2343,7 @@ function Test-HygComplianceChecks {
         # indirectly.
         if (-not $b -or -not $b.IsUserDefined -or $b.IsAssigned -or $b.InUse) { continue }
         New-HygieneFinding -CheckId 'CFG-01' -Severity Info -Category 'Compliance' `
-            -ObjectType 'Baseline' -ObjectId ([string]$b.CI_ID) -ObjectName $b.Name `
+            -ObjectType 'Baseline' -ObjectId $(if ($b.ModelName) { [string]$b.ModelName } else { [string]$b.CI_ID }) -ObjectName $b.Name `
             -Evidence 'The configuration baseline has no deployment and no other baseline references it. No client evaluates it.' `
             -Recommendation 'Deploy the baseline, or delete it if it is no longer needed.' `
             -FixScript ("# Review: Get-CMBaseline -Id {0} -Fast" -f $b.CI_ID)
@@ -2235,7 +2353,7 @@ function Test-HygComplianceChecks {
         # Items the product ships are not the administrator's to clean up.
         if (-not $ci -or -not $ci.IsUserDefined -or $ci.InUse) { continue }
         New-HygieneFinding -CheckId 'CFG-02' -Severity Info -Category 'Compliance' `
-            -ObjectType 'ConfigurationItem' -ObjectId ([string]$ci.CI_ID) -ObjectName $ci.Name `
+            -ObjectType 'ConfigurationItem' -ObjectId $(if ($ci.ModelName) { [string]$ci.ModelName } else { [string]$ci.CI_ID }) -ObjectName $ci.Name `
             -Evidence 'No configuration baseline references this configuration item. No client evaluates it.' `
             -Recommendation 'Add the item to a baseline, or delete it if it is no longer needed.' `
             -FixScript ("# Review: Get-CMConfigurationItem -Id {0} -Fast" -f $ci.CI_ID)
