@@ -2,6 +2,16 @@
 
 All notable changes to Site Hygiene are documented in this file.
 
+## [2026.09.21.0018] - 2026-09-21
+
+### Fixed
+
+- Use the site code and provider from the suite launcher when the tool has none saved.
+
+### Changed
+
+- Update the README screenshot.
+
 ## [2026.09.21.0017] - 2026-09-21
 
 ### Changed
