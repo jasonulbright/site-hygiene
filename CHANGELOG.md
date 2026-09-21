@@ -2,6 +2,13 @@
 
 All notable changes to Site Hygiene are documented in this file.
 
+## [2026.09.21.0017] - 2026-09-21
+
+### Changed
+
+- Describe the tool by what it does in the README and the script synopsis.
+- Update the shared SuiteCommon module to 2026.09.21.0031.
+
 ## [2026.09.20.0016] - 2026-09-20
 
 ### Changed
