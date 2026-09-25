@@ -1917,3 +1917,219 @@ Describe 'Finding key across application revisions' {
         ($second | Where-Object CheckId -eq 'APP-05').FixScript | Should -BeLike '*-Id 16779240 -Revision 1*'
     }
 }
+
+Describe 'Provider pacing' {
+    BeforeAll {
+        $stubs = 'Invoke-CMWmiQuery','Get-CMCollection'
+        foreach ($s in $stubs) { Set-Item -Path "function:global:$s" -Value { [CmdletBinding()] param($Query, $Option, $Id, [switch]$Fast) } }
+    }
+    AfterAll {
+        foreach ($s in $stubs) { Remove-Item -Path "function:global:$s" -ErrorAction SilentlyContinue }
+    }
+    BeforeEach {
+        Mock -ModuleName SiteHygieneCommon Start-Sleep { }
+        Mock -ModuleName SiteHygieneCommon Invoke-CMWmiQuery { }
+        Mock -ModuleName SiteHygieneCommon Invoke-CMWmiQuery {
+            [pscustomobject]@{ CollectionID = 'MCM00002'; Name = 'Scheduled'; MemberCount = 1; RefreshType = 2; LimitToCollectionID = 'SMS00001' }
+            [pscustomobject]@{ CollectionID = 'MCM00003'; Name = 'Scheduled too'; MemberCount = 1; RefreshType = 6; LimitToCollectionID = 'SMS00001' }
+        } -ParameterFilter { $Query -like '*FROM SMS_Collection' }
+        Mock -ModuleName SiteHygieneCommon Get-CMCollection { [pscustomobject]@{ CollectionRules = @(); RefreshSchedule = @() } }
+    }
+
+    It 'sends calls back to back by default' {
+        $null = Get-HygieneData -Datasets 'CollectionDetails'
+        Should -Invoke -ModuleName SiteHygieneCommon Start-Sleep -Times 0
+        Should -Invoke -ModuleName SiteHygieneCommon Get-CMCollection -Times 2 -Exactly
+    }
+
+    It 'pauses before every provider call after the first when a pace is set' {
+        # Three datasets plus two per-collection reads: five calls, four pauses.
+        $null = Get-HygieneData -Datasets 'CollectionDetails' -PacingMs 250
+        Should -Invoke -ModuleName SiteHygieneCommon Start-Sleep -Times 4 -Exactly -ParameterFilter { $Milliseconds -eq 250 }
+    }
+}
+
+Describe 'Task sequence application definitions from the relationship pass' {
+    BeforeAll {
+        $stubs = 'Invoke-CMWmiQuery','Get-CMTaskSequence','Get-CMApplication'
+        foreach ($s in $stubs) { Set-Item -Path "function:global:$s" -Value { [CmdletBinding()] param($Query, $Option, $ModelName, [switch]$Fast) } }
+        $d = 'http://schemas.microsoft.com/SystemCenterConfigurationManager/2009/AppMgmtDigest'
+    }
+    AfterAll {
+        foreach ($s in $stubs) { Remove-Item -Path "function:global:$s" -ErrorAction SilentlyContinue }
+    }
+    BeforeEach {
+        Mock -ModuleName SiteHygieneCommon Invoke-CMWmiQuery { }
+        Mock -ModuleName SiteHygieneCommon Invoke-CMWmiQuery {
+            [pscustomobject]@{ PackageID = 'MCM00008'; ObjectID = 'ScopeId_X/Application_on' }
+            [pscustomobject]@{ PackageID = 'MCM00008'; ObjectID = 'ScopeId_X/Application_off' }
+        } -ParameterFilter { $Query -like '*SMS_TaskSequencePackageReference_All' }
+        Mock -ModuleName SiteHygieneCommon Get-CMTaskSequence { [pscustomobject]@{ PackageID = 'MCM00008'; Name = 'Build'; BootImageID = ''; ProgramFlags = 0 } }
+        Mock -ModuleName SiteHygieneCommon Get-CMApplication { [pscustomobject]@{ SDMPackageXML = "<AppMgmtDigest xmlns='$d'><Application><Title>x</Title></Application></AppMgmtDigest>" } }
+    }
+
+    It 'reads no application the map already answers' {
+        $map = @{ 'ScopeId_X/Application_on' = $true; 'ScopeId_X/Application_off' = $false }
+        $data = Get-HygieneData -Datasets 'TsAppDefinitions' -AutoInstallByModel $map
+        @($data.TsAppDefinitions).Count | Should -Be 2
+        ($data.TsAppDefinitions | Where-Object ModelName -like '*_on').AutoInstall | Should -BeTrue
+        ($data.TsAppDefinitions | Where-Object ModelName -like '*_off').AutoInstall | Should -BeFalse
+        Should -Invoke -ModuleName SiteHygieneCommon Get-CMApplication -Times 0
+    }
+
+    It 'falls back to one read per application the map does not cover' {
+        $map = @{ 'ScopeId_X/Application_on' = $true }
+        $data = Get-HygieneData -Datasets 'TsAppDefinitions' -AutoInstallByModel $map
+        @($data.TsAppDefinitions).Count | Should -Be 2
+        ($data.TsAppDefinitions | Where-Object ModelName -like '*_off').AutoInstall | Should -BeFalse
+        Should -Invoke -ModuleName SiteHygieneCommon Get-CMApplication -Times 1 -Exactly -ParameterFilter { $ModelName -eq 'ScopeId_X/Application_off' }
+    }
+
+    It 'reads every application when no map is supplied' {
+        $data = Get-HygieneData -Datasets 'TsAppDefinitions'
+        @($data.TsAppDefinitions).Count | Should -Be 2
+        Should -Invoke -ModuleName SiteHygieneCommon Get-CMApplication -Times 2 -Exactly
+    }
+
+    It 'parses the install setting out of the relationship XML' {
+        $xmlOn  = "<AppMgmtDigest xmlns='$d'><Application><AutoInstall>true</AutoInstall></Application><DeploymentType><Title>I</Title></DeploymentType></AppMgmtDigest>"
+        $xmlOff = "<AppMgmtDigest xmlns='$d'><Application><Title>x</Title></Application><DeploymentType><Title>I</Title></DeploymentType></AppMgmtDigest>"
+        $parsed = ConvertTo-HygRelationships -Applications @(
+            (New-HygRelApp -CI_ID 1 -Name 'On'  -Model 'S/ON'  -Xml $xmlOn),
+            (New-HygRelApp -CI_ID 2 -Name 'Off' -Model 'S/OFF' -Xml $xmlOff),
+            (New-HygRelApp -CI_ID 3 -Name 'NoXml' -Model 'S/NONE')
+        )
+        $parsed.AutoInstallByModel['S/ON']  | Should -BeTrue
+        $parsed.AutoInstallByModel['S/OFF'] | Should -BeFalse
+        $parsed.AutoInstallByModel.ContainsKey('S/NONE') | Should -BeFalse
+    }
+}
+
+Describe 'Get-HygRelationshipInventory' {
+    It 'lists healthy and broken rows with the status the checks assign' {
+        $rel = New-HygRelData -Apps @(
+            (New-HygRelApp -CI_ID 1 -Name 'New' -Model 'S/A' -IsSuperseding $true -Xml (New-HygAppXml -SupersedesModels @('S/B'))),
+            (New-HygRelApp -CI_ID 2 -Name 'Mid' -Model 'S/B' -IsSuperseding $true -Xml (New-HygAppXml -SupersedesModels @('S/C', 'S/GONE'))),
+            (New-HygRelApp -CI_ID 3 -Name 'Old' -Model 'S/C' -IsExpired $true),
+            (New-HygRelApp -CI_ID 4 -Name 'Parent' -Model 'S/P' -Xml (New-HygAppXml -Dependencies @(
+                @{ Model = 'S/A'; State = 'Required' },
+                @{ Model = 'S/D'; State = 'Optional' }
+            ))),
+            (New-HygRelApp -CI_ID 5 -Name 'NoContent' -Model 'S/D' -HasContent $false)
+        )
+        $rows = @(Get-HygRelationshipInventory -RelationshipData $rel)
+        $rows.Count | Should -Be 5
+
+        $newToMid = $rows | Where-Object { $_.Kind -eq 'Supersedence' -and $_.SourceName -eq 'New' }
+        $newToMid.Status | Should -Be 'Healthy'
+        $newToMid.ChainDepth | Should -Be 1
+        $newToMid.TargetVersion | Should -Be '1.0'
+
+        ($rows | Where-Object { $_.SourceName -eq 'Mid' -and $_.TargetName -eq 'Old' }).Status | Should -Be 'Expired Target'
+        ($rows | Where-Object { $_.SourceName -eq 'Mid' -and $_.TargetName -like 'Unknown*' }).Status | Should -Be 'Orphaned'
+
+        $depRequired = $rows | Where-Object { $_.Kind -eq 'Dependency' -and $_.TargetName -eq 'New' }
+        $depRequired.Status | Should -Be 'Healthy'
+        $depRequired.DependencyState | Should -Be 'Required'
+        ($rows | Where-Object { $_.Kind -eq 'Dependency' -and $_.TargetName -eq 'NoContent' }).Status | Should -Be 'Missing Content'
+    }
+
+    It 'marks both edges of a loop Circular and stops the chain depth at the loop' {
+        $rel = New-HygRelData -Apps @(
+            (New-HygRelApp -CI_ID 1 -Name 'A' -Model 'S/A' -IsSuperseding $true -Xml (New-HygAppXml -SupersedesModels @('S/B'))),
+            (New-HygRelApp -CI_ID 2 -Name 'B' -Model 'S/B' -IsSuperseding $true -Xml (New-HygAppXml -SupersedesModels @('S/A')))
+        )
+        $rows = @(Get-HygRelationshipInventory -RelationshipData $rel)
+        $rows.Count | Should -Be 2
+        @($rows | Where-Object Status -eq 'Circular').Count | Should -Be 2
+        ($rows | Where-Object SourceName -eq 'A').ChainDepth | Should -Be 1
+    }
+
+    It 'returns nothing for a site without relationships' {
+        $rel = New-HygRelData -Apps @((New-HygRelApp -CI_ID 1 -Name 'Lone' -Model 'S/L'))
+        @(Get-HygRelationshipInventory -RelationshipData $rel).Count | Should -Be 0
+    }
+}
+
+
+Describe 'Import-HygieneLegacyDashboardState' {
+    BeforeEach {
+        $script:root = Join-Path ([IO.Path]::GetTempPath()) ([Guid]::NewGuid().ToString('N'))
+        $script:legacy = Join-Path $script:root 'mecm-health-dashboard'
+        New-Item -ItemType Directory -Path (Join-Path $script:legacy 'History') -Force | Out-Null
+        $script:prefs   = Join-Path $script:root 'site-hygiene\SiteHygiene.prefs.json'
+        $script:history = Join-Path $script:root 'site-hygiene\History\metrics-history.csv'
+        @{ DarkMode = $true; SiteCode = 'MCM'; SMSProvider = 'cm01'; SQLServer = 'sql01\CM'; AutoRefreshMinutes = 30; InactiveThresholdDays = 60; AlertsEnabled = $false; AlertCompliancePct = 90 } |
+            ConvertTo-Json | Set-Content -LiteralPath (Join-Path $script:legacy 'MECMHealthDash.prefs.json') -Encoding UTF8
+        Set-Content -LiteralPath (Join-Path $script:legacy 'History\metrics-history.csv') -Value @('"Timestamp","DeploymentTotal"', '"2026-09-01T00:00:00","5"') -Encoding UTF8
+    }
+    AfterEach { Remove-Item -LiteralPath $script:root -Recurse -Force -ErrorAction SilentlyContinue }
+
+    It 'imports every Live setting and the history when the tool has neither' {
+        $r = Import-HygieneLegacyDashboardState -LegacyRoot $script:legacy -PrefsPath $script:prefs -HistoryPath $script:history
+        @($r.ImportedKeys) | Should -Be @('SQLServer', 'AutoRefreshMinutes', 'InactiveThresholdDays', 'AlertsEnabled', 'AlertCompliancePct')
+        $r.HistoryCopied | Should -BeTrue
+        $doc = Get-Content -LiteralPath $script:prefs -Raw | ConvertFrom-Json
+        $doc.SQLServer | Should -Be 'sql01\CM'
+        $doc.AutoRefreshMinutes | Should -Be 30
+        $doc.AlertsEnabled | Should -BeFalse
+        $doc.PSObject.Properties['SiteCode'] | Should -BeNullOrEmpty -Because 'the connection stays the tool''s own'
+        @(Import-Csv -LiteralPath $script:history).Count | Should -Be 1
+    }
+
+    It 'keeps the tool''s own values and history and leaves the legacy files in place' {
+        New-Item -ItemType Directory -Path (Split-Path $script:history -Parent) -Force | Out-Null
+        @{ DarkMode = $false; SiteCode = 'XYZ'; SQLServer = 'mine' } | ConvertTo-Json | Set-Content -LiteralPath $script:prefs -Encoding UTF8
+        Set-Content -LiteralPath $script:history -Value @('"Timestamp","DeploymentTotal"') -Encoding UTF8
+        $r = Import-HygieneLegacyDashboardState -LegacyRoot $script:legacy -PrefsPath $script:prefs -HistoryPath $script:history
+        @($r.ImportedKeys) | Should -Not -Contain 'SQLServer'
+        @($r.ImportedKeys) | Should -Contain 'AutoRefreshMinutes'
+        $r.HistoryCopied | Should -BeFalse
+        $doc = Get-Content -LiteralPath $script:prefs -Raw | ConvertFrom-Json
+        $doc.SQLServer | Should -Be 'mine'
+        $doc.SiteCode | Should -Be 'XYZ'
+        $doc.DarkMode | Should -BeFalse
+        (Get-Content -LiteralPath $script:history).Count | Should -Be 1
+        Test-Path -LiteralPath (Join-Path $script:legacy 'MECMHealthDash.prefs.json') | Should -BeTrue
+        Test-Path -LiteralPath (Join-Path $script:legacy 'History\metrics-history.csv') | Should -BeTrue
+    }
+
+    It 'changes nothing on a second run' {
+        $null = Import-HygieneLegacyDashboardState -LegacyRoot $script:legacy -PrefsPath $script:prefs -HistoryPath $script:history
+        $before = Get-Content -LiteralPath $script:prefs -Raw
+        $r = Import-HygieneLegacyDashboardState -LegacyRoot $script:legacy -PrefsPath $script:prefs -HistoryPath $script:history
+        @($r.ImportedKeys).Count | Should -Be 0
+        $r.HistoryCopied | Should -BeFalse
+        (Get-Content -LiteralPath $script:prefs -Raw) | Should -Be $before
+    }
+
+    It 'imports nothing from a folder without dashboard files' {
+        $empty = Join-Path $script:root 'nothing-here'
+        New-Item -ItemType Directory -Path $empty -Force | Out-Null
+        $r = Import-HygieneLegacyDashboardState -LegacyRoot $empty -PrefsPath $script:prefs -HistoryPath $script:history
+        @($r.ImportedKeys).Count | Should -Be 0
+        Test-Path -LiteralPath $script:prefs | Should -BeFalse
+    }
+
+    It 'treats a malformed legacy preferences file as nothing to import' {
+        Set-Content -LiteralPath (Join-Path $script:legacy 'MECMHealthDash.prefs.json') -Value '{not json' -Encoding UTF8
+        $r = Import-HygieneLegacyDashboardState -LegacyRoot $script:legacy -PrefsPath $script:prefs -HistoryPath $script:history
+        @($r.ImportedKeys).Count | Should -Be 0
+        $r.HistoryCopied | Should -BeTrue
+    }
+}
+
+
+Describe 'Get-HygRelationshipInventory loop flag' {
+    It 'keeps the expired-target status on an edge that is also in a loop, and flags the loop' {
+        $rel = New-HygRelData -Apps @(
+            (New-HygRelApp -CI_ID 1 -Name 'A' -Model 'S/A' -IsSuperseding $true -IsExpired $true -Xml (New-HygAppXml -SupersedesModels @('S/B'))),
+            (New-HygRelApp -CI_ID 2 -Name 'B' -Model 'S/B' -IsSuperseding $true -Xml (New-HygAppXml -SupersedesModels @('S/A')))
+        )
+        $rows = @(Get-HygRelationshipInventory -RelationshipData $rel)
+        ($rows | Where-Object SourceName -eq 'B').Status | Should -Be 'Expired Target'
+        ($rows | Where-Object SourceName -eq 'B').Circular | Should -BeTrue
+        ($rows | Where-Object SourceName -eq 'A').Status | Should -Be 'Circular'
+        @($rows | Where-Object Circular).Count | Should -Be 2
+    }
+}

@@ -2,6 +2,28 @@
 
 All notable changes to Site Hygiene are documented in this file.
 
+## [2026.09.25.0020] - 2026-09-25
+
+## Two suite tools fold into this one: 10 new views
+
+### Features
+
+- Add a Live group: deployments, content, distribution points, client health, inactive devices, site health, trends.
+- Refresh the Live views on demand or on a timer; pause and resume the timer.
+- Raise a local alert when a live metric crosses a threshold.
+- Keep 180 days of live metric history and chart it per metric.
+- Add a Relationships inventory list with every supersedence and dependency, healthy rows included.
+- Filter the relationship list by kind, status, and text; export it to CSV and HTML.
+- Import settings and history from a ConfigMgr Health Dashboard install found beside the tool.
+- Add an optional pause between provider calls during a scan.
+
+### Changed
+
+- Update the shared SuiteCommon module to 2026.09.25.0033.
+- Read task sequence install settings from the relationship pass instead of extra provider reads.
+- Export the active view from every view, not only Findings.
+- Add SQL Server, refresh, and alert settings to Options.
+
 ## [2026.09.21.0019] - 2026-09-21
 
 ### Added
