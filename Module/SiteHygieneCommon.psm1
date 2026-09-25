@@ -299,9 +299,12 @@ function Get-HygieneData {
         Collections and application deployments are read with
         column-restricted WQL and the Fast option: the matching Get-CM*
         cmdlets issue one extra provider round-trip per object to fill
-        lazy properties, which scales with object count. The only
-        per-object reads left are in the CollectionDetails dataset, and
-        only for collections with a full-update schedule.
+        lazy properties, which scales with object count. Every read runs
+        one after the other on the calling thread; nothing here runs in
+        parallel. The per-object reads left are CollectionDetails (only
+        collections with a full-update schedule), MaintenanceWindows (only
+        collections that have settings), and TsAppDefinitions when no
+        AutoInstallByModel map covers a referenced application.
 
     .PARAMETER Datasets
         Dataset keys to collect (see Get-HygieneRequiredDataset). Omitted
@@ -311,10 +314,23 @@ function Get-HygieneData {
 
     .PARAMETER ProgressState
         Optional synchronized hashtable; Step receives the current dataset.
+
+    .PARAMETER PacingMs
+        Pause, in milliseconds, before every provider call after the
+        first: between datasets and between the objects of a per-object
+        dataset. Zero sends calls back to back.
+
+    .PARAMETER AutoInstallByModel
+        ModelName to AutoInstall map from Get-HygieneRelationshipData.
+        A referenced application present in the map costs no provider
+        read; one absent from it, or every one when the map is not
+        supplied, is read individually.
     #>
     param(
         [string[]]$Datasets,
-        [hashtable]$ProgressState
+        [hashtable]$ProgressState,
+        [ValidateRange(0, 60000)][int]$PacingMs = 0,
+        [hashtable]$AutoInstallByModel
     )
 
     $notes = New-Object System.Collections.Generic.List[string]
@@ -325,6 +341,13 @@ function Get-HygieneData {
     $notCollected = New-Object System.Collections.Generic.List[string]
 
     $result = [ordered]@{}
+    # Set once a provider call has been made; the pause runs before every
+    # later call, never before the first.
+    $paceState = @{ Called = $false }
+    $pace = {
+        if ($paceState.Called -and $PacingMs -gt 0) { Start-Sleep -Milliseconds $PacingMs }
+        $paceState.Called = $true
+    }
 
     # Ordered: Collections reads CollectionDependencies for include/exclude
     # ids, and CollectionDetails mutates the rows Collections produced.
@@ -388,14 +411,23 @@ function Get-HygieneData {
             }
         } }
         # The task sequence install setting exists only in the application
-        # definition XML, a lazy property: one provider read per
-        # application that a task sequence references.
+        # definition XML, a lazy property. The relationship pass already
+        # holds every application's XML when its scope is selected, so its
+        # map answers first; a model outside the map costs one provider
+        # read.
         TsAppDefinitions = @{ Label = 'task sequence application definitions'; FailureHint = 'TSQ-03 and TSQ-04 are skipped'; Run = {
             $models = @($result['TaskSequences'] | ForEach-Object { $_.ReferencedIDs } | Where-Object { $_ -like '*/Application_*' } | Sort-Object -Unique)
             $i = 0
+            $fromMap = 0
             foreach ($model in $models) {
                 $i++
+                if ($AutoInstallByModel -and $AutoInstallByModel.ContainsKey([string]$model)) {
+                    $fromMap++
+                    [pscustomobject]@{ ModelName = [string]$model; AutoInstall = [bool]$AutoInstallByModel[[string]$model] }
+                    continue
+                }
                 if ($ProgressState) { $ProgressState.Step = "Reading task sequence applications ($i of $($models.Count))..." }
+                & $pace
                 $app = Get-CMApplication -ModelName $model -ErrorAction Stop | Select-Object -First 1
                 if (-not $app) { continue }
                 $auto = $false
@@ -406,6 +438,7 @@ function Get-HygieneData {
                 if ($node) { $auto = ([string]$node.InnerText).Trim() -eq 'true' }
                 [pscustomobject]@{ ModelName = [string]$model; AutoInstall = $auto }
             }
+            if ($fromMap -gt 0) { Write-Log ("Task sequence application definitions: {0} of {1} answered from the relationship pass" -f $fromMap, $models.Count) }
         } }
         Devices = @{ Label = 'devices'; Run = {
             # The All Systems member class is what Get-CMDevice reads, so the
@@ -561,6 +594,7 @@ function Get-HygieneData {
             foreach ($c in $targets) {
                 $i++
                 if ($ProgressState) { $ProgressState.Step = "Reading collection schedules ($i of $($targets.Count))..." }
+                & $pace
                 $full = Get-CMCollection -Id $c.CollectionID -ErrorAction Stop
                 if (-not $full) { continue }
                 foreach ($rule in @($full.CollectionRules)) {
@@ -711,6 +745,7 @@ function Get-HygieneData {
             foreach ($id in $targets) {
                 $i++
                 if ($ProgressState) { $ProgressState.Step = "Reading maintenance windows ($i of $($targets.Count))..." }
+                & $pace
                 Get-CMMaintenanceWindow -CollectionId $id -ErrorAction Stop | ForEach-Object {
                     [pscustomobject]@{
                         CollectionID   = [string]$id
@@ -758,6 +793,7 @@ function Get-HygieneData {
         $hint = $(if ($collector.FailureHint) { " ($($collector.FailureHint))" } else { '' })
         $sw = [System.Diagnostics.Stopwatch]::StartNew()
         try {
+            & $pace
             $result[$key] = @(& $collector.Run)
             Write-Log ("Loaded {0} {1} in {2:n1}s" -f @($result[$key]).Count, $collector.Label, $sw.Elapsed.TotalSeconds)
         }
@@ -1532,7 +1568,9 @@ function ConvertTo-HygRelationships {
     .OUTPUTS
         [pscustomobject] Relationships (FromAppCIID/FromAppName/FromDTName/
         ToAppCIID/ToAppName/ToModelName/ToAppExists/Kind/DependencyState),
-        ContentLocations (AppCIID/AppName/DTName/Location), ParseNotes.
+        ContentLocations (AppCIID/AppName/DTName/Location),
+        AutoInstallByModel (ModelName to the task sequence install
+        setting), ParseNotes.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Converts to the full relationship set by design.')]
     param(
@@ -1546,6 +1584,7 @@ function ConvertTo-HygRelationships {
 
     $relationships = New-Object System.Collections.Generic.List[object]
     $contentLocations = New-Object System.Collections.Generic.List[object]
+    $autoInstall = @{}
     $notes = New-Object System.Collections.Generic.List[string]
 
     $nsDigest = 'http://schemas.microsoft.com/SystemCenterConfigurationManager/2009/AppMgmtDigest'
@@ -1565,6 +1604,11 @@ function ConvertTo-HygRelationships {
         $nsm = [System.Xml.XmlNamespaceManager]::new($xml.NameTable)
         $nsm.AddNamespace('d', $nsDigest)
         $nsm.AddNamespace('r', $nsRules)
+
+        if ($app.ModelName) {
+            $autoNode = $xml.SelectSingleNode('/d:AppMgmtDigest/d:Application/d:AutoInstall', $nsm)
+            $autoInstall[[string]$app.ModelName] = [bool]($autoNode -and ([string]$autoNode.InnerText).Trim() -eq 'true')
+        }
 
         $dtNodes = $xml.SelectNodes('/d:AppMgmtDigest/d:DeploymentType', $nsm)
         foreach ($dtNode in $dtNodes) {
@@ -1643,9 +1687,10 @@ function ConvertTo-HygRelationships {
     # an array subexpression throws "Argument types do not match" on some
     # PowerShell 7 builds.
     return [pscustomobject]@{
-        Relationships    = $relationships.ToArray()
-        ContentLocations = $contentLocations.ToArray()
-        ParseNotes       = $notes.ToArray()
+        Relationships      = $relationships.ToArray()
+        ContentLocations   = $contentLocations.ToArray()
+        AutoInstallByModel = $autoInstall
+        ParseNotes         = $notes.ToArray()
     }
 }
 
@@ -1657,8 +1702,10 @@ function Get-HygieneRelationshipData {
 
     .DESCRIPTION
         One Get-CMApplication call (no -Fast: the XML is the point)
-        followed by the pure parser. Requires an established CM
-        connection. Returns $null on total failure with the reason logged.
+        followed by the pure parser. SDMPackageXML is a lazy property, so
+        the provider fills it one instance at a time behind that call.
+        Requires an established CM connection. Returns $null on total
+        failure with the reason logged.
     #>
     param(
         [hashtable]$ProgressState,
@@ -1716,10 +1763,11 @@ function Get-HygieneRelationshipData {
         Write-Log ("Resolved {0} relationships and {1} content locations from {2} applications" -f @($parsed.Relationships).Count, @($parsed.ContentLocations).Count, $apps.Count)
 
         return [pscustomobject]@{
-            Apps             = $lookup
-            Relationships    = $parsed.Relationships
-            ContentLocations = $parsed.ContentLocations
-            DatasetNotes     = $parsed.ParseNotes
+            Apps               = $lookup
+            Relationships      = $parsed.Relationships
+            ContentLocations   = $parsed.ContentLocations
+            AutoInstallByModel = $parsed.AutoInstallByModel
+            DatasetNotes       = $parsed.ParseNotes
         }
     }
     catch {
@@ -1983,6 +2031,105 @@ function Build-HygRelationshipTree {
         New-Node -CIID ([int]$r) -FallbackLabel 'Unknown' -Exists $true -Depth 0 -Path (New-Object System.Collections.Generic.List[int])
     }
     return @($nodes)
+}
+
+function Get-HygRelationshipInventory {
+    <#
+    .SYNOPSIS
+        One row per supersedence or dependency relationship, healthy rows
+        included, with the status the SUP/DEP checks would assign. Pure
+        over its input.
+
+    .DESCRIPTION
+        Status values: Healthy, Orphaned (target deleted), Expired Target,
+        Disabled Source (supersedence), Disabled Target (dependency),
+        Missing Content (dependency), with the same precedence as the
+        SUP/DEP checks. Circular is a separate flag, because SUP-02 and
+        DEP-02 report a loop in addition to whatever else the edge has;
+        a row in a loop with nothing else wrong reads Status Circular.
+        ChainDepth on a supersedence row is the number of further
+        supersedence hops below the target; a loop below the target
+        stops the count.
+
+    .OUTPUTS
+        [pscustomobject] Kind, Status, Circular, SourceName, SourceVersion,
+        SourceDeploymentType, TargetName, TargetVersion, DependencyState,
+        ChainDepth, SourceCIID, TargetCIID, TargetModelName.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Returns the full inventory by design.')]
+    param([Parameter(Mandatory)]$RelationshipData)
+
+    $apps = $RelationshipData.Apps
+    $rels = @($RelationshipData.Relationships)
+    $sup  = @($rels | Where-Object { $_.Kind -eq 'Supersedence' })
+    $dep  = @($rels | Where-Object { $_.Kind -eq 'Dependency' })
+
+    $circular = New-Object 'System.Collections.Generic.HashSet[string]'
+    foreach ($kindEdges in @($sup, $dep)) {
+        foreach ($e in @(Find-HygCircularEdges -Edges $kindEdges)) {
+            [void]$circular.Add(('{0}|{1}|{2}' -f $e.Kind, $e.FromAppCIID, $e.ToAppCIID))
+        }
+    }
+
+    $supAdj = @{}
+    foreach ($e in $sup) {
+        $k = [int]$e.FromAppCIID
+        if (-not $supAdj.ContainsKey($k)) { $supAdj[$k] = New-Object System.Collections.Generic.List[int] }
+        if ([int]$e.ToAppCIID -ne 0) { $supAdj[$k].Add([int]$e.ToAppCIID) }
+    }
+    $depthCache = @{}
+    $depthOf = $null
+    $depthOf = {
+        param([int]$Id, [hashtable]$OnPath)
+        if ($depthCache.ContainsKey($Id)) { return $depthCache[$Id] }
+        if ($OnPath.ContainsKey($Id)) { return 0 }
+        $OnPath[$Id] = $true
+        $max = 0
+        if ($supAdj.ContainsKey($Id)) {
+            foreach ($next in $supAdj[$Id]) {
+                $d = 1 + (& $depthOf $next $OnPath)
+                if ($d -gt $max) { $max = $d }
+            }
+        }
+        [void]$OnPath.Remove($Id)
+        $depthCache[$Id] = $max
+        return $max
+    }
+
+    $versionOf = { param($ciid) $a = $apps[[int]$ciid]; if ($a) { [string]$a.SoftwareVersion } else { '' } }
+
+    $rows = foreach ($r in $rels) {
+        $toApp = $(if ($r.ToAppExists) { $apps[[int]$r.ToAppCIID] } else { $null })
+        $fromApp = $apps[[int]$r.FromAppCIID]
+        $isCircular = $circular.Contains(('{0}|{1}|{2}' -f $r.Kind, $r.FromAppCIID, $r.ToAppCIID))
+        $status = 'Healthy'
+        if (-not $r.ToAppExists) { $status = 'Orphaned' }
+        elseif ($toApp -and $toApp.IsExpired) { $status = 'Expired Target' }
+        elseif ($r.Kind -eq 'Supersedence' -and $fromApp -and -not $fromApp.IsEnabled) { $status = 'Disabled Source' }
+        elseif ($r.Kind -eq 'Dependency' -and $toApp -and -not $toApp.IsEnabled) { $status = 'Disabled Target' }
+        elseif ($r.Kind -eq 'Dependency' -and $toApp -and -not $toApp.HasContent) { $status = 'Missing Content' }
+        if ($isCircular -and $status -eq 'Healthy') { $status = 'Circular' }
+
+        $depth = 0
+        if ($r.Kind -eq 'Supersedence' -and $r.ToAppExists) { $depth = & $depthOf ([int]$r.ToAppCIID) @{ ([int]$r.FromAppCIID) = $true } }
+
+        [pscustomobject]@{
+            Kind                 = [string]$r.Kind
+            Status               = $status
+            Circular             = [bool]$isCircular
+            SourceName           = [string]$r.FromAppName
+            SourceVersion        = (& $versionOf $r.FromAppCIID)
+            SourceDeploymentType = [string]$r.FromDTName
+            TargetName           = [string]$r.ToAppName
+            TargetVersion        = (& $versionOf $r.ToAppCIID)
+            DependencyState      = [string]$r.DependencyState
+            ChainDepth           = [int]$depth
+            SourceCIID           = [int]$r.FromAppCIID
+            TargetCIID           = [int]$r.ToAppCIID
+            TargetModelName      = [string]$r.ToModelName
+        }
+    }
+    return @($rows | Sort-Object Kind, SourceName, TargetName)
 }
 
 function Test-HygAppContentPath {

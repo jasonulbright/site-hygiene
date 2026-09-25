@@ -5,13 +5,25 @@
 [![Platform](https://img.shields.io/badge/platform-Windows-0078D4)](#requirements)
 [![License](https://img.shields.io/github/license/jasonulbright/site-hygiene)](LICENSE)
 
-A scanner and repair tool for Configuration Manager site clutter and
-drift: unused applications and packages, dead collections, stale and
-failing deployments. A scan is read-only. Every finding carries the evidence that
-produced it and the exact PowerShell a fix would run. The tool runs a fix
-script only when you select the finding, click **Run Fix**, and confirm
-the script in a dialog. Many findings carry guidance only; the tool never
-runs those.
+A scanner, repair tool, and live monitor for Configuration Manager
+sites. A scan finds clutter and drift: unused applications and packages,
+dead collections, stale and failing deployments, broken application
+relationships. A scan is read-only. Every finding carries the evidence
+that produced it and the exact PowerShell a fix would run. The tool runs
+a fix script only when you select the finding, click **Run Fix**, and
+confirm the script in a dialog. Many findings carry guidance only; the
+tool never runs those.
+
+The Live views show current deployment, content, distribution point,
+client, and site status on demand and on a timer, with per-metric
+history and threshold alerts. They create no findings and change
+nothing.
+
+Site Hygiene replaces two earlier suite tools. The Supersedence and
+Dependency Auditor's relationship inventory and trees live on the
+Relationships view. The ConfigMgr Health Dashboard's views live in the
+Live group, and a retired dashboard install's settings and history are
+imported on first launch (see [Live views](#live-views)).
 
 ![Site Hygiene findings view](screenshot.png)
 
@@ -25,6 +37,9 @@ runs those.
 - Read access to the SMS Provider for a scan (a scan never mutates the
   site). **Run Fix** needs the Configuration Manager rights that the fix
   script itself needs.
+- Optional: the `SqlServer` PowerShell module (`Invoke-Sqlcmd`) and read
+  access to the `CM_<site>` database for the Client Health and Inactive
+  Devices views. Leave SQL Server blank in Options to skip them.
 
 ## Quick Start
 
@@ -36,10 +51,13 @@ runs those.
    powershell -ExecutionPolicy Bypass -File start-sitehygiene.ps1
    ```
 3. Click **Options** on the sidebar and set Site Code and SMS Provider.
-4. Optional: under **Options > Scan scope**, clear the areas you do not
-   need. On a large site, leave the three areas marked slow for a separate
-   run.
-5. Click **Scan**. **Cancel scan** on the progress overlay stops it.
+   Set SQL Server too if you want the two SQL-backed Live views.
+4. Optional: under **Options > Scan**, clear the areas you do not need.
+   On a large site, leave the three areas marked slow for a separate
+   run. A pause between provider calls, in milliseconds, spaces the scan
+   queries out on a busy SMS Provider; the default is 0.
+5. Click **Scan** on a Scan view, or **Refresh All** on a Live view.
+   **Cancel** on the progress overlay stops either one.
 
 ## Checks
 
@@ -101,9 +119,11 @@ Stable check IDs so findings and reports stay comparable across scans:
 | MNT-02 | Warning | Backup Site Server task disabled |
 
 The relationship families come from one additional bulk application pass
-that parses each app's `SDMPackageXML` in-memory — the technique absorbed
-from the standalone supersedence-auditor tool, with full parity to its
-Broken Rules coverage.
+that parses each app's `SDMPackageXML` in-memory. `SDMPackageXML` is a
+lazy provider property, so that pass costs one provider fetch per
+application. The same pass answers the task sequence install setting
+that TSQ-03 and TSQ-04 read, so those checks add no reads of their own
+when the relationships area is in scope.
 
 Thresholds (age windows, incremental ceiling, failure percentage) have
 sensible defaults in `Get-HygieneDefaultThresholds`.
@@ -118,16 +138,23 @@ to load degrades to an empty set with a note in the Summary view instead
 of killing the scan; the note also says which check may over- or
 under-report because of it.
 
-Three areas cost one SMS Provider read per object and are marked slow in
-the scope list. **Application relationships and content paths** reads
-every application definition. **Collection evaluation schedules** reads
-every custom collection that has a full-update schedule. **Maintenance
-windows** reads every collection that has collection settings. Everything
-else is one query per dataset. **Software update package content** runs
-three queries; their row counts grow with the number of downloaded
-updates. Each dataset logs its row count and
-duration to the log pane, the console window, and the log file as it
-completes. A scoped scan leaves the rescan-delta baseline unchanged.
+Every read runs one after another on one background thread; a scan
+never sends two provider calls at the same time. Three areas cost one
+SMS Provider read per object and are marked slow in the scope list.
+**Application relationships and content paths** reads every application
+definition. **Collection evaluation schedules** reads every custom
+collection that has a full-update schedule. **Maintenance windows**
+reads every collection that has collection settings. **Task sequences**
+reads one application definition per application a task sequence
+references, unless the relationships area is in scope, in which case
+those definitions come from the relationship pass. Everything else is
+one query per dataset. **Software update package content** runs three
+queries; their row counts grow with the number of downloaded updates.
+The optional pause in **Options > Scan** waits that many milliseconds
+before every provider call after the first. Each dataset logs its row
+count and duration to the log pane, the console window, and the log
+file as it completes. A scoped scan leaves the rescan-delta baseline
+unchanged.
 
 ## Views
 
@@ -142,13 +169,64 @@ completes. A scoped scan leaves the rescan-delta baseline unchanged.
   Unsuppress (multi-select) hide accepted findings from future scans;
   keys persist in `SiteHygiene.suppressions.json` and a toggle shows the
   suppressed set.
+- **Relationships** — every supersedence and dependency relationship
+  from the last scan. The **Inventory** tab lists each one, healthy rows
+  included, with kind, status, a loop flag, source and target
+  application and version, deployment type, dependency state, and
+  supersedence chain depth; filter by kind, status, and text. Status
+  follows the SUP/DEP check precedence; the loop flag is separate,
+  because a circular edge can also have an expired or disabled end. The **Tree** tab shows
+  supersedence chains and dependency trees with per-node health glyphs.
+  Selecting a row or a node shows the application's standing.
 - **Summary** — per-check counts plus dataset notes.
+
+## Live views
+
+The Live group reads current site status. **Refresh All** runs every
+query; the auto-refresh timer repeats it at the interval set in
+**Options > Live**. The timer arms after the first refresh of a session,
+or at launch when the window last showed a Live view, so a scan-only
+session never polls on its own. **Pause Auto-Refresh** holds it.
+
+| View | Source |
+|---|---|
+| **Deployments** | `Get-CMDeployment`: every deployment with targeted, success, error, and in-progress counts |
+| **Content** | `SMS_PackageStatusDistPointsSummarizer`: only content with a failed or in-progress distribution point |
+| **Distribution Points** | `Get-CMDistributionPoint` plus `SMS_SiteSystemSummarizer` status |
+| **Client Health** | SQL `v_CH_ClientSummary` joined to `v_R_System` |
+| **Inactive Devices** | SQL, devices past the inactivity threshold set in Options |
+| **Site Health** | `SMS_ComponentSummarizer` and `SMS_SiteSystemSummarizer` |
+| **Trends** | `History\metrics-history.csv`: one row of counts per completed refresh, 180 days kept |
+
+Status is a glyph in the first column: check for OK, warning sign for
+warning or in progress, cross for failed or critical, ellipsis for
+unknown. The status filter on the action bar keys off that glyph.
+
+**Alerts** (Options > Alerts) fire when a metric crosses into breach on
+a completed refresh: a critical site component or site system, a
+critical distribution point, a failed DP-content pair, or overall
+deployment compliance below the floor. Delivery is a Windows toast plus
+a line in `Logs\SiteHygiene-alerts.log` and the log pane. An alert
+repeats only after the metric recovers and breaches again.
+
+A retired ConfigMgr Health Dashboard install is imported on launch from
+`legacy\mecm-health-dashboard\` inside this folder (where the suite
+installer keeps a retired install's json, history, logs, and reports,
+beside a zip of the whole old folder) or from a sibling
+`mecm-health-dashboard\` folder.
+The import fills the SQL Server, refresh, threshold, and alert settings
+the tool has no value for yet, and copies the metrics history when this
+tool has none. It never moves or deletes the old files. The old window
+state is not imported.
 
 ## Export
 
-CSV and HTML export of the filtered findings. Files land under
-`Reports/` by default. The HTML report color-codes severity and carries
-evidence, recommendation, and fix script per finding.
+**Export CSV** and **Export HTML** write the active view's filtered rows.
+On Findings the report carries evidence, recommendation, and fix script
+per finding and the HTML color-codes severity. On Relationships and the
+Live views the report is the grid as shown; on Trends it is the charted
+series. **Copy Summary** on a Live view puts a plain-text rollup of the
+last refresh on the clipboard. Files land under `Reports/` by default.
 
 ## Project Structure
 
@@ -160,13 +238,21 @@ site-hygiene/
 |  \- SuiteCommon/                           # Vendored shared core: logging + CM connection
 +- Module/
 |  +- SiteHygieneCommon.psd1                 # Module manifest
-|  \- SiteHygieneCommon.psm1                 # Check engine (data prefetch + pure checks + exports)
-+- Logs/                                     # Session logs (per-run)
+|  +- SiteHygieneCommon.psm1                 # Check engine (data prefetch + pure checks + exports)
+|  \- SiteHygieneLive.psm1                   # Live queries, metrics history, table export
++- History/                                  # metrics-history.csv, one row per completed refresh
++- Logs/                                     # Session logs (per-run) and SiteHygiene-alerts.log
 +- Reports/                                  # CSV / HTML exports
 +- CHANGELOG.md
 +- LICENSE
 \- README.md
 ```
+
+Files the tool writes beside itself: `SiteHygiene.prefs.json` (site,
+provider, SQL server, scan scope, pause, refresh, threshold, alerts),
+`SiteHygiene.windowstate.json`, `SiteHygiene.suppressions.json`,
+`SiteHygiene.lastscan.json`, `History\metrics-history.csv`, and the
+`Logs\` and `Reports\` folders.
 
 ## Safety
 
@@ -176,8 +262,10 @@ site-hygiene/
   confirmation dialog that shows the exact script it will run. The
   script is logged before execution and the outcome after. Comment-only
   fix guidance never enables the action.
-- The scan runs in a background runspace so the UI stays responsive on
-  large sites.
+- The Live views are read-only: `Get-CM*` cmdlets, WMI summarizer
+  classes, and `SELECT` statements against the site database.
+- Scans, fixes, and refreshes run one at a time in a background runspace
+  so the UI stays responsive on large sites.
 
 ## License
 

@@ -3,8 +3,8 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:Controls="clr-namespace:MahApps.Metro.Controls;assembly=MahApps.Metro"
     Title="Site Hygiene"
-    Width="1320" Height="820"
-    MinWidth="1024" MinHeight="640"
+    Width="1400" Height="860"
+    MinWidth="1100" MinHeight="680"
     WindowStartupLocation="CenterScreen"
     TitleCharacterCasing="Normal"
     GlowBrush="{DynamicResource MahApps.Brushes.Accent}"
@@ -48,8 +48,8 @@
 
             <Style x:Key="ViewButtonStyle" TargetType="Button" BasedOn="{StaticResource MahApps.Styles.Button.Square}">
                 <Setter Property="Template" Value="{StaticResource SidebarButtonTemplate}"/>
-                <Setter Property="Height" Value="42"/>
-                <Setter Property="Margin" Value="8,3,8,3"/>
+                <Setter Property="Height" Value="38"/>
+                <Setter Property="Margin" Value="8,2,8,2"/>
                 <Setter Property="Padding" Value="12,0,12,0"/>
                 <Setter Property="HorizontalContentAlignment" Value="Left"/>
                 <Setter Property="FontSize" Value="13"/>
@@ -66,6 +66,13 @@
             </Style>
 
             <Style x:Key="OptionsButtonStyle" TargetType="Button" BasedOn="{StaticResource ViewButtonStyle}"/>
+
+            <Style x:Key="SidebarGroupLabel" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="10"/>
+                <Setter Property="FontWeight" Value="SemiBold"/>
+                <Setter Property="Margin" Value="16,12,8,4"/>
+                <Setter Property="Foreground" Value="{DynamicResource MahApps.Brushes.Gray1}"/>
+            </Style>
 
             <Style x:Key="SquareInlineButtonStyle" TargetType="Button" BasedOn="{StaticResource MahApps.Styles.Button.Square}">
                 <Setter Property="Height" Value="28"/>
@@ -122,6 +129,19 @@
                 <Setter Property="HorizontalContentAlignment" Value="Left"/>
             </Style>
 
+            <Style x:Key="GridHeaderCenterStyle" TargetType="DataGridColumnHeader" BasedOn="{StaticResource MahApps.Styles.DataGridColumnHeader}">
+                <Setter Property="Padding" Value="6,0,6,0"/>
+                <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            </Style>
+
+            <Style x:Key="GlyphCellStyle" TargetType="DataGridCell" BasedOn="{StaticResource MahApps.Styles.DataGridCell}">
+                <Setter Property="Padding" Value="0"/>
+                <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                <Setter Property="VerticalContentAlignment" Value="Center"/>
+                <Setter Property="FontFamily" Value="Segoe UI Symbol"/>
+                <Setter Property="FontSize" Value="14"/>
+            </Style>
+
             <Style x:Key="DetailTextStyle" TargetType="TextBox">
                 <Setter Property="IsReadOnly" Value="True"/>
                 <Setter Property="TextWrapping" Value="Wrap"/>
@@ -143,7 +163,7 @@
 
         <Border Grid.Column="0">
             <DockPanel>
-                <StackPanel DockPanel.Dock="Top" Margin="14,14,14,12">
+                <StackPanel DockPanel.Dock="Top" Margin="14,14,14,8">
                     <TextBlock x:Name="txtAppTitle" Text="Site Hygiene"
                                FontSize="20" FontWeight="Bold" TextWrapping="Wrap"/>
                     <TextBlock x:Name="txtVersion" Text="v" FontSize="10"
@@ -167,17 +187,34 @@
 
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel>
+                        <TextBlock Text="SCAN" Style="{StaticResource SidebarGroupLabel}" Margin="16,4,8,4"/>
                         <Button x:Name="btnViewFindings" Content="Findings" Style="{StaticResource ViewButtonStyle}"
                                 ToolTip="Every hygiene finding from the last scan, filterable by category and severity"/>
                         <Button x:Name="btnViewRelationships" Content="Relationships" Style="{StaticResource ViewButtonStyle}"
-                                ToolTip="Supersedence chains and dependency trees from the last scan"/>
+                                ToolTip="Every supersedence and dependency relationship from the last scan, as a list and as trees"/>
                         <Button x:Name="btnViewSummary"  Content="Summary"  Style="{StaticResource ViewButtonStyle}"
                                 ToolTip="Per-check counts for the last scan, plus dataset notes"/>
 
+                        <TextBlock Text="LIVE" Style="{StaticResource SidebarGroupLabel}"/>
+                        <Button x:Name="btnViewDeployments" Content="Deployments" Style="{StaticResource ViewButtonStyle}"
+                                ToolTip="Application, package, software-update, and task-sequence deployments with success / error / in-progress counts"/>
+                        <Button x:Name="btnViewContent" Content="Content" Style="{StaticResource ViewButtonStyle}"
+                                ToolTip="Content distribution status: only items with failed or in-progress DP-content pairs"/>
+                        <Button x:Name="btnViewDPs" Content="Distribution Points" Style="{StaticResource ViewButtonStyle}"
+                                ToolTip="DP roster with site, status, and pull-DP flag"/>
+                        <Button x:Name="btnViewClients" Content="Client Health" Style="{StaticResource ViewButtonStyle}"
+                                ToolTip="Per-device CCM health: HealthState, ActiveStatus, last-online / DDR / policy / HW inventory (SQL)"/>
+                        <Button x:Name="btnViewInactive" Content="Inactive Devices" Style="{StaticResource ViewButtonStyle}"
+                                ToolTip="Devices exceeding the inactivity threshold (SQL, configurable in Options)"/>
+                        <Button x:Name="btnViewSite" Content="Site Health" Style="{StaticResource ViewButtonStyle}"
+                                ToolTip="Site components and site-system roles via SMS_ComponentSummarizer / SMS_SiteSystemSummarizer"/>
+                        <Button x:Name="btnViewTrends" Content="Trends" Style="{StaticResource ViewButtonStyle}"
+                                ToolTip="Rolling 7 / 30 / 90 day history for each live metric, captured at every refresh"/>
+
                         <Button x:Name="btnOptions" Content="Options"
                                 Style="{StaticResource OptionsButtonStyle}"
-                                Margin="8,24,8,3"
-                                ToolTip="Site code, SMS provider, about"/>
+                                Margin="8,20,8,3"
+                                ToolTip="Site code, SMS provider, SQL server, scan scope, refresh, alerts, about"/>
                     </StackPanel>
                 </ScrollViewer>
             </DockPanel>
@@ -207,11 +244,18 @@
                 </StackPanel>
             </Border>
 
+            <!-- Action bar. The scan buttons and filters show on the Scan views, the
+                 refresh buttons and status filter on the Live views. -->
             <Border Grid.Row="1" Padding="16,10,16,10">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
@@ -225,15 +269,31 @@
                             MinWidth="120"
                             ToolTip="Run a read-only hygiene scan against the connected site"/>
 
+                    <Button x:Name="btnRefreshAll"
+                            Grid.Column="0"
+                            Content="Refresh All"
+                            Style="{StaticResource SquareInlineButtonStyle}"
+                            MinWidth="120"
+                            Visibility="Collapsed"
+                            ToolTip="Refresh every live area (deployments, content, DPs, clients, inactive devices, site components)"/>
+
+                    <Button x:Name="btnPauseResume"
+                            Grid.Column="1"
+                            Content="Pause Auto-Refresh"
+                            Style="{StaticResource SquareInlineButtonStyle}"
+                            MinWidth="160"
+                            Visibility="Collapsed"
+                            ToolTip="Pause / resume the auto-refresh timer"/>
+
                     <TextBox x:Name="txtFilter"
-                             Grid.Column="1"
+                             Grid.Column="2"
                              FontSize="12"
                              Padding="6,4,6,4"
                              Margin="8,0,8,0"
-                             Controls:TextBoxHelper.Watermark="Filter by object, evidence, or check id..."/>
+                             Controls:TextBoxHelper.Watermark="Filter rows..."/>
 
                     <ComboBox x:Name="cboCategory"
-                              Grid.Column="2"
+                              Grid.Column="3"
                               Width="150"
                               Margin="0,0,8,0"
                               FontSize="12"
@@ -258,7 +318,7 @@
                     </ComboBox>
 
                     <ComboBox x:Name="cboSeverity"
-                              Grid.Column="3"
+                              Grid.Column="4"
                               Width="120"
                               Margin="0,0,8,0"
                               FontSize="12"
@@ -269,10 +329,50 @@
                         <ComboBoxItem Content="Info"/>
                     </ComboBox>
 
-                    <Button x:Name="btnExportCsv"  Grid.Column="4" Content="Export CSV"  Style="{StaticResource SquareInlineButtonStyle}"
-                            ToolTip="Export the filtered findings to CSV"/>
-                    <Button x:Name="btnExportHtml" Grid.Column="5" Content="Export HTML" Style="{StaticResource SquareInlineButtonStyle}"
-                            ToolTip="Export the filtered findings to a styled HTML report"/>
+                    <ComboBox x:Name="cboRelKind"
+                              Grid.Column="5"
+                              Width="140"
+                              Margin="0,0,8,0"
+                              FontSize="12"
+                              Visibility="Collapsed"
+                              ToolTip="Limit the relationship list to one kind">
+                        <ComboBoxItem Content="All kinds" IsSelected="True"/>
+                        <ComboBoxItem Content="Supersedence"/>
+                        <ComboBoxItem Content="Dependency"/>
+                    </ComboBox>
+
+                    <ComboBox x:Name="cboRelStatus"
+                              Grid.Column="6"
+                              Width="150"
+                              Margin="0,0,8,0"
+                              FontSize="12"
+                              Visibility="Collapsed"
+                              ToolTip="Limit the relationship list by status">
+                        <ComboBoxItem Content="All statuses" IsSelected="True"/>
+                        <ComboBoxItem Content="Healthy"/>
+                        <ComboBoxItem Content="Broken"/>
+                    </ComboBox>
+
+                    <ComboBox x:Name="cboStatus"
+                              Grid.Column="7"
+                              Width="160"
+                              Margin="0,0,8,0"
+                              FontSize="12"
+                              Visibility="Collapsed"
+                              ToolTip="Limit rows by status">
+                        <ComboBoxItem Content="All" IsSelected="True"/>
+                        <ComboBoxItem Content="OK / Healthy"/>
+                        <ComboBoxItem Content="Warning / In Progress"/>
+                        <ComboBoxItem Content="Failed / Error"/>
+                    </ComboBox>
+
+                    <Button x:Name="btnExportCsv"  Grid.Column="8" Content="Export CSV"  Style="{StaticResource SquareInlineButtonStyle}"
+                            ToolTip="Export the active view's filtered rows to CSV"/>
+                    <Button x:Name="btnExportHtml" Grid.Column="9" Content="Export HTML" Style="{StaticResource SquareInlineButtonStyle}"
+                            ToolTip="Export the active view's filtered rows to a styled HTML report"/>
+                    <Button x:Name="btnCopySummary" Grid.Column="10" Content="Copy Summary" Style="{StaticResource SquareInlineButtonStyle}"
+                            Visibility="Collapsed"
+                            ToolTip="Copy a plain-text live health summary to the clipboard"/>
                 </Grid>
             </Border>
 
@@ -332,7 +432,7 @@
                 </Grid>
 
                 <!-- ============================================================ -->
-                <!-- View: Relationships                                          -->
+                <!-- View: Relationships (inventory list + trees)                 -->
                 <!-- ============================================================ -->
                 <Grid x:Name="viewRelationships" Visibility="Collapsed">
                     <Grid.RowDefinitions>
@@ -341,19 +441,46 @@
                         <RowDefinition Height="180"/>
                     </Grid.RowDefinitions>
 
-                    <TreeView x:Name="treeRelationships"
-                              Grid.Row="0"
-                              FontSize="12"
-                              BorderThickness="0"
-                              Background="{DynamicResource MahApps.Brushes.ThemeBackground}"
-                              Foreground="{DynamicResource MahApps.Brushes.ThemeForeground}"/>
+                    <TabControl x:Name="tabRelationships" Grid.Row="0" Margin="0,8,0,0"
+                                Controls:HeaderedControlHelper.HeaderFontSize="13">
+                        <TabItem Header="Inventory">
+                            <DataGrid x:Name="gridRelationships"
+                                      SelectionMode="Single"
+                                      Style="{StaticResource ViewDataGrid}"
+                                      ColumnHeaderStyle="{StaticResource GridHeaderStyle}"
+                                      CellStyle="{StaticResource GridCellStyle}">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header=""            Width="32"  Binding="{Binding StatusGlyph}"
+                                                        CellStyle="{StaticResource GlyphCellStyle}"
+                                                        HeaderStyle="{StaticResource GridHeaderCenterStyle}"/>
+                                    <DataGridTextColumn Header="Kind"        Width="100" Binding="{Binding Kind}"/>
+                                    <DataGridTextColumn Header="Status"      Width="120" Binding="{Binding Status}"/>
+                                    <DataGridTextColumn Header="Loop"        Width="50"  Binding="{Binding LoopFlag}"/>
+                                    <DataGridTextColumn Header="Source"      Width="2*"  Binding="{Binding SourceName}"/>
+                                    <DataGridTextColumn Header="Version"     Width="90"  Binding="{Binding SourceVersion}"/>
+                                    <DataGridTextColumn Header="Deployment type" Width="1.5*" Binding="{Binding SourceDeploymentType}"/>
+                                    <DataGridTextColumn Header="Target"      Width="2*"  Binding="{Binding TargetName}"/>
+                                    <DataGridTextColumn Header="Version"     Width="90"  Binding="{Binding TargetVersion}"/>
+                                    <DataGridTextColumn Header="Dependency"  Width="100" Binding="{Binding DependencyState}"/>
+                                    <DataGridTextColumn Header="Depth"       Width="60"  Binding="{Binding ChainDepth}"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </TabItem>
+                        <TabItem Header="Tree">
+                            <TreeView x:Name="treeRelationships"
+                                      FontSize="12"
+                                      BorderThickness="0"
+                                      Background="{DynamicResource MahApps.Brushes.ThemeBackground}"
+                                      Foreground="{DynamicResource MahApps.Brushes.ThemeForeground}"/>
+                        </TabItem>
+                    </TabControl>
 
                     <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch"
                                   Background="{DynamicResource MahApps.Brushes.Gray8}"
                                   ResizeDirection="Rows"/>
 
                     <TextBox x:Name="txtRelationshipDetail" Grid.Row="2" Style="{StaticResource DetailTextStyle}"
-                             Text="Run a scan, then select a node to see the application's relationship standing."/>
+                             Text="Run a scan, then select a row or a tree node to see the application's relationship standing."/>
                 </Grid>
 
                 <!-- ============================================================ -->
@@ -389,6 +516,281 @@
                              Text="Dataset notes from the last scan appear here."/>
                 </Grid>
 
+                <!-- ============================================================ -->
+                <!-- Live view: Deployments                                       -->
+                <!-- ============================================================ -->
+                <Grid x:Name="viewDeployments" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="5"/>
+                        <RowDefinition Height="200"/>
+                    </Grid.RowDefinitions>
+
+                    <DataGrid x:Name="gridDeploy"
+                              Grid.Row="0"
+                              SelectionMode="Single"
+                              Style="{StaticResource ViewDataGrid}"
+                              ColumnHeaderStyle="{StaticResource GridHeaderStyle}"
+                              CellStyle="{StaticResource GridCellStyle}">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="" Width="32"
+                                                Binding="{Binding StatusGlyph}"
+                                                CellStyle="{StaticResource GlyphCellStyle}"
+                                                HeaderStyle="{StaticResource GridHeaderCenterStyle}"/>
+                            <DataGridTextColumn Header="Deployment" Width="2*" Binding="{Binding DeploymentName}"/>
+                            <DataGridTextColumn Header="Type" Width="110" Binding="{Binding DeploymentType}"/>
+                            <DataGridTextColumn Header="Collection" Width="2*" Binding="{Binding CollectionName}"/>
+                            <DataGridTextColumn Header="Purpose" Width="80" Binding="{Binding Purpose}"/>
+                            <DataGridTextColumn Header="Targeted" Width="70" Binding="{Binding NumberTargeted}"/>
+                            <DataGridTextColumn Header="Success" Width="70" Binding="{Binding NumberSuccess}"/>
+                            <DataGridTextColumn Header="Errors" Width="70" Binding="{Binding NumberErrors}"/>
+                            <DataGridTextColumn Header="In Progress" Width="80" Binding="{Binding NumberInProgress}"/>
+                            <DataGridTextColumn Header="% Compliant" Width="*" Binding="{Binding PercentCompliant}"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+
+                    <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch"
+                                  Background="{DynamicResource MahApps.Brushes.Gray8}"
+                                  ResizeDirection="Rows"/>
+
+                    <TextBox x:Name="txtDeployDetail" Grid.Row="2" Style="{StaticResource DetailTextStyle}"
+                             Text="Select a deployment to see status breakdown."/>
+                </Grid>
+
+                <!-- ============================================================ -->
+                <!-- Live view: Content Distribution                              -->
+                <!-- ============================================================ -->
+                <Grid x:Name="viewContent" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="5"/>
+                        <RowDefinition Height="200"/>
+                    </Grid.RowDefinitions>
+
+                    <DataGrid x:Name="gridContent"
+                              Grid.Row="0"
+                              SelectionMode="Single"
+                              Style="{StaticResource ViewDataGrid}"
+                              ColumnHeaderStyle="{StaticResource GridHeaderStyle}"
+                              CellStyle="{StaticResource GridCellStyle}">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="" Width="32"
+                                                Binding="{Binding StatusGlyph}"
+                                                CellStyle="{StaticResource GlyphCellStyle}"
+                                                HeaderStyle="{StaticResource GridHeaderCenterStyle}"/>
+                            <DataGridTextColumn Header="Content Name" Width="2*" Binding="{Binding ContentName}"/>
+                            <DataGridTextColumn Header="Type" Width="120" Binding="{Binding ContentType}"/>
+                            <DataGridTextColumn Header="Package ID" Width="100" Binding="{Binding PackageID}"/>
+                            <DataGridTextColumn Header="Total DPs" Width="80" Binding="{Binding TotalDPs}"/>
+                            <DataGridTextColumn Header="Installed" Width="80" Binding="{Binding InstalledCount}"/>
+                            <DataGridTextColumn Header="Failed" Width="80" Binding="{Binding FailedCount}"/>
+                            <DataGridTextColumn Header="In Progress" Width="*" Binding="{Binding InProgressCount}"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+
+                    <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch"
+                                  Background="{DynamicResource MahApps.Brushes.Gray8}"
+                                  ResizeDirection="Rows"/>
+
+                    <TextBox x:Name="txtContentDetail" Grid.Row="2" Style="{StaticResource DetailTextStyle}"
+                             Text="Select a content item to see DP breakdown."/>
+                </Grid>
+
+                <!-- ============================================================ -->
+                <!-- Live view: Distribution Points                               -->
+                <!-- ============================================================ -->
+                <Grid x:Name="viewDPs" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="5"/>
+                        <RowDefinition Height="200"/>
+                    </Grid.RowDefinitions>
+
+                    <DataGrid x:Name="gridDPs"
+                              Grid.Row="0"
+                              SelectionMode="Single"
+                              Style="{StaticResource ViewDataGrid}"
+                              ColumnHeaderStyle="{StaticResource GridHeaderStyle}"
+                              CellStyle="{StaticResource GridCellStyle}">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="" Width="32"
+                                                Binding="{Binding StatusGlyph}"
+                                                CellStyle="{StaticResource GlyphCellStyle}"
+                                                HeaderStyle="{StaticResource GridHeaderCenterStyle}"/>
+                            <DataGridTextColumn Header="DP Name" Width="2*" Binding="{Binding DPName}"/>
+                            <DataGridTextColumn Header="Site" Width="80" Binding="{Binding SiteCode}"/>
+                            <DataGridTextColumn Header="Status" Width="120" Binding="{Binding Status}"/>
+                            <DataGridTextColumn Header="Pull DP" Width="*" Binding="{Binding IsPullDP}"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+
+                    <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch"
+                                  Background="{DynamicResource MahApps.Brushes.Gray8}"
+                                  ResizeDirection="Rows"/>
+
+                    <TextBox x:Name="txtDPDetail" Grid.Row="2" Style="{StaticResource DetailTextStyle}"
+                             Text="Select a distribution point to see details."/>
+                </Grid>
+
+                <!-- ============================================================ -->
+                <!-- Live view: Client Health                                     -->
+                <!-- ============================================================ -->
+                <Grid x:Name="viewClients" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="5"/>
+                        <RowDefinition Height="200"/>
+                    </Grid.RowDefinitions>
+
+                    <DataGrid x:Name="gridClients"
+                              Grid.Row="0"
+                              SelectionMode="Single"
+                              Style="{StaticResource ViewDataGrid}"
+                              ColumnHeaderStyle="{StaticResource GridHeaderStyle}"
+                              CellStyle="{StaticResource GridCellStyle}">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="" Width="32"
+                                                Binding="{Binding StatusGlyph}"
+                                                CellStyle="{StaticResource GlyphCellStyle}"
+                                                HeaderStyle="{StaticResource GridHeaderCenterStyle}"/>
+                            <DataGridTextColumn Header="Device" Width="2*" Binding="{Binding DeviceName}"/>
+                            <DataGridTextColumn Header="Health" Width="100" Binding="{Binding HealthState}"/>
+                            <DataGridTextColumn Header="Active" Width="80" Binding="{Binding ActiveStatus}"/>
+                            <DataGridTextColumn Header="Last Active" Width="130" Binding="{Binding LastOnlineDisplay}"/>
+                            <DataGridTextColumn Header="Last DDR" Width="130" Binding="{Binding LastDDRDisplay}"/>
+                            <DataGridTextColumn Header="Last Policy" Width="130" Binding="{Binding LastPolicyDisplay}"/>
+                            <DataGridTextColumn Header="Last HW Inv" Width="130" Binding="{Binding LastHWDisplay}"/>
+                            <DataGridTextColumn Header="Client Version" Width="*" Binding="{Binding ClientVersion}"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+
+                    <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch"
+                                  Background="{DynamicResource MahApps.Brushes.Gray8}"
+                                  ResizeDirection="Rows"/>
+
+                    <TextBox x:Name="txtClientDetail" Grid.Row="2" Style="{StaticResource DetailTextStyle}"
+                             Text="Select a device to see client health details."/>
+                </Grid>
+
+                <!-- ============================================================ -->
+                <!-- Live view: Inactive Devices                                  -->
+                <!-- ============================================================ -->
+                <Grid x:Name="viewInactive" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="5"/>
+                        <RowDefinition Height="200"/>
+                    </Grid.RowDefinitions>
+
+                    <DataGrid x:Name="gridInactive"
+                              Grid.Row="0"
+                              SelectionMode="Single"
+                              Style="{StaticResource ViewDataGrid}"
+                              ColumnHeaderStyle="{StaticResource GridHeaderStyle}"
+                              CellStyle="{StaticResource GridCellStyle}">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="" Width="32"
+                                                Binding="{Binding StatusGlyph}"
+                                                CellStyle="{StaticResource GlyphCellStyle}"
+                                                HeaderStyle="{StaticResource GridHeaderCenterStyle}"/>
+                            <DataGridTextColumn Header="Device" Width="2*" Binding="{Binding DeviceName}"/>
+                            <DataGridTextColumn Header="Last Active" Width="140" Binding="{Binding LastOnlineDisplay}"/>
+                            <DataGridTextColumn Header="Last DDR" Width="140" Binding="{Binding LastDDRDisplay}"/>
+                            <DataGridTextColumn Header="Days Since" Width="100" Binding="{Binding DaysSinceContact}"/>
+                            <DataGridTextColumn Header="Operating System" Width="2*" Binding="{Binding OperatingSystem}"/>
+                            <DataGridTextColumn Header="Client Version" Width="*" Binding="{Binding ClientVersion}"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+
+                    <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch"
+                                  Background="{DynamicResource MahApps.Brushes.Gray8}"
+                                  ResizeDirection="Rows"/>
+
+                    <TextBox x:Name="txtInactiveDetail" Grid.Row="2" Style="{StaticResource DetailTextStyle}"
+                             Text="Select a device to see contact history."/>
+                </Grid>
+
+                <!-- ============================================================ -->
+                <!-- Live view: Site Health                                       -->
+                <!-- ============================================================ -->
+                <Grid x:Name="viewSite" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="5"/>
+                        <RowDefinition Height="200"/>
+                    </Grid.RowDefinitions>
+
+                    <DataGrid x:Name="gridSite"
+                              Grid.Row="0"
+                              SelectionMode="Single"
+                              Style="{StaticResource ViewDataGrid}"
+                              ColumnHeaderStyle="{StaticResource GridHeaderStyle}"
+                              CellStyle="{StaticResource GridCellStyle}">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="" Width="32"
+                                                Binding="{Binding StatusGlyph}"
+                                                CellStyle="{StaticResource GlyphCellStyle}"
+                                                HeaderStyle="{StaticResource GridHeaderCenterStyle}"/>
+                            <DataGridTextColumn Header="Name" Width="2*" Binding="{Binding Name}"/>
+                            <DataGridTextColumn Header="Type" Width="110" Binding="{Binding ItemType}"/>
+                            <DataGridTextColumn Header="Server" Width="2*" Binding="{Binding MachineName}"/>
+                            <DataGridTextColumn Header="Status" Width="110" Binding="{Binding Status}"/>
+                            <DataGridTextColumn Header="State" Width="120" Binding="{Binding State}"/>
+                            <DataGridTextColumn Header="Last Started" Width="*" Binding="{Binding LastStartedDisplay}"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+
+                    <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch"
+                                  Background="{DynamicResource MahApps.Brushes.Gray8}"
+                                  ResizeDirection="Rows"/>
+
+                    <TextBox x:Name="txtSiteDetail" Grid.Row="2" Style="{StaticResource DetailTextStyle}"
+                             Text="Select a component or site system for details."/>
+                </Grid>
+
+                <!-- ============================================================ -->
+                <!-- Live view: Trends                                            -->
+                <!-- ============================================================ -->
+                <Grid x:Name="viewTrends" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,4,0,10">
+                        <TextBlock Text="Metric:" VerticalAlignment="Center" FontSize="12" Margin="0,0,6,0"/>
+                        <ComboBox x:Name="cboTrendMetric" Width="240" FontSize="12" Margin="0,0,16,0"/>
+                        <TextBlock Text="Range:" VerticalAlignment="Center" FontSize="12" Margin="0,0,6,0"/>
+                        <ComboBox x:Name="cboTrendRange" Width="110" FontSize="12">
+                            <ComboBoxItem Content="7 days"/>
+                            <ComboBoxItem Content="30 days" IsSelected="True"/>
+                            <ComboBoxItem Content="90 days"/>
+                        </ComboBox>
+                    </StackPanel>
+
+                    <Border Grid.Row="1"
+                            BorderBrush="{DynamicResource MahApps.Brushes.Gray8}"
+                            BorderThickness="1"
+                            Background="{DynamicResource MahApps.Brushes.ThemeBackground}">
+                        <Grid>
+                            <Canvas x:Name="canvasTrend" ClipToBounds="True" Margin="8"/>
+                            <TextBlock x:Name="txtTrendEmpty"
+                                       Text="No history yet. Trend data is captured at each completed refresh."
+                                       FontSize="12"
+                                       Foreground="{DynamicResource MahApps.Brushes.Gray1}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Grid>
+                    </Border>
+
+                    <TextBlock x:Name="txtTrendSummary"
+                               Grid.Row="2"
+                               Text=""
+                               FontSize="11"
+                               Foreground="{DynamicResource MahApps.Brushes.Gray1}"
+                               Margin="2,6,0,0"/>
+                </Grid>
+
                 <Border x:Name="progressOverlay"
                         Visibility="Collapsed"
                         Background="{DynamicResource MahApps.Brushes.ThemeBackground}"
@@ -408,12 +810,12 @@
                                    Margin="0,6,0,0"
                                    Foreground="{DynamicResource MahApps.Brushes.Gray1}"/>
                         <Button x:Name="btnCancelScan"
-                                Content="Cancel scan"
+                                Content="Cancel"
                                 Style="{StaticResource SquareInlineButtonStyle}"
                                 MinWidth="120"
                                 HorizontalAlignment="Center"
                                 Margin="0,16,0,0"
-                                ToolTip="Stop the scan; no further queries are sent to the site"/>
+                                ToolTip="Stop the running scan or refresh; no further queries are sent to the site"/>
                     </StackPanel>
                 </Border>
             </Grid>
