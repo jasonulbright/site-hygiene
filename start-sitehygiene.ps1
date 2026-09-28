@@ -25,7 +25,7 @@
 
 .NOTES
     ScriptName : start-sitehygiene.ps1
-    Version    : 2026.09.25.0020
+    Version    : 2026.09.28.0021
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', '', Justification='PS51-WPF-001..003: $global: survives closure scope-strip.')]
@@ -603,7 +603,7 @@ function Test-LiveRowMatch {
 
 function Get-FilteredLiveRows {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Returns the filtered row set of the active live view.')]
-    param([Parameter(Mandatory)][object[]]$Rows, [Parameter(Mandatory)][string[]]$Fields)
+    param([Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Rows, [Parameter(Mandatory)][string[]]$Fields)
     $needle = ([string]$txtFilter.Text).Trim().ToLowerInvariant()
     $statusFilter = Get-ComboValue -Combo $cboStatus
     return @($Rows | Where-Object {
@@ -622,15 +622,17 @@ function Get-FilteredLiveRows {
 function Update-Filter {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification='Recomputes ItemsSource on the active grid.')]
     param()
+    # A one-row result unrolls to a bare object, which ItemsSource rejects
+    # with a conversion error; @() keeps every result a list.
     switch ($script:ActiveView) {
-        'Findings'      { $gridFindings.ItemsSource = Get-FilteredFindings }
-        'Relationships' { $gridRelationships.ItemsSource = Get-FilteredRelationshipRows }
-        'Deployments'   { $gridDeploy.ItemsSource   = Get-FilteredLiveRows -Rows @($script:DeploymentRows) -Fields @('DeploymentName','CollectionName','DeploymentType') }
-        'Content'       { $gridContent.ItemsSource  = Get-FilteredLiveRows -Rows @($script:ContentRows)    -Fields @('ContentName','PackageID','ContentType') }
-        'DPs'           { $gridDPs.ItemsSource      = Get-FilteredLiveRows -Rows @($script:DPRows)         -Fields @('DPName','SiteCode') }
-        'Clients'       { $gridClients.ItemsSource  = Get-FilteredLiveRows -Rows @($script:ClientRows)     -Fields @('DeviceName','HealthState','ActiveStatus','OperatingSystem') }
-        'Inactive'      { $gridInactive.ItemsSource = Get-FilteredLiveRows -Rows @($script:InactiveRows)   -Fields @('DeviceName','OperatingSystem') }
-        'Site'          { $gridSite.ItemsSource     = Get-FilteredLiveRows -Rows @($script:SiteRows)       -Fields @('Name','MachineName','ItemType') }
+        'Findings'      { $gridFindings.ItemsSource = @(Get-FilteredFindings) }
+        'Relationships' { $gridRelationships.ItemsSource = @(Get-FilteredRelationshipRows) }
+        'Deployments'   { $gridDeploy.ItemsSource   = @(Get-FilteredLiveRows -Rows @($script:DeploymentRows) -Fields @('DeploymentName','CollectionName','DeploymentType')) }
+        'Content'       { $gridContent.ItemsSource  = @(Get-FilteredLiveRows -Rows @($script:ContentRows)    -Fields @('ContentName','PackageID','ContentType')) }
+        'DPs'           { $gridDPs.ItemsSource      = @(Get-FilteredLiveRows -Rows @($script:DPRows)         -Fields @('DPName','SiteCode')) }
+        'Clients'       { $gridClients.ItemsSource  = @(Get-FilteredLiveRows -Rows @($script:ClientRows)     -Fields @('DeviceName','HealthState','ActiveStatus','OperatingSystem')) }
+        'Inactive'      { $gridInactive.ItemsSource = @(Get-FilteredLiveRows -Rows @($script:InactiveRows)   -Fields @('DeviceName','OperatingSystem')) }
+        'Site'          { $gridSite.ItemsSource     = @(Get-FilteredLiveRows -Rows @($script:SiteRows)       -Fields @('Name','MachineName','ItemType')) }
         default         { }
     }
 }
@@ -1534,6 +1536,7 @@ function Invoke-RefreshAll {
 
     $script:BgState = [hashtable]::Synchronized(@{ Step = 'Connecting...'; Done = $false; Result = $null; ErrorMsg = $null })
     $script:BgInfoIndex = 0
+    $script:RefreshStarted = Get-Date
     $btnRefreshAll.IsEnabled = $false
     $txtProgressTitle.Text = 'Refreshing live data...'
     $txtProgressStep.Text  = 'Connecting...'
@@ -1568,14 +1571,14 @@ function Invoke-RefreshAll {
             $deployCounts = Get-DeploymentHealthCounts -DeploymentData $deployData
 
             $State.Step = 'Querying content distribution health...'
-            $contentData = @(Get-ContentDistributionHealth -SMSProvider $SMSProvider -SiteCode $SiteCode)
+            $contentData = @(Get-ContentDistributionHealth)
             $contentCounts = Get-ContentHealthCounts -ContentData $contentData
 
             $State.Step = 'Resolving content names...'
-            $nameMap = Get-ContentNameMap -SMSProvider $SMSProvider -SiteCode $SiteCode
+            $nameMap = Get-ContentNameMap
 
             $State.Step = 'Querying distribution point health...'
-            $dpData = @(Get-DPHealth -SMSProvider $SMSProvider -SiteCode $SiteCode)
+            $dpData = @(Get-DPHealth)
             $dpCounts = Get-DPHealthCounts -DPData $dpData
 
             $clientData = @(); $clientCounts = $null
@@ -1591,9 +1594,9 @@ function Invoke-RefreshAll {
             }
 
             $State.Step = 'Querying site component health...'
-            $componentData = @(Get-SiteComponentHealth -SMSProvider $SMSProvider -SiteCode $SiteCode)
+            $componentData = @(Get-SiteComponentHealth)
             $State.Step = 'Querying site system health...'
-            $systemData = @(Get-SiteSystemHealth -SMSProvider $SMSProvider -SiteCode $SiteCode)
+            $systemData = @(Get-SiteSystemHealth)
             $siteCounts = Get-SiteHealthCounts -ComponentData $componentData -SystemData $systemData
 
             $State.Result = [PSCustomObject]@{
@@ -1623,7 +1626,7 @@ function Invoke-RefreshAll {
     $script:BgTimer.Interval = [TimeSpan]::FromMilliseconds(150)
     $script:BgTimer.Add_Tick({
         if ($script:BgState) {
-            $current = [string]$script:BgState.Step
+            $current = '{0}  [{1:mm\:ss}]' -f [string]$script:BgState.Step, ((Get-Date) - $script:RefreshStarted)
             if ($txtProgressStep.Text -ne $current) { $txtProgressStep.Text = $current }
         }
         Read-BgInformationStream

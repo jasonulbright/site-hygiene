@@ -2133,3 +2133,148 @@ Describe 'Get-HygRelationshipInventory loop flag' {
         @($rows | Where-Object Circular).Count | Should -Be 2
     }
 }
+
+
+Describe 'Live view row filter' {
+    BeforeAll {
+        $shell = Join-Path (Split-Path $PSScriptRoot -Parent) 'start-sitehygiene.ps1'
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($shell, [ref]$null, [ref]$null)
+        foreach ($name in 'Get-ComboValue', 'Test-LiveRowMatch', 'Get-FilteredLiveRows', 'Update-Filter') {
+            $fn = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true)
+            . ([scriptblock]::Create($fn.Extent.Text))
+        }
+        $txtFilter = [pscustomobject]@{ Text = '' }
+        $cboStatus = [pscustomobject]@{ SelectedItem = $null }
+        $gridDPs   = [pscustomobject]@{ ItemsSource = $null }
+    }
+    BeforeEach { $txtFilter.Text = '' }
+
+    It 'returns no rows for a view that has not been refreshed' {
+        { Get-FilteredLiveRows -Rows @() -Fields @('DeploymentName') } | Should -Not -Throw
+        @(Get-FilteredLiveRows -Rows @() -Fields @('DeploymentName')).Count | Should -Be 0
+    }
+
+    It 'matches the filter text against the named fields only' {
+        $rows = @(
+            [pscustomobject]@{ DeploymentName = 'Office'; CollectionName = 'All Systems' }
+            [pscustomobject]@{ DeploymentName = 'Chrome'; CollectionName = 'Office PCs' }
+        )
+        $txtFilter.Text = 'office'
+        @(Get-FilteredLiveRows -Rows $rows -Fields @('DeploymentName')).DeploymentName | Should -Be @('Office')
+    }
+
+    It 'hands the grid a list when one row is left' {
+        $script:ActiveView = 'DPs'
+        $script:DPRows = @([pscustomobject]@{ DPName = 'DP01'; SiteCode = 'MCM' })
+        Update-Filter
+        $gridDPs.ItemsSource -is [System.Collections.IEnumerable] | Should -BeTrue -Because 'ItemsSource rejects a bare object'
+        @($gridDPs.ItemsSource).Count | Should -Be 1
+    }
+}
+
+
+Describe 'Live health counts' {
+    It 'accepts a site with no deployments' {
+        $c = Get-DeploymentHealthCounts -DeploymentData @()
+        $c.TotalDeployments | Should -Be 0
+        $c.FailedDeployments | Should -Be 0
+        $c.OverallCompliance | Should -Be 0
+    }
+
+    It 'counts a single matching row as one' {
+        $deploy = Get-DeploymentHealthCounts -DeploymentData @(
+            [pscustomobject]@{ NumberErrors = 2; NumberTargeted = 4; NumberSuccess = 2 }
+            [pscustomobject]@{ NumberErrors = 0; NumberTargeted = 4; NumberSuccess = 4 }
+        )
+        $deploy.FailedDeployments | Should -Be 1
+        $deploy.OverallCompliance | Should -Be 75
+        $dp = Get-DPHealthCounts -DPData @([pscustomobject]@{ Status = 'Critical' }, [pscustomobject]@{ Status = 'Warning' }, [pscustomobject]@{ Status = 'OK' })
+        $dp.OfflineCount | Should -Be 1
+        $dp.DegradedCount | Should -Be 1
+        $client = Get-ClientHealthCounts -ClientData @(
+            [pscustomobject]@{ HealthStateValue = 1; ActiveStatusValue = 1 }
+            [pscustomobject]@{ HealthStateValue = 2; ActiveStatusValue = 0 }
+        )
+        $client.HealthyCount | Should -Be 1
+        $client.UnhealthyCount | Should -Be 1
+        $client.InactiveCount | Should -Be 1
+        $site = Get-SiteHealthCounts -ComponentData @([pscustomobject]@{ StatusValue = 2 }) -SystemData @([pscustomobject]@{ StatusValue = 0 }, [pscustomobject]@{ StatusValue = 1 })
+        $site.OKCount | Should -Be 1
+        $site.WarningCount | Should -Be 1
+        $site.CriticalCount | Should -Be 1
+    }
+}
+
+
+Describe 'Live provider reads' {
+    BeforeAll {
+        Set-Item -Path function:global:Get-CimInstance -Value { throw 'A Live read opened a WinRM session instead of using the provider connection.' }
+        Set-Item -Path function:global:Invoke-CMWmiQuery -Value {
+            [CmdletBinding()] param($Query, $Option)
+            switch -Wildcard ($Query) {
+                '*FROM SMS_PackageStatusDistPointsSummarizer' {
+                    [pscustomobject]@{ PackageID = 'MCM00001'; State = 0 }
+                    [pscustomobject]@{ PackageID = 'MCM00001'; State = 3 }
+                    [pscustomobject]@{ PackageID = 'MCM00002'; State = 0 }
+                    [pscustomobject]@{ PackageID = 'MCM00003'; State = 2 }
+                }
+                '*FROM SMS_PackageBaseclass' {
+                    [pscustomobject]@{ PackageID = 'MCM00001'; Name = 'Office'; PackageType = 0 }
+                }
+                "*WHERE Role = 'SMS Distribution Point'" {
+                    [pscustomobject]@{ SiteSystem = '["Display=\\DP01.contoso.com\"]MSWNET:["SMS_SITE=MCM"]\\DP01.contoso.com\'; Status = 1 }
+                    [pscustomobject]@{ SiteSystem = '["Display=\\DP01.contoso.com\"]MSWNET:["SMS_SITE=MCM"]\\DP01.contoso.com\'; Status = 2 }
+                }
+                '*FROM SMS_SiteSystemSummarizer' {
+                    [pscustomobject]@{ SiteSystem = '["Display=\\CM01.contoso.com\"]MSWNET:["SMS_SITE=MCM"]\\CM01.contoso.com\'; SiteCode = 'MCM'; Role = 'SMS Site Server'; Status = 0; AvailabilityState = 0 }
+                }
+                '*FROM SMS_ComponentSummarizer *' {
+                    [pscustomobject]@{ ComponentName = 'SMS_DISTRIBUTION_MANAGER'; MachineName = 'CM01.contoso.com'; Status = 2; State = 1; AvailabilityState = 0; LastStarted = [datetime]'2026-09-28 08:00' }
+                }
+            }
+        }
+        Set-Item -Path function:global:Get-CMDistributionPoint -Value {
+            [CmdletBinding()] param()
+            [pscustomobject]@{ NetworkOSPath = '\\DP01.contoso.com'; SiteCode = 'MCM'; Props = @([pscustomobject]@{ PropertyName = 'IsPullDP'; Value = 1 }) }
+        }
+    }
+    AfterAll {
+        foreach ($s in 'Get-CimInstance', 'Invoke-CMWmiQuery', 'Get-CMDistributionPoint') { Remove-Item -Path "function:global:$s" -ErrorAction SilentlyContinue }
+    }
+
+    It 'keeps only content with a failed or in-progress distribution point' {
+        $rows = @(Get-ContentDistributionHealth | Sort-Object PackageID)
+        $rows.PackageID | Should -Be @('MCM00001', 'MCM00003')
+        $rows[0].FailedCount | Should -Be 1
+        $rows[0].InstalledCount | Should -Be 1
+        $rows[0].TotalDPs | Should -Be 2
+        $rows[1].InProgressCount | Should -Be 1
+    }
+
+    It 'names content by package id' {
+        $map = Get-ContentNameMap
+        $map['MCM00001'].Name | Should -Be 'Office'
+        $map['MCM00001'].Type | Should -Be 'Package'
+    }
+
+    It 'reports a distribution point at its worst summarizer status' {
+        $dp = @(Get-DPHealth)
+        $dp.Count | Should -Be 1
+        $dp[0].DPName | Should -Be 'DP01.CONTOSO.COM'
+        $dp[0].Status | Should -Be 'Critical'
+        $dp[0].IsPullDP | Should -Be 'Yes'
+    }
+
+    It 'reads component and site system status' {
+        $component = @(Get-SiteComponentHealth)
+        $component.Count | Should -Be 1
+        $component[0].Status | Should -Be 'Critical'
+        $component[0].State | Should -Be 'Started'
+        $component[0].LastStarted | Should -Be ([datetime]'2026-09-28 08:00')
+        $system = @(Get-SiteSystemHealth)
+        $system.Count | Should -Be 1
+        $system[0].ServerName | Should -Be 'CM01.CONTOSO.COM'
+        $system[0].RoleName | Should -Be 'SMS Site Server'
+        $system[0].Status | Should -Be 'OK'
+    }
+}
