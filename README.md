@@ -188,6 +188,10 @@ query; the auto-refresh timer repeats it at the interval set in
 or at launch when the window last showed a Live view, so a scan-only
 session never polls on its own. **Pause Auto-Refresh** holds it.
 
+![Site Hygiene Deployments view](screenshots/live-deployments.png)
+
+![Site Hygiene Site Health view](screenshots/live-site-health.png)
+
 | View | Source |
 |---|---|
 | **Deployments** | `Get-CMDeployment`: every deployment with targeted, success, error, and in-progress counts |
