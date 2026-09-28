@@ -2,6 +2,24 @@
 
 All notable changes to Site Hygiene are documented in this file.
 
+## [2026.09.28.0021] - 2026-09-28
+
+## Live views: 0 crashes on view switch, 5 fewer WinRM sessions per refresh
+
+### Fixes
+
+- Stop the Live views from closing the app before the first refresh.
+- Stop a view with exactly one row from closing the app.
+- Count a single failed deployment, critical DP, or critical site item.
+- Raise the alert when exactly one site item or DP is critical.
+- Refresh a site that has no deployments.
+
+### Changed
+
+- Read Live WMI data over the scan's provider connection; WinRM is not needed.
+- Show elapsed time for each refresh step.
+- Update the shared SuiteCommon module to 2026.09.27.0037.
+
 ## [2026.09.25.0020] - 2026-09-25
 
 ## Two suite tools fold into this one: 10 new views

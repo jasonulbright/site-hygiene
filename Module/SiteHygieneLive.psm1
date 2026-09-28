@@ -8,8 +8,11 @@
     distribution status, distribution point status, client health and
     inactive devices (SQL), site component and site system status, the
     metrics history behind the Trends view, and table export. Every
-    function needs an established CM connection; the SQL functions need
-    Invoke-Sqlcmd and read access to the site database.
+    function needs an established CM connection. WMI reads run through
+    Invoke-CMWmiQuery on the site drive, the provider connection a scan
+    uses, so the Live views need no WinRM access to the SMS Provider.
+    The SQL functions need Invoke-Sqlcmd and read access to the site
+    database.
 #>
 function Test-SQLConnection {
     <#
@@ -106,7 +109,7 @@ function Get-DeploymentHealth {
         }
     }
 
-    Write-Log "Found $($results.Count) deployments"
+    Write-Log "Found $(@($results).Count) deployments"
     return $results
 }
 
@@ -182,11 +185,11 @@ function Get-DeploymentHealthCounts {
         Returns aggregate deployment health counts.
     #>
     param(
-        [Parameter(Mandatory)][PSCustomObject[]]$DeploymentData
+        [Parameter(Mandatory)][AllowEmptyCollection()][PSCustomObject[]]$DeploymentData
     )
 
     $total = $DeploymentData.Count
-    $withErrors = ($DeploymentData | Where-Object { $_.NumberErrors -gt 0 }).Count
+    $withErrors = @($DeploymentData | Where-Object { $_.NumberErrors -gt 0 }).Count
     $totalTargeted = ($DeploymentData | Measure-Object -Property NumberTargeted -Sum).Sum
     $totalSuccess  = ($DeploymentData | Measure-Object -Property NumberSuccess -Sum).Sum
     $overallPct = if ($totalTargeted -gt 0) { [math]::Round(($totalSuccess / $totalTargeted) * 100, 1) } else { 0 }
@@ -207,17 +210,9 @@ function Get-ContentDistributionHealth {
     .SYNOPSIS
         Bulk WMI query for content distribution status, returns only items with failures or in-progress.
     #>
-    param(
-        [Parameter(Mandatory)][string]$SMSProvider,
-        [Parameter(Mandatory)][string]$SiteCode
-    )
-
     Write-Log "Running bulk content distribution status query..."
 
-    $raw = Get-CimInstance -ComputerName $SMSProvider `
-        -Namespace "root\SMS\site_$SiteCode" `
-        -ClassName SMS_PackageStatusDistPointsSummarizer `
-        -OperationTimeoutSec 0 -ErrorAction Stop
+    $raw = Invoke-CMWmiQuery -Query 'SELECT PackageID, State FROM SMS_PackageStatusDistPointsSummarizer' -Option Fast -ErrorAction Stop
 
     # Aggregate per PackageID using hashtable
     $byPackage = @{}
@@ -257,7 +252,7 @@ function Get-ContentDistributionHealth {
         }
     }
 
-    Write-Log "Content health: $($results.Count) items with failures or in-progress out of $($byPackage.Count) total"
+    Write-Log "Content health: $(@($results).Count) items with failures or in-progress out of $($byPackage.Count) total"
     return $results
 }
 
@@ -292,20 +287,11 @@ function Get-ContentNameMap {
         boot images, OS images, driver packages, software update groups). Unresolved IDs
         (typically application deployment type content) can be labeled by the caller.
     #>
-    param(
-        [Parameter(Mandatory)][string]$SMSProvider,
-        [Parameter(Mandatory)][string]$SiteCode
-    )
-
     Write-Log "Building content name lookup..."
     $map = @{}
 
     try {
-        $packages = Get-CimInstance -ComputerName $SMSProvider `
-            -Namespace "root\SMS\site_$SiteCode" `
-            -ClassName SMS_PackageBaseclass `
-            -Property PackageID, Name, PackageType `
-            -OperationTimeoutSec 0 -ErrorAction Stop
+        $packages = Invoke-CMWmiQuery -Query 'SELECT PackageID, Name, PackageType FROM SMS_PackageBaseclass' -Option Fast -ErrorAction Stop
 
         foreach ($p in $packages) {
             # PackageType values per SMS_PackageBaseclass.
@@ -343,22 +329,13 @@ function Get-DPHealth {
     .SYNOPSIS
         Returns DP health by combining CM cmdlets with WMI site system summarizer.
     #>
-    param(
-        [Parameter(Mandatory)][string]$SMSProvider,
-        [Parameter(Mandatory)][string]$SiteCode
-    )
-
     Write-Log "Querying distribution point health..."
 
     # Get DPs from CM
     $dps = Get-CMDistributionPoint -ErrorAction Stop
 
     # Get site system status via WMI
-    $sysStatus = Get-CimInstance -ComputerName $SMSProvider `
-        -Namespace "root\SMS\site_$SiteCode" `
-        -ClassName SMS_SiteSystemSummarizer `
-        -Filter "Role = 'SMS Distribution Point'" `
-        -OperationTimeoutSec 0 -ErrorAction SilentlyContinue
+    $sysStatus = Invoke-CMWmiQuery -Query "SELECT SiteSystem, Status FROM SMS_SiteSystemSummarizer WHERE Role = 'SMS Distribution Point'" -Option Fast -ErrorAction SilentlyContinue
 
     # SMS_SiteSystemSummarizer has one instance per storage object, so a DP
     # server can appear multiple times -- keep the worst (highest) status.
@@ -413,7 +390,7 @@ function Get-DPHealth {
         }
     }
 
-    Write-Log "Found $($results.Count) distribution points"
+    Write-Log "Found $(@($results).Count) distribution points"
     return $results
 }
 
@@ -441,8 +418,8 @@ function Get-DPHealthCounts {
     )
 
     $total   = $DPData.Count
-    $offline = ($DPData | Where-Object { $_.Status -eq 'Critical' }).Count
-    $warning = ($DPData | Where-Object { $_.Status -eq 'Warning' }).Count
+    $offline = @($DPData | Where-Object { $_.Status -eq 'Critical' }).Count
+    $warning = @($DPData | Where-Object { $_.Status -eq 'Warning' }).Count
 
     return [PSCustomObject]@{
         TotalDPs      = $total
@@ -522,7 +499,7 @@ function Get-ClientHealthSummary {
             }
         }
 
-        Write-Log "Retrieved $($results.Count) client health records"
+        Write-Log "Retrieved $(@($results).Count) client health records"
         return $results
     }
     catch {
@@ -540,9 +517,9 @@ function Get-ClientHealthCounts {
         [Parameter(Mandatory)][AllowEmptyCollection()][PSCustomObject[]]$ClientData
     )
 
-    $healthy   = ($ClientData | Where-Object { $_.HealthStateValue -eq 1 }).Count
-    $unhealthy = ($ClientData | Where-Object { $_.HealthStateValue -eq 2 }).Count
-    $inactive  = ($ClientData | Where-Object { $_.ActiveStatusValue -eq 0 }).Count
+    $healthy   = @($ClientData | Where-Object { $_.HealthStateValue -eq 1 }).Count
+    $unhealthy = @($ClientData | Where-Object { $_.HealthStateValue -eq 2 }).Count
+    $inactive  = @($ClientData | Where-Object { $_.ActiveStatusValue -eq 0 }).Count
 
     return [PSCustomObject]@{
         HealthyCount   = $healthy
@@ -600,7 +577,7 @@ function Get-InactiveDevices {
             }
         }
 
-        Write-Log "Found $($results.Count) inactive devices (>$ThresholdDays days)"
+        Write-Log "Found $(@($results).Count) inactive devices (>$ThresholdDays days)"
         return $results
     }
     catch {
@@ -632,18 +609,10 @@ function Get-SiteComponentHealth {
     .SYNOPSIS
         Queries SMS_ComponentSummarizer for component health status.
     #>
-    param(
-        [Parameter(Mandatory)][string]$SMSProvider,
-        [Parameter(Mandatory)][string]$SiteCode
-    )
-
     Write-Log "Querying site component health..."
 
     try {
-        $raw = Get-CimInstance -ComputerName $SMSProvider `
-            -Namespace "root\SMS\site_$SiteCode" `
-            -Query "SELECT ComponentName, MachineName, Status, State, AvailabilityState, NextScheduledTime, LastStarted, TallyInterval FROM SMS_ComponentSummarizer WHERE TallyInterval = '0001128000100008'" `
-            -OperationTimeoutSec 0 -ErrorAction Stop
+        $raw = Invoke-CMWmiQuery -Query "SELECT ComponentName, MachineName, Status, State, AvailabilityState, NextScheduledTime, LastStarted, TallyInterval FROM SMS_ComponentSummarizer WHERE TallyInterval = '0001128000100008'" -Option Fast -ErrorAction Stop
 
         $results = foreach ($c in $raw) {
             $statusText = switch ([int]$c.Status) {
@@ -675,7 +644,7 @@ function Get-SiteComponentHealth {
             }
         }
 
-        Write-Log "Retrieved $($results.Count) component status records"
+        Write-Log "Retrieved $(@($results).Count) component status records"
         return $results
     }
     catch {
@@ -689,18 +658,10 @@ function Get-SiteSystemHealth {
     .SYNOPSIS
         Queries SMS_SiteSystemSummarizer for site system role health.
     #>
-    param(
-        [Parameter(Mandatory)][string]$SMSProvider,
-        [Parameter(Mandatory)][string]$SiteCode
-    )
-
     Write-Log "Querying site system health..."
 
     try {
-        $raw = Get-CimInstance -ComputerName $SMSProvider `
-            -Namespace "root\SMS\site_$SiteCode" `
-            -ClassName SMS_SiteSystemSummarizer `
-            -OperationTimeoutSec 0 -ErrorAction Stop
+        $raw = Invoke-CMWmiQuery -Query 'SELECT SiteSystem, SiteCode, Role, Status, AvailabilityState FROM SMS_SiteSystemSummarizer' -Option Fast -ErrorAction Stop
 
         $results = foreach ($s in $raw) {
             $serverName = ''
@@ -726,7 +687,7 @@ function Get-SiteSystemHealth {
             }
         }
 
-        Write-Log "Retrieved $($results.Count) site system status records"
+        Write-Log "Retrieved $(@($results).Count) site system status records"
         return $results
     }
     catch {
@@ -746,9 +707,9 @@ function Get-SiteHealthCounts {
     )
 
     $allItems = @($ComponentData) + @($SystemData)
-    $ok       = ($allItems | Where-Object { $_.StatusValue -eq 0 }).Count
-    $warning  = ($allItems | Where-Object { $_.StatusValue -eq 1 }).Count
-    $critical = ($allItems | Where-Object { $_.StatusValue -eq 2 }).Count
+    $ok       = @($allItems | Where-Object { $_.StatusValue -eq 0 }).Count
+    $warning  = @($allItems | Where-Object { $_.StatusValue -eq 1 }).Count
+    $critical = @($allItems | Where-Object { $_.StatusValue -eq 2 }).Count
 
     return [PSCustomObject]@{
         OKCount       = $ok
