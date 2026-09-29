@@ -2278,3 +2278,106 @@ Describe 'Live provider reads' {
         $system[0].Status | Should -Be 'OK'
     }
 }
+
+
+Describe 'Live read failures and edge values' {
+    BeforeAll {
+        $script:wmiMode = 'ok'
+        Set-Item -Path function:global:Invoke-CMWmiQuery -Value {
+            [CmdletBinding()] param($Query, $Option)
+            if ($script:wmiMode -eq 'fail') { throw 'provider query failed' }
+            if ($Query -like "*Role = 'SMS Distribution Point'") {
+                [pscustomobject]@{ SiteSystem = 'DP01.contoso.com'; Status = 2 }
+            }
+            elseif ($Query -like '*FROM SMS_SiteSystemSummarizer') {
+                [pscustomobject]@{ SiteSystem = 'CM01.contoso.com'; SiteCode = 'MCM'; Role = 'SMS Site Server'; Status = 0; AvailabilityState = 0 }
+            }
+        }
+        Set-Item -Path function:global:Get-CMDistributionPoint -Value {
+            [CmdletBinding()] param()
+            [pscustomobject]@{ NetworkOSPath = '\\DP01.contoso.com'; SiteCode = 'MCM'; Props = @() }
+        }
+        Set-Item -Path function:global:Invoke-Sqlcmd -Value {
+            [CmdletBinding()] param($ServerInstance, $Database, $Query, $QueryTimeout)
+            if ($script:sqlMode -eq 'fail') { throw 'The SELECT permission was denied' }
+            [pscustomobject]@{ DeviceName = 'PC01'; LastActiveTime = [System.DBNull]::Value; LastDDR = [System.DBNull]::Value; DaysSinceContact = [System.DBNull]::Value; OperatingSystem = 'Windows 11'; ClientVersion = '5.0' }
+        }
+    }
+    AfterAll {
+        foreach ($s in 'Invoke-CMWmiQuery', 'Get-CMDistributionPoint', 'Invoke-Sqlcmd') { Remove-Item -Path "function:global:$s" -ErrorAction SilentlyContinue }
+    }
+    BeforeEach { $script:wmiMode = 'ok'; $script:sqlMode = 'ok' }
+
+    It 'matches a distribution point whose summarizer row holds a bare computer name' {
+        (@(Get-DPHealth))[0].Status | Should -Be 'Critical'
+        (@(Get-SiteSystemHealth))[0].ServerName | Should -Be 'CM01.CONTOSO.COM'
+    }
+
+    It 'fails a provider read instead of reporting an empty site' {
+        $script:wmiMode = 'fail'
+        { Get-DPHealth } | Should -Throw
+        { Get-SiteComponentHealth } | Should -Throw
+        { Get-SiteSystemHealth } | Should -Throw
+    }
+
+    It 'fails a SQL view read instead of reporting zero clients' {
+        $script:sqlMode = 'fail'
+        { Get-ClientHealthSummary -SQLServer 'sql01' -SiteCode 'MCM' } | Should -Throw
+        { Get-InactiveDevices -SQLServer 'sql01' -SiteCode 'MCM' } | Should -Throw
+    }
+
+    It 'lists a client with no contact on record, without a day count' {
+        $rows = @(Get-InactiveDevices -SQLServer 'sql01' -SiteCode 'MCM')
+        $rows.Count | Should -Be 1
+        $rows[0].DaysSinceContact | Should -BeNullOrEmpty
+    }
+}
+
+
+Describe 'Metrics history resilience' {
+    BeforeEach {
+        $script:hist = Join-Path ([IO.Path]::GetTempPath()) ('{0}\metrics-history.csv' -f [Guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path (Split-Path $script:hist -Parent) -Force | Out-Null
+    }
+    AfterEach { Remove-Item -LiteralPath (Split-Path $script:hist -Parent) -Recurse -Force -ErrorAction SilentlyContinue }
+
+    It 'writes the header into an existing empty history file' {
+        New-Item -ItemType File -Path $script:hist -Force | Out-Null
+        Add-MetricsHistoryEntry -HistoryPath $script:hist -DeploymentCounts ([pscustomobject]@{ TotalDeployments = 3; FailedDeployments = 0; OverallCompliance = 90 })
+        @(Get-MetricsHistory -HistoryPath $script:hist).Count | Should -Be 1
+        @(Get-MetricsSeries -HistoryPath $script:hist -Column 'CompliancePct').V | Should -Be @(90)
+    }
+
+    It 'skips a nonnumeric metric value instead of failing' {
+        $now = (Get-Date).ToString('o')
+        Set-Content -LiteralPath $script:hist -Encoding UTF8 -Value @('"Timestamp","CompliancePct"', ('"{0}","bad"' -f $now), ('"{0}","75.5"' -f $now), ('"{0}",""' -f $now))
+        { Get-MetricsSeries -HistoryPath $script:hist -Column 'CompliancePct' } | Should -Not -Throw
+        @(Get-MetricsSeries -HistoryPath $script:hist -Column 'CompliancePct').V | Should -Be @(75.5)
+    }
+}
+
+
+Describe 'SQL certificate trust' {
+    AfterEach { Remove-Item -Path function:global:Invoke-Sqlcmd -ErrorAction SilentlyContinue }
+
+    It 'passes TrustServerCertificate when the setting is on and the cmdlet supports it' {
+        Set-Item -Path function:global:Invoke-Sqlcmd -Value {
+            [CmdletBinding()] param($ServerInstance, $Database, $Query, $QueryTimeout, [switch]$TrustServerCertificate)
+            $script:sqlBound = $PSBoundParameters
+            [pscustomobject]@{ Test = 1 }
+        }
+        Test-SQLConnection -SQLServer 'sql01' -SiteCode 'MCM' -TrustServerCertificate $true | Should -BeTrue
+        $script:sqlBound.ContainsKey('TrustServerCertificate') | Should -BeTrue
+        $script:sqlBound['Database'] | Should -Be 'CM_MCM'
+        Test-SQLConnection -SQLServer 'sql01' -SiteCode 'MCM' -TrustServerCertificate $false | Should -BeTrue
+        $script:sqlBound.ContainsKey('TrustServerCertificate') | Should -BeFalse
+    }
+
+    It 'leaves the parameter out for an Invoke-Sqlcmd that does not have it' {
+        Set-Item -Path function:global:Invoke-Sqlcmd -Value {
+            [CmdletBinding()] param($ServerInstance, $Database, $Query, $QueryTimeout)
+            [pscustomobject]@{ Test = 1 }
+        }
+        Test-SQLConnection -SQLServer 'sql01' -SiteCode 'MCM' -TrustServerCertificate $true | Should -BeTrue
+    }
+}

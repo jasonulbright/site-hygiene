@@ -25,7 +25,7 @@
 
 .NOTES
     ScriptName : start-sitehygiene.ps1
-    Version    : 2026.09.29.0022
+    Version    : 2026.09.29.0023
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', '', Justification='PS51-WPF-001..003: $global: survives closure scope-strip.')]
@@ -90,6 +90,7 @@ function Get-ShPreferences {
         SiteCode              = ''
         SMSProvider           = ''
         SQLServer             = ''
+        SqlTrustServerCertificate = $true
         ScanScopes            = @()
         ProviderPacingMs      = 0
         AutoRefreshMinutes    = 15
@@ -1051,8 +1052,8 @@ function Get-ClientGlyph {
 function Get-InactiveGlyph {
     param($Row)
     # Every row is already past the configured threshold, so the floor is
-    # Warn; sixty days escalates to Error.
-    if ([int]$Row.DaysSinceContact -gt 60) { return $script:Glyph.Error }
+    # Warn; sixty days, or no contact on record, escalates to Error.
+    if ($null -eq $Row.DaysSinceContact -or [int]$Row.DaysSinceContact -gt 60) { return $script:Glyph.Error }
     return $script:Glyph.Warn
 }
 
@@ -1375,13 +1376,7 @@ function Update-TrendChart {
     $label  = [string]$sel.Content
     $days   = Get-TrendRangeDays
 
-    $rows = @(Get-MetricsHistory -HistoryPath $global:HistoryPath -Days $days)
-    $points = @(foreach ($r in $rows) {
-        $v = $r.$column
-        if ($null -ne $v -and '' -ne [string]$v) {
-            [PSCustomObject]@{ T = $r.TimestampValue; V = [double]$v }
-        }
-    })
+    $points = @(Get-MetricsSeries -HistoryPath $global:HistoryPath -Column $column -Days $days)
     if ($points.Count -lt 1) {
         $txtTrendEmpty.Visibility = [System.Windows.Visibility]::Visible
         $txtTrendSummary.Text = ''
@@ -1553,11 +1548,12 @@ function Invoke-RefreshAll {
     $smsProvider = [string]$global:Prefs.SMSProvider
     $sqlServer   = [string]$global:Prefs.SQLServer
     $threshold   = [int]$global:Prefs.InactiveThresholdDays
+    $trustSql    = [bool]$global:Prefs.SqlTrustServerCertificate
 
     $script:BgPowerShell = [powershell]::Create()
     $script:BgPowerShell.Runspace = $script:BgRunspace
     [void]$script:BgPowerShell.AddScript({
-        param($SiteCode, $SMSProvider, $SQLServer, $ThresholdDays, $State)
+        param($SiteCode, $SMSProvider, $SQLServer, $ThresholdDays, $State, $TrustSql)
         try {
             if (-not (Test-CMConnection)) {
                 $State.Step = "Connecting to $SiteCode..."
@@ -1568,7 +1564,7 @@ function Invoke-RefreshAll {
             $sqlOk = $false
             if ($SQLServer) {
                 $State.Step = "Testing SQL connection ($SQLServer)..."
-                $sqlOk = Test-SQLConnection -SQLServer $SQLServer -SiteCode $SiteCode
+                $sqlOk = Test-SQLConnection -SQLServer $SQLServer -SiteCode $SiteCode -TrustServerCertificate $TrustSql
             }
 
             $State.Step = 'Querying deployment health...'
@@ -1582,27 +1578,40 @@ function Invoke-RefreshAll {
             $State.Step = 'Resolving content names...'
             $nameMap = Get-ContentNameMap
 
+            # A failed area keeps its counts $null, never zero: zero would
+            # record a false recovery in the history and reset the alert
+            # latch for an incident that is still open.
             $State.Step = 'Querying distribution point health...'
-            $dpData = @(Get-DPHealth)
-            $dpCounts = Get-DPHealthCounts -DPData $dpData
+            $dpData = @(); $dpCounts = $null
+            try {
+                $dpData = @(Get-DPHealth)
+                $dpCounts = Get-DPHealthCounts -DPData $dpData
+            } catch { $dpData = @(); Write-Log ('Distribution point status unavailable: {0}' -f $_.Exception.Message) -Level WARN }
 
             $clientData = @(); $clientCounts = $null
             $inactiveData = @(); $inactiveCounts = $null
             if ($sqlOk) {
                 $State.Step = 'Querying client health (SQL)...'
-                $clientData = @(Get-ClientHealthSummary -SQLServer $SQLServer -SiteCode $SiteCode)
-                $clientCounts = Get-ClientHealthCounts -ClientData $clientData
+                try {
+                    $clientData = @(Get-ClientHealthSummary -SQLServer $SQLServer -SiteCode $SiteCode -TrustServerCertificate $TrustSql)
+                    $clientCounts = Get-ClientHealthCounts -ClientData $clientData
+                } catch { $clientData = @() }
 
                 $State.Step = "Querying inactive devices (>$ThresholdDays days)..."
-                $inactiveData = @(Get-InactiveDevices -SQLServer $SQLServer -SiteCode $SiteCode -ThresholdDays $ThresholdDays)
-                $inactiveCounts = Get-InactiveDeviceCounts -DeviceData $inactiveData
+                try {
+                    $inactiveData = @(Get-InactiveDevices -SQLServer $SQLServer -SiteCode $SiteCode -ThresholdDays $ThresholdDays -TrustServerCertificate $TrustSql)
+                    $inactiveCounts = Get-InactiveDeviceCounts -DeviceData $inactiveData
+                } catch { $inactiveData = @() }
             }
 
-            $State.Step = 'Querying site component health...'
-            $componentData = @(Get-SiteComponentHealth)
-            $State.Step = 'Querying site system health...'
-            $systemData = @(Get-SiteSystemHealth)
-            $siteCounts = Get-SiteHealthCounts -ComponentData $componentData -SystemData $systemData
+            $componentData = @(); $systemData = @(); $siteCounts = $null
+            try {
+                $State.Step = 'Querying site component health...'
+                $componentData = @(Get-SiteComponentHealth)
+                $State.Step = 'Querying site system health...'
+                $systemData = @(Get-SiteSystemHealth)
+                $siteCounts = Get-SiteHealthCounts -ComponentData $componentData -SystemData $systemData
+            } catch { $componentData = @(); $systemData = @() }
 
             $State.Result = [PSCustomObject]@{
                 SqlOk            = $sqlOk
@@ -1624,7 +1633,7 @@ function Invoke-RefreshAll {
         }
         catch { $State.ErrorMsg = $_.Exception.Message }
         finally { $State.Done = $true }
-    }).AddArgument($siteCode).AddArgument($smsProvider).AddArgument($sqlServer).AddArgument($threshold).AddArgument($script:BgState)
+    }).AddArgument($siteCode).AddArgument($smsProvider).AddArgument($sqlServer).AddArgument($threshold).AddArgument($script:BgState).AddArgument($trustSql)
 
     $script:BgInvokeHandle = $script:BgPowerShell.BeginInvoke()
     $script:BgTimer = New-Object System.Windows.Threading.DispatcherTimer
@@ -1776,9 +1785,8 @@ function Get-ActiveExportInfo {
             $sel = $cboTrendMetric.SelectedItem
             if (-not $sel) { return $null }
             $column = [string]$sel.Tag
-            $rows = @(Get-MetricsHistory -HistoryPath $global:HistoryPath -Days (Get-TrendRangeDays)) |
-                Where-Object { $null -ne $_.$column -and '' -ne [string]$_.$column } |
-                ForEach-Object { [PSCustomObject]@{ Timestamp = $_.TimestampValue.ToString('yyyy-MM-dd HH:mm:ss'); Value = $_.$column } }
+            $rows = @(Get-MetricsSeries -HistoryPath $global:HistoryPath -Column $column -Days (Get-TrendRangeDays)) |
+                ForEach-Object { [PSCustomObject]@{ Timestamp = $_.T.ToString('yyyy-MM-dd HH:mm:ss'); Value = $_.V } }
             return @{ Name = ('Trends-{0}' -f ($column -replace '[^A-Za-z0-9]', '')); Columns = @('Timestamp','Value'); Rows = @($rows) }
         }
         default { return $null }
@@ -1925,6 +1933,8 @@ function Show-OptionsDialog {
                 <TextBox x:Name="txtSqlServer" FontSize="12" Padding="6,4,6,4"
                          Controls:TextBoxHelper.Watermark="e.g. cm01.contoso.com (blank to skip SQL views)"/>
                 <TextBlock Style="{StaticResource OptHint}" Text="SQL instance hosting CM_&lt;site&gt; (FQDN or FQDN\InstanceName). Leave blank to skip the Client Health and Inactive Devices views."/>
+                <CheckBox x:Name="chkSqlTrustCert" Content="Trust the SQL Server certificate" FontSize="12" Margin="0,10,0,0"/>
+                <TextBlock Style="{StaticResource OptHint}" Text="The connection stays encrypted, but the server certificate is not validated. Clear this when the SQL Server certificate is trusted by this workstation."/>
             </StackPanel>
             <StackPanel x:Name="paneScope" Visibility="Collapsed">
                 <TextBlock Text="Scan" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,10"/>
@@ -2027,6 +2037,7 @@ function Show-OptionsDialog {
     $txtSiteCode        = $dlg.FindName('txtSiteCode')
     $txtSmsProvider     = $dlg.FindName('txtSmsProvider')
     $txtSqlServer       = $dlg.FindName('txtSqlServer')
+    $chkSqlTrustCert    = $dlg.FindName('chkSqlTrustCert')
     $txtPacing          = $dlg.FindName('txtPacing')
     $panelScopes        = $dlg.FindName('panelScopes')
     $cboRefreshInterval = $dlg.FindName('cboRefreshInterval')
@@ -2039,6 +2050,7 @@ function Show-OptionsDialog {
     $txtSiteCode.Text    = [string]$global:Prefs.SiteCode
     $txtSmsProvider.Text = [string]$global:Prefs.SMSProvider
     $txtSqlServer.Text   = [string]$global:Prefs.SQLServer
+    $chkSqlTrustCert.IsChecked = [bool]$global:Prefs.SqlTrustServerCertificate
     $txtPacing.Text      = [string][int]$global:Prefs.ProviderPacingMs
 
     $savedScopes = @(@($global:Prefs['ScanScopes']) | Where-Object { $_ })
@@ -2087,6 +2099,7 @@ function Show-OptionsDialog {
         $global:Prefs.SiteCode    = $newSite
         $global:Prefs.SMSProvider = $newProvider
         $global:Prefs.SQLServer   = $newSql
+        $global:Prefs.SqlTrustServerCertificate = [bool]$chkSqlTrustCert.IsChecked
         $global:Prefs.AutoRefreshMinutes    = $(if ($cboRefreshInterval.SelectedItem) { [int]([string]$cboRefreshInterval.SelectedItem.Content) } else { 15 })
         $global:Prefs.InactiveThresholdDays = $(if ($cboInactiveDays.SelectedItem)    { [int]([string]$cboInactiveDays.SelectedItem.Content) }    else { 14 })
         $global:Prefs.AlertsEnabled         = [bool]$chkAlertsEnabled.IsChecked
