@@ -523,7 +523,7 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="5"/>
-                        <RowDefinition Height="200"/>
+                        <RowDefinition Height="220"/>
                     </Grid.RowDefinitions>
 
                     <DataGrid x:Name="gridDeploy"
@@ -541,10 +541,10 @@
                             <DataGridTextColumn Header="Type" Width="110" Binding="{Binding DeploymentType}"/>
                             <DataGridTextColumn Header="Collection" Width="2*" Binding="{Binding CollectionName}"/>
                             <DataGridTextColumn Header="Purpose" Width="80" Binding="{Binding Purpose}"/>
-                            <DataGridTextColumn Header="Targeted" Width="70" Binding="{Binding NumberTargeted}"/>
+                            <DataGridTextColumn Header="Targeted" Width="85" Binding="{Binding NumberTargeted}"/>
                             <DataGridTextColumn Header="Success" Width="70" Binding="{Binding NumberSuccess}"/>
                             <DataGridTextColumn Header="Errors" Width="70" Binding="{Binding NumberErrors}"/>
-                            <DataGridTextColumn Header="In Progress" Width="80" Binding="{Binding NumberInProgress}"/>
+                            <DataGridTextColumn Header="In Progress" Width="100" Binding="{Binding NumberInProgress}"/>
                             <DataGridTextColumn Header="% Compliant" Width="*" Binding="{Binding PercentCompliant}"/>
                         </DataGrid.Columns>
                     </DataGrid>
@@ -564,7 +564,7 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="5"/>
-                        <RowDefinition Height="200"/>
+                        <RowDefinition Height="220"/>
                     </Grid.RowDefinitions>
 
                     <DataGrid x:Name="gridContent"
@@ -603,7 +603,7 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="5"/>
-                        <RowDefinition Height="200"/>
+                        <RowDefinition Height="220"/>
                     </Grid.RowDefinitions>
 
                     <DataGrid x:Name="gridDPs"
@@ -639,7 +639,7 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="5"/>
-                        <RowDefinition Height="200"/>
+                        <RowDefinition Height="220"/>
                     </Grid.RowDefinitions>
 
                     <DataGrid x:Name="gridClients"
@@ -679,7 +679,7 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="5"/>
-                        <RowDefinition Height="200"/>
+                        <RowDefinition Height="220"/>
                     </Grid.RowDefinitions>
 
                     <DataGrid x:Name="gridInactive"
@@ -717,7 +717,7 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="5"/>
-                        <RowDefinition Height="200"/>
+                        <RowDefinition Height="220"/>
                     </Grid.RowDefinitions>
 
                     <DataGrid x:Name="gridSite"

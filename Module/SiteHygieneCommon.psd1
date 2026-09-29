@@ -1,7 +1,7 @@
 @{
     RootModule        = 'SiteHygieneCommon.psm1'
     NestedModules     = @('SiteHygieneLive.psm1')
-    ModuleVersion     = '2026.09.28.0021'
+    ModuleVersion     = '2026.09.29.0022'
     GUID              = 'e94b7c15-2f6a-4d38-8b0c-51a9d3e6f284'
     Author            = 'Jason Ulbright'
     Description       = 'Configuration Manager site hygiene: read-only scanning for unused applications and packages, dead collections, stale and failing deployments, and application relationships, with confirmed per-finding fix execution and live site health views.'
