@@ -25,7 +25,7 @@
 
 .NOTES
     ScriptName : start-sitehygiene.ps1
-    Version    : 2026.09.28.0021
+    Version    : 2026.09.29.0022
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', '', Justification='PS51-WPF-001..003: $global: survives closure scope-strip.')]
@@ -286,14 +286,14 @@ $toggleTheme.Add_Toggled({
 $script:ViewMeta = @{
     'Findings'      = @{ Title = 'Findings';             Subtitle = 'Every hygiene finding from the last scan. Select a row for evidence, recommendation, and the fix script.'; Watermark = 'Filter by object, evidence, or check id...' }
     'Relationships' = @{ Title = 'Relationships';        Subtitle = 'Every supersedence and dependency relationship resolved from SDMPackageXML, healthy ones included. Select a row or a tree node for the application detail.'; Watermark = 'Filter by source, target, or deployment type...' }
-    'Summary'       = @{ Title = 'Summary';              Subtitle = 'Per-check counts for the last scan, plus notes about datasets the scan could not read.'; Watermark = 'Filter rows...' }
+    'Summary'       = @{ Title = 'Summary';              Subtitle = 'Per-check counts for the last scan, plus notes about datasets the scan could not read.'; Watermark = '' }
     'Deployments'   = @{ Title = 'Deployments';          Subtitle = 'Application, package, software-update, and task-sequence deployments. Refresh to populate.'; Watermark = 'Filter by deployment, collection, or type...' }
     'Content'       = @{ Title = 'Content Distribution'; Subtitle = 'Only content with failed or in-progress DP-content pairs is shown. Healthy items are filtered out at the source.'; Watermark = 'Filter by content, package id, or type...' }
     'DPs'           = @{ Title = 'Distribution Points';  Subtitle = 'DP roster with site assignment, status from SMS_SiteSystemSummarizer, and pull-DP flag.'; Watermark = 'Filter by name or site...' }
     'Clients'       = @{ Title = 'Client Health';        Subtitle = 'Per-device CCM health and active status. Requires SQL Server access (CM_<site> database).'; Watermark = 'Filter by device, health, or OS...' }
     'Inactive'      = @{ Title = 'Inactive Devices';     Subtitle = 'Devices exceeding the inactivity threshold (configured in Options). SQL-backed.'; Watermark = 'Filter by device or OS...' }
     'Site'          = @{ Title = 'Site Health';          Subtitle = 'Site components (SMS_ComponentSummarizer) + site-system roles (SMS_SiteSystemSummarizer) in one rollup.'; Watermark = 'Filter by name, server, or type...' }
-    'Trends'        = @{ Title = 'Trends';               Subtitle = 'Rolling history per live metric, captured at each completed refresh. Pick a metric and a 7 / 30 / 90 day range.'; Watermark = 'Filters do not apply to the chart' }
+    'Trends'        = @{ Title = 'Trends';               Subtitle = 'Rolling history per live metric, captured at each completed refresh. Pick a metric and a 7 / 30 / 90 day range.'; Watermark = '' }
 }
 
 function Set-ControlVisible {
@@ -330,7 +330,7 @@ function Set-ActiveView {
     Set-ControlVisible $cboSeverity     ($View -eq 'Findings')
     Set-ControlVisible $cboRelKind      ($View -eq 'Relationships')
     Set-ControlVisible $cboRelStatus    ($View -eq 'Relationships')
-    $txtFilter.IsEnabled = ($View -notin 'Summary', 'Trends')
+    Set-ControlVisible $txtFilter       ($View -notin 'Summary', 'Trends')
 
     $meta = $script:ViewMeta[$View]
     if ($meta) {
@@ -1322,7 +1322,6 @@ foreach ($m in $script:TrendMetrics) {
 }
 $cboTrendMetric.SelectedIndex = 0
 
-$script:TrendLineBrush = [System.Windows.Media.BrushConverter]::new().ConvertFrom('#0078D4')
 $script:TrendGridBrush = [System.Windows.Media.BrushConverter]::new().ConvertFrom('#55808080')
 
 function Get-TrendRangeDays {
@@ -1334,6 +1333,11 @@ function Get-TrendLabelBrush {
     $b = $window.TryFindResource('MahApps.Brushes.ThemeForeground')
     if ($b) { return $b }
     return [System.Windows.Media.Brushes]::Gray
+}
+function Get-TrendLineBrush {
+    $b = $window.TryFindResource('MahApps.Brushes.Accent')
+    if ($b) { return $b }
+    return [System.Windows.Media.BrushConverter]::new().ConvertFrom('#0078D4')
 }
 function Add-TrendCanvasText {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification='Adds a TextBlock to the trend canvas.')]
@@ -1400,6 +1404,7 @@ function Update-TrendChart {
     $t1 = $points[-1].T.Ticks
     $tSpan = [double]($t1 - $t0)
     $labelBrush = Get-TrendLabelBrush
+    $lineBrush  = Get-TrendLineBrush
 
     foreach ($frac in 0.0, 0.25, 0.5, 0.75, 1.0) {
         $y = $marT + $plotH * (1.0 - $frac)
@@ -1414,7 +1419,7 @@ function Update-TrendChart {
     Add-TrendCanvasText -Text $endLabel -X ($marL + $plotW - 6.0 * $endLabel.Length) -Y ($marT + $plotH + 6) -Brush $labelBrush
 
     $poly = New-Object System.Windows.Shapes.Polyline
-    $poly.Stroke = $script:TrendLineBrush
+    $poly.Stroke = $lineBrush
     $poly.StrokeThickness = 2
     $pc = New-Object System.Windows.Media.PointCollection
     foreach ($p in $points) {
@@ -1429,7 +1434,7 @@ function Update-TrendChart {
         foreach ($pt in $pc) {
             $dot = New-Object System.Windows.Shapes.Ellipse
             $dot.Width = 5; $dot.Height = 5
-            $dot.Fill = $script:TrendLineBrush
+            $dot.Fill = $lineBrush
             [System.Windows.Controls.Canvas]::SetLeft($dot, $pt.X - 2.5)
             [System.Windows.Controls.Canvas]::SetTop($dot, $pt.Y - 2.5)
             [void]$canvasTrend.Children.Add($dot)

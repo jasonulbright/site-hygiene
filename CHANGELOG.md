@@ -2,6 +2,17 @@
 
 All notable changes to Site Hygiene are documented in this file.
 
+## [2026.09.29.0022] - 2026-09-29
+
+## Live views: 0 clipped headers or detail lines in either theme
+
+### Fixes
+
+- Show the full Targeted and In Progress headers on Deployments.
+- Show every detail line on the Live views without scrolling.
+- Hide the filter box on Summary and Trends instead of showing it disabled.
+- Draw the Trends chart in the theme accent color.
+
 ## [2026.09.28.0021] - 2026-09-28
 
 ## Live views: 0 crashes on view switch, 5 fewer WinRM sessions per refresh
