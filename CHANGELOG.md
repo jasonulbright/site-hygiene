@@ -2,6 +2,22 @@
 
 All notable changes to Site Hygiene are documented in this file.
 
+## [2026.09.29.0023] - 2026-09-29
+
+## Live views: 0 false zero counts when a read fails
+
+### Fixes
+
+- Keep a failed Live read out of the counts, history, and alerts.
+- List clients that have no contact on record as inactive.
+- Keep Trends open when the history holds a value that is not a number.
+- Recover the history file when it exists but is empty.
+- Match distribution point status when the provider returns a bare server name.
+
+### Features
+
+- Connect to a SQL Server with an untrusted certificate; on by default, set in Options.
+
 ## [2026.09.29.0022] - 2026-09-29
 
 ## Live views: 0 clipped headers or detail lines in either theme

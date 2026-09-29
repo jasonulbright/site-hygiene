@@ -40,6 +40,9 @@ imported on first launch (see [Live views](#live-views)).
 - Optional: the `SqlServer` PowerShell module (`Invoke-Sqlcmd`) and read
   access to the `CM_<site>` database for the Client Health and Inactive
   Devices views. Leave SQL Server blank in Options to skip them.
+  **Trust the SQL Server certificate** is on by default: the connection
+  stays encrypted, but the server certificate is not validated. Clear it
+  in Options when this workstation trusts the SQL Server certificate.
 
 ## Quick Start
 

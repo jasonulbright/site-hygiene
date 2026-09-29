@@ -14,6 +14,32 @@
     The SQL functions need Invoke-Sqlcmd and read access to the site
     database.
 #>
+function New-HygieneSqlParameter {
+    <#
+    .SYNOPSIS
+        Builds the Invoke-Sqlcmd parameter set for a site database query.
+    .DESCRIPTION
+        SqlServer module v22 encrypts by default and rejects a server
+        certificate it cannot validate. TrustServerCertificate keeps the
+        connection encrypted and skips the validation; it is passed only
+        when the installed Invoke-Sqlcmd has the parameter, because v21
+        and SQLPS reject it.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$SQLServer,
+        [Parameter(Mandatory)][string]$SiteCode,
+        [Parameter(Mandatory)][string]$Query,
+        [bool]$TrustServerCertificate
+    )
+
+    $p = @{ ServerInstance = $SQLServer; Database = "CM_$SiteCode"; Query = $Query; QueryTimeout = 0; ErrorAction = 'Stop' }
+    if ($TrustServerCertificate) {
+        $cmd = Get-Command Invoke-Sqlcmd -ErrorAction SilentlyContinue
+        if ($cmd -and $cmd.Parameters.ContainsKey('TrustServerCertificate')) { $p['TrustServerCertificate'] = $true }
+    }
+    return $p
+}
+
 function Test-SQLConnection {
     <#
     .SYNOPSIS
@@ -23,13 +49,15 @@ function Test-SQLConnection {
     #>
     param(
         [Parameter(Mandatory)][string]$SQLServer,
-        [Parameter(Mandatory)][string]$SiteCode
+        [Parameter(Mandatory)][string]$SiteCode,
+        [bool]$TrustServerCertificate
     )
 
     $dbName = "CM_$SiteCode"
 
     try {
-        $result = Invoke-Sqlcmd -ServerInstance $SQLServer -Database $dbName -Query "SELECT 1 AS Test" -QueryTimeout 0 -ErrorAction Stop
+        $sqlArgs = New-HygieneSqlParameter -SQLServer $SQLServer -SiteCode $SiteCode -Query 'SELECT 1 AS Test' -TrustServerCertificate $TrustServerCertificate
+        $result = Invoke-Sqlcmd @sqlArgs
         if ($result.Test -eq 1) {
             Write-Log "SQL connection verified: $SQLServer / $dbName"
             return $true
@@ -335,7 +363,7 @@ function Get-DPHealth {
     $dps = Get-CMDistributionPoint -ErrorAction Stop
 
     # Get site system status via WMI
-    $sysStatus = Invoke-CMWmiQuery -Query "SELECT SiteSystem, Status FROM SMS_SiteSystemSummarizer WHERE Role = 'SMS Distribution Point'" -Option Fast -ErrorAction SilentlyContinue
+    $sysStatus = Invoke-CMWmiQuery -Query "SELECT SiteSystem, Status FROM SMS_SiteSystemSummarizer WHERE Role = 'SMS Distribution Point'" -Option Fast -ErrorAction Stop
 
     # SMS_SiteSystemSummarizer has one instance per storage object, so a DP
     # server can appear multiple times -- keep the worst (highest) status.
@@ -345,6 +373,9 @@ function Get-DPHealth {
             $name = ''
             if ($ss.SiteSystem -match '\\\\([^\\]+)\\?') {
                 $name = $Matches[1].ToUpper()
+            }
+            elseif ($ss.SiteSystem) {
+                $name = ([string]$ss.SiteSystem).Trim().ToUpper()
             }
             if ($name) {
                 $val = [int]$ss.Status
@@ -439,7 +470,8 @@ function Get-ClientHealthSummary {
     #>
     param(
         [Parameter(Mandatory)][string]$SQLServer,
-        [Parameter(Mandatory)][string]$SiteCode
+        [Parameter(Mandatory)][string]$SiteCode,
+        [bool]$TrustServerCertificate
     )
 
     Write-Log "Querying client health from SQL ($SQLServer)..."
@@ -447,7 +479,6 @@ function Get-ClientHealthSummary {
     # v_CH_ClientSummary has no HealthState or LastOnline column. Health
     # pass/fail comes from LastEvaluationHealthy (1 pass, 2 fail, 3/NULL
     # unknown) and the activity timestamp is LastActiveTime.
-    $dbName = "CM_$SiteCode"
     $query = @(
         "SELECT",
         "    sys.Name0 AS DeviceName,",
@@ -467,7 +498,8 @@ function Get-ClientHealthSummary {
     ) -join "`r`n"
 
     try {
-        $rows = Invoke-Sqlcmd -ServerInstance $SQLServer -Database $dbName -Query $query -QueryTimeout 0 -ErrorAction Stop
+        $sqlArgs = New-HygieneSqlParameter -SQLServer $SQLServer -SiteCode $SiteCode -Query $query -TrustServerCertificate $TrustServerCertificate
+        $rows = Invoke-Sqlcmd @sqlArgs
 
         $results = foreach ($r in $rows) {
             $healthVal = [int]$r.LastEvaluationHealthy
@@ -504,7 +536,7 @@ function Get-ClientHealthSummary {
     }
     catch {
         Write-Log "Client health SQL query failed: $_" -Level ERROR
-        return @()
+        throw
     }
 }
 
@@ -540,14 +572,14 @@ function Get-InactiveDevices {
     param(
         [Parameter(Mandatory)][string]$SQLServer,
         [Parameter(Mandatory)][string]$SiteCode,
-        [int]$ThresholdDays = 14
+        [int]$ThresholdDays = 14,
+        [bool]$TrustServerCertificate
     )
 
     Write-Log "Querying inactive devices (threshold: $ThresholdDays days)..."
 
     # v_CH_ClientSummary has no LastOnline column; LastActiveTime is the
     # activity timestamp. COALESCE covers clients that never sent a DDR.
-    $dbName = "CM_$SiteCode"
     $query = @(
         "SELECT",
         "    sys.Name0 AS DeviceName,",
@@ -559,19 +591,21 @@ function Get-InactiveDevices {
         "FROM v_CH_ClientSummary ch",
         "JOIN v_R_System sys ON ch.ResourceID = sys.ResourceID",
         "WHERE sys.Client0 = 1",
-        "  AND DATEDIFF(day, COALESCE(ch.LastDDR, ch.LastActiveTime), GETDATE()) > $ThresholdDays",
+        "  AND (DATEDIFF(day, COALESCE(ch.LastDDR, ch.LastActiveTime), GETDATE()) > $ThresholdDays",
+        "       OR COALESCE(ch.LastDDR, ch.LastActiveTime) IS NULL)",
         "ORDER BY DaysSinceContact DESC"
     ) -join "`r`n"
 
     try {
-        $rows = Invoke-Sqlcmd -ServerInstance $SQLServer -Database $dbName -Query $query -QueryTimeout 0 -ErrorAction Stop
+        $sqlArgs = New-HygieneSqlParameter -SQLServer $SQLServer -SiteCode $SiteCode -Query $query -TrustServerCertificate $TrustServerCertificate
+        $rows = Invoke-Sqlcmd @sqlArgs
 
         $results = foreach ($r in $rows) {
             [PSCustomObject]@{
                 DeviceName       = $r.DeviceName
                 LastOnlineTime   = $r.LastActiveTime
                 LastDDR          = $r.LastDDR
-                DaysSinceContact = [int]$r.DaysSinceContact
+                DaysSinceContact = $(if ($r.DaysSinceContact -is [System.DBNull] -or $null -eq $r.DaysSinceContact) { $null } else { [int]$r.DaysSinceContact })
                 OperatingSystem  = $r.OperatingSystem
                 ClientVersion    = $r.ClientVersion
             }
@@ -582,7 +616,7 @@ function Get-InactiveDevices {
     }
     catch {
         Write-Log "Inactive devices SQL query failed: $_" -Level ERROR
-        return @()
+        throw
     }
 }
 
@@ -649,7 +683,7 @@ function Get-SiteComponentHealth {
     }
     catch {
         Write-Log "Site component health query failed: $_" -Level ERROR
-        return @()
+        throw
     }
 }
 
@@ -667,6 +701,9 @@ function Get-SiteSystemHealth {
             $serverName = ''
             if ($s.SiteSystem -match '\\\\([^\\]+)\\?') {
                 $serverName = $Matches[1].ToUpper()
+            }
+            elseif ($s.SiteSystem) {
+                $serverName = ([string]$s.SiteSystem).Trim().ToUpper()
             }
 
             $statusText = switch ([int]$s.Status) {
@@ -692,7 +729,7 @@ function Get-SiteSystemHealth {
     }
     catch {
         Write-Log "Site system health query failed: $_" -Level ERROR
-        return @()
+        throw
     }
 }
 
@@ -767,7 +804,7 @@ function Add-MetricsHistoryEntry {
             SiteCritical       = if ($SiteCounts)       { [int]$SiteCounts.CriticalCount }           else { '' }
         }
 
-        $writeHeader = -not (Test-Path -LiteralPath $HistoryPath)
+        $writeHeader = -not (Test-Path -LiteralPath $HistoryPath) -or (Get-Item -LiteralPath $HistoryPath).Length -eq 0
         $csvLines = @($row | ConvertTo-Csv -NoTypeInformation)
         if ($writeHeader) {
             Set-Content -LiteralPath $HistoryPath -Value $csvLines -Encoding UTF8
@@ -819,6 +856,28 @@ function Get-MetricsHistory {
     catch {
         Write-Log "Failed to read metrics history: $_" -Level WARN
         return @()
+    }
+}
+
+function Get-MetricsSeries {
+    <#
+    .SYNOPSIS
+        Returns one metric's samples within the last N days, oldest first,
+        as T (timestamp) and V (value) pairs. A blank or nonnumeric value
+        is skipped.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$HistoryPath,
+        [Parameter(Mandatory)][string]$Column,
+        [int]$Days = 30
+    )
+
+    $value = 0.0
+    foreach ($r in @(Get-MetricsHistory -HistoryPath $HistoryPath -Days $Days)) {
+        $p = $r.PSObject.Properties[$Column]
+        if ($p -and [double]::TryParse([string]$p.Value, [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$value)) {
+            [PSCustomObject]@{ T = $r.TimestampValue; V = $value }
+        }
     }
 }
 
