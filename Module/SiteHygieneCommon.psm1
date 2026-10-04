@@ -1588,7 +1588,7 @@ function ConvertTo-HygRelationships {
     $notes = New-Object System.Collections.Generic.List[string]
 
     $nsDigest = 'http://schemas.microsoft.com/SystemCenterConfigurationManager/2009/AppMgmtDigest'
-    $nsRules  = 'https://schemas.microsoft.com/SystemsCenterConfigurationManager/2009/06/14/Rules'
+    $nsRules  = 'http://schemas.microsoft.com/SystemsCenterConfigurationManager/2009/06/14/Rules'
 
     $withXml = @($Applications | Where-Object { $_.NumberOfDeploymentTypes -gt 0 -and $_.SDMPackageXML })
 
@@ -1628,27 +1628,28 @@ function ConvertTo-HygRelationships {
                 }
             }
 
-            if ($app.IsSuperseding) {
-                foreach ($rule in $dtNode.SelectNodes('d:Supersedes/r:DeploymentTypeRule', $nsm)) {
-                    foreach ($intent in $rule.SelectNodes('.//r:DeploymentTypeIntentExpression', $nsm)) {
-                        $appRef = $intent.SelectSingleNode('r:DeploymentTypeApplicationReference', $nsm)
-                        if (-not $appRef) { continue }
-                        $refModel = '{0}/{1}' -f $appRef.GetAttribute('AuthoringScopeId'), $appRef.GetAttribute('LogicalName')
-                        $toApp = $null
-                        if ($modelToApp.ContainsKey($refModel)) { $toApp = $modelToApp[$refModel] }
+            # The XML is read for every application. IsSuperseding is not a
+            # gate: the site clears it when the superseded application is
+            # deleted, which is the broken reference SUP-01 reports.
+            foreach ($rule in $dtNode.SelectNodes('d:Supersedes/r:DeploymentTypeRule', $nsm)) {
+                foreach ($intent in $rule.SelectNodes('.//r:DeploymentTypeIntentExpression', $nsm)) {
+                    $appRef = $intent.SelectSingleNode('r:DeploymentTypeApplicationReference', $nsm)
+                    if (-not $appRef) { continue }
+                    $refModel = '{0}/{1}' -f $appRef.GetAttribute('AuthoringScopeId'), $appRef.GetAttribute('LogicalName')
+                    $toApp = $null
+                    if ($modelToApp.ContainsKey($refModel)) { $toApp = $modelToApp[$refModel] }
 
-                        $relationships.Add([pscustomobject]@{
-                            FromAppCIID     = [int]$app.CI_ID
-                            FromAppName     = [string]$app.Name
-                            FromDTName      = $dtTitle
-                            ToAppCIID       = if ($toApp) { [int]$toApp.CI_ID } else { 0 }
-                            ToAppName       = if ($toApp) { [string]$toApp.Name } else { "Unknown ($refModel)" }
-                            ToModelName     = $refModel
-                            ToAppExists     = ($null -ne $toApp)
-                            Kind            = 'Supersedence'
-                            DependencyState = ''
-                        })
-                    }
+                    $relationships.Add([pscustomobject]@{
+                        FromAppCIID     = [int]$app.CI_ID
+                        FromAppName     = [string]$app.Name
+                        FromDTName      = $dtTitle
+                        ToAppCIID       = if ($toApp) { [int]$toApp.CI_ID } else { 0 }
+                        ToAppName       = if ($toApp) { [string]$toApp.Name } else { "Unknown ($refModel)" }
+                        ToModelName     = $refModel
+                        ToAppExists     = ($null -ne $toApp)
+                        Kind            = 'Supersedence'
+                        DependencyState = ''
+                    })
                 }
             }
 

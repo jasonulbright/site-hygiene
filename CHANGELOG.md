@@ -2,12 +2,13 @@
 
 All notable changes to Site Hygiene are documented in this file.
 
-## [2026.09.29.0023] - 2026-09-29
+## [2026.10.03.0023] - 2026-10-03
 
-## Live views: 0 false zero counts when a read fails
+## Relationships: 1 of 1 broken supersedence detected on a live site, 0 before
 
 ### Fixes
 
+- Find supersedence and dependency relationships; earlier scans found none on a real site.
 - Keep a failed Live read out of the counts, history, and alerts.
 - List clients that have no contact on record as inactive.
 - Keep Trends open when the history holds a value that is not a number.
@@ -17,6 +18,10 @@ All notable changes to Site Hygiene are documented in this file.
 ### Features
 
 - Connect to a SQL Server with an untrusted certificate; on by default, set in Options.
+
+### Changed
+
+- Update the shared SuiteCommon module to 2026.10.02.0045.
 
 ## [2026.09.29.0022] - 2026-09-29
 
