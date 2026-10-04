@@ -23,10 +23,10 @@ BeforeAll {
             [string[]]$ContentLocations = @()
         )
         $d = 'http://schemas.microsoft.com/SystemCenterConfigurationManager/2009/AppMgmtDigest'
-        $r = 'https://schemas.microsoft.com/SystemsCenterConfigurationManager/2009/06/14/Rules'
+        $r = 'http://schemas.microsoft.com/SystemsCenterConfigurationManager/2009/06/14/Rules'
         $sup = foreach ($m in $SupersedesModels) {
             $scope, $logical = $m -split '/', 2
-            "<DeploymentTypeRule xmlns='$r'><DeploymentTypeIntentExpression><DeploymentTypeApplicationReference AuthoringScopeId='$scope' LogicalName='$logical'/></DeploymentTypeIntentExpression></DeploymentTypeRule>"
+            "<DeploymentTypeRule xmlns='$r'><DeploymentTypeExpression><Operator>Or</Operator><Operands><DeploymentTypeIntentExpression DesiredState='Prohibit'><DeploymentTypeApplicationReference AuthoringScopeId='$scope' LogicalName='$logical' Version='1'/><DeploymentTypeReference AuthoringScopeId='$scope' LogicalName='DeploymentType_Old' Version='1' Changeable='true'/></DeploymentTypeIntentExpression></Operands></DeploymentTypeExpression></DeploymentTypeRule>"
         }
         $dep = foreach ($x in $Dependencies) {
             $scope, $logical = $x.Model -split '/', 2
@@ -586,11 +586,19 @@ Describe 'ConvertTo-HygRelationships' {
         @($p.ParseNotes).Count | Should -Be 1
     }
 
-    It 'skips Supersedes blocks when the app is not flagged IsSuperseding' {
+    It 'reads a Supersedes block when the app is not flagged IsSuperseding' {
         $apps = @(
-            (New-HygRelApp -CI_ID 1 -Name 'Not Superseding' -Model 'ScopeId_T/Application_A' -IsSuperseding $false -Xml (New-HygAppXml -SupersedesModels @('ScopeId_T/Application_B')))
+            (New-HygRelApp -CI_ID 1 -Name 'Not Superseding' -Model 'ScopeId_T/Application_A' -IsSuperseding $false -Xml (New-HygAppXml -SupersedesModels @('ScopeId_T/Application_GONE')))
         )
-        @((ConvertTo-HygRelationships -Applications $apps).Relationships).Count | Should -Be 0
+        $rel = @((ConvertTo-HygRelationships -Applications $apps).Relationships)
+        $rel.Count | Should -Be 1
+        $rel[0].ToAppExists | Should -BeFalse
+    }
+
+    It 'reads the rules namespace that the site writes' {
+        (New-HygAppXml -SupersedesModels @('S/B')) | Should -Match "xmlns='http://schemas\.microsoft\.com/SystemsCenterConfigurationManager/2009/06/14/Rules'" -Because 'a real application digest uses http, and a parser keyed to any other namespace finds no relationship'
+        $apps = @((New-HygRelApp -CI_ID 1 -Name 'New' -Model 'S/A' -Xml (New-HygAppXml -SupersedesModels @('S/B') -Dependencies @(@{ Model = 'S/C'; State = 'Required' }))))
+        @((ConvertTo-HygRelationships -Applications $apps).Relationships).Kind | Should -Be @('Supersedence', 'Dependency')
     }
 }
 
