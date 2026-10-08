@@ -2,6 +2,12 @@
 
 All notable changes to Site Hygiene are documented in this file.
 
+## [2026.10.07.0025] - 2026-10-07
+
+### Changed
+
+- Sync the shared SuiteCommon module to 2026.10.07.0049.
+
 ## [2026.10.03.0024] - 2026-10-03
 
 ## Relationships: 1 of 1 broken supersedence detected on a live site, 0 before
