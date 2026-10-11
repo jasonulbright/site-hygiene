@@ -25,7 +25,7 @@
 
 .NOTES
     ScriptName : start-sitehygiene.ps1
-    Version    : 2026.10.07.0025
+    Version    : 2026.10.11.0026
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', '', Justification='PS51-WPF-001..003: $global: survives closure scope-strip.')]
@@ -2152,5 +2152,7 @@ $window.Add_Loaded({
     }
 })
 
+# Suite update notice: one shared daily lookup across the suite tools; the launcher installs.
+$null = Start-SuiteUpdateNotice -Path $PSScriptRoot -OnResult { param($u) if ($u.Available) { Add-LogLine ('Suite update available: v{0}. Update from the AppPackager Suite Launcher.' -f $u.Latest) } }
 [void]$window.ShowDialog()
 try { Stop-Transcript | Out-Null } catch { $null = $_ }
