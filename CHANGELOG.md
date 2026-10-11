@@ -1,5 +1,13 @@
 # Changelog
 
+## [2026.10.11.0027] - 2026-10-11
+
+## 1 window fix
+
+### Fixed
+
+- Double-click the title bar to maximize or restore the window.
+
 ## [2026.10.11.0026] - 2026-10-11
 
 ## 1 suite update notice
