@@ -15,6 +15,20 @@
 BeforeAll {
     Import-Module "$PSScriptRoot\..\Module\SiteHygieneCommon.psd1" -Force -DisableNameChecking
 
+    function Remove-GlobalStub {
+        # A stub set through function:global: can survive the global removal
+        # as a copy in the calling session's scope, where it shadows the real
+        # command for every suite run after this one in the same process.
+        param([Parameter(Mandatory)][string]$Name)
+        Remove-Item -Path "function:global:$Name" -ErrorAction SilentlyContinue
+        # function:<name> resolves through the scope chain, so the removal
+        # reaches the copy wherever it sits; the loop guards against several.
+        $guard = 0
+        while ($guard++ -lt 8 -and (Get-Command -Name $Name -CommandType Function -ErrorAction SilentlyContinue)) {
+            Remove-Item -Path "function:$Name" -Force -ErrorAction SilentlyContinue
+        }
+    }
+
     function New-HygAppXml {
         param(
             [string]$DTTitle = 'Install',
@@ -1396,7 +1410,7 @@ Describe 'Scoped prefetch' {
         foreach ($s in $stubs) { Set-Item -Path "function:global:$s" -Value { [CmdletBinding()] param($Query, $Option, $Id, [switch]$Fast) } }
     }
     AfterAll {
-        foreach ($s in $stubs) { Remove-Item -Path "function:global:$s" -ErrorAction SilentlyContinue }
+        foreach ($s in $stubs) { Remove-GlobalStub -Name $s }
     }
     BeforeEach {
         # A direct WMI connection needs remote WMI rights a read-only
@@ -1732,7 +1746,7 @@ Describe 'Distribution point, compliance, driver, security, and maintenance wind
             @($data.MaintenanceWindows).Count | Should -Be 2
             $data.NotCollectedDatasets | Should -Contain 'Collections'
         }
-        finally { foreach ($s in $stubs) { Remove-Item -Path "function:global:$s" -ErrorAction SilentlyContinue } }
+        finally { foreach ($s in $stubs) { Remove-GlobalStub -Name $s } }
     }
 
     It 'reads devices with one six-column query against the All Systems member class' {
@@ -1749,7 +1763,7 @@ Describe 'Distribution point, compliance, driver, security, and maintenance wind
             $data.Devices[0].SMBIOSGUID | Should -Be 'A1'
             Should -Invoke -ModuleName SiteHygieneCommon Invoke-CMWmiQuery -Times 1 -Exactly -ParameterFilter { $Option -eq 'Fast' -and $Query -notmatch 'SELECT\s+\*' }
         }
-        finally { foreach ($s in $stubs) { Remove-Item -Path "function:global:$s" -ErrorAction SilentlyContinue } }
+        finally { foreach ($s in $stubs) { Remove-GlobalStub -Name $s } }
     }
 
     It 'reads task sequence references with one query and no per-sequence read' {
@@ -1771,7 +1785,7 @@ Describe 'Distribution point, compliance, driver, security, and maintenance wind
             @(($data.TaskSequences | Where-Object PackageID -eq 'MCM00009').ReferencedIDs).Count | Should -Be 0
             Should -Invoke -ModuleName SiteHygieneCommon Get-CMTaskSequence -Times 1 -Exactly -ParameterFilter { $Fast }
         }
-        finally { foreach ($s in $stubs) { Remove-Item -Path "function:global:$s" -ErrorAction SilentlyContinue } }
+        finally { foreach ($s in $stubs) { Remove-GlobalStub -Name $s } }
     }
 
     It 'fails the task sequence dataset when the reference query fails' {
@@ -1784,7 +1798,7 @@ Describe 'Distribution point, compliance, driver, security, and maintenance wind
             $data.FailedDatasets | Should -Contain 'TaskSequences'
             @($data.TaskSequences).Count | Should -Be 0
         }
-        finally { foreach ($s in $stubs) { Remove-Item -Path "function:global:$s" -ErrorAction SilentlyContinue } }
+        finally { foreach ($s in $stubs) { Remove-GlobalStub -Name $s } }
     }
 }
 
@@ -1840,7 +1854,7 @@ Describe 'APP-05 old application revisions' {
             $data.AppRevisions[0].Revision | Should -Be 1
             Should -Invoke -ModuleName SiteHygieneCommon Invoke-CMWmiQuery -Times 1 -Exactly -ParameterFilter { $Option -eq 'Fast' -and $Query -like '*FROM SMS_Application WHERE IsLatest = 0' }
         }
-        finally { foreach ($s in $stubs) { Remove-Item -Path "function:global:$s" -ErrorAction SilentlyContinue } }
+        finally { foreach ($s in $stubs) { Remove-GlobalStub -Name $s } }
     }
 }
 
@@ -1901,7 +1915,7 @@ Describe 'Task sequence application checks (TSQ-03, TSQ-04)' {
             ($data.TsAppDefinitions | Where-Object ModelName -like '*_off').AutoInstall | Should -BeFalse
             Should -Invoke -ModuleName SiteHygieneCommon Get-CMApplication -Times 2 -Exactly
         }
-        finally { foreach ($s in $stubs) { Remove-Item -Path "function:global:$s" -ErrorAction SilentlyContinue } }
+        finally { foreach ($s in $stubs) { Remove-GlobalStub -Name $s } }
     }
 }
 
@@ -1932,7 +1946,7 @@ Describe 'Provider pacing' {
         foreach ($s in $stubs) { Set-Item -Path "function:global:$s" -Value { [CmdletBinding()] param($Query, $Option, $Id, [switch]$Fast) } }
     }
     AfterAll {
-        foreach ($s in $stubs) { Remove-Item -Path "function:global:$s" -ErrorAction SilentlyContinue }
+        foreach ($s in $stubs) { Remove-GlobalStub -Name $s }
     }
     BeforeEach {
         Mock -ModuleName SiteHygieneCommon Start-Sleep { }
@@ -1964,7 +1978,7 @@ Describe 'Task sequence application definitions from the relationship pass' {
         $d = 'http://schemas.microsoft.com/SystemCenterConfigurationManager/2009/AppMgmtDigest'
     }
     AfterAll {
-        foreach ($s in $stubs) { Remove-Item -Path "function:global:$s" -ErrorAction SilentlyContinue }
+        foreach ($s in $stubs) { Remove-GlobalStub -Name $s }
     }
     BeforeEach {
         Mock -ModuleName SiteHygieneCommon Invoke-CMWmiQuery { }
@@ -2247,7 +2261,7 @@ Describe 'Live provider reads' {
         }
     }
     AfterAll {
-        foreach ($s in 'Get-CimInstance', 'Invoke-CMWmiQuery', 'Get-CMDistributionPoint') { Remove-Item -Path "function:global:$s" -ErrorAction SilentlyContinue }
+        foreach ($s in 'Get-CimInstance', 'Invoke-CMWmiQuery', 'Get-CMDistributionPoint') { Remove-GlobalStub -Name $s }
     }
 
     It 'keeps only content with a failed or in-progress distribution point' {
@@ -2312,7 +2326,7 @@ Describe 'Live read failures and edge values' {
         }
     }
     AfterAll {
-        foreach ($s in 'Invoke-CMWmiQuery', 'Get-CMDistributionPoint', 'Invoke-Sqlcmd') { Remove-Item -Path "function:global:$s" -ErrorAction SilentlyContinue }
+        foreach ($s in 'Invoke-CMWmiQuery', 'Get-CMDistributionPoint', 'Invoke-Sqlcmd') { Remove-GlobalStub -Name $s }
     }
     BeforeEach { $script:wmiMode = 'ok'; $script:sqlMode = 'ok' }
 
@@ -2366,7 +2380,7 @@ Describe 'Metrics history resilience' {
 
 
 Describe 'SQL certificate trust' {
-    AfterEach { Remove-Item -Path function:global:Invoke-Sqlcmd -ErrorAction SilentlyContinue }
+    AfterEach { Remove-GlobalStub -Name Invoke-Sqlcmd }
 
     It 'passes TrustServerCertificate when the setting is on and the cmdlet supports it' {
         Set-Item -Path function:global:Invoke-Sqlcmd -Value {
