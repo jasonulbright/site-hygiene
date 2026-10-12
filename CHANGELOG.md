@@ -1,5 +1,13 @@
 # Changelog
 
+## [2026.10.12.0028] - 2026-10-12
+
+## 1 PowerShell 7 fix
+
+### Fixed
+
+- Keep the PowerShell 7 module roots when the tool runs under PowerShell 7.
+
 ## [2026.10.11.0027] - 2026-10-11
 
 ## 1 window fix
