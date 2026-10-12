@@ -1,5 +1,13 @@
 # Changelog
 
+## [2026.10.12.0029] - 2026-10-12
+
+## 1 fix
+
+### Fixed
+
+- Various bug fixes.
+
 ## [2026.10.12.0028] - 2026-10-12
 
 ## 1 PowerShell 7 fix
