@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Live monitoring functions for Site Hygiene, nested under
     SiteHygieneCommon.
