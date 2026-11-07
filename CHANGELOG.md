@@ -1,5 +1,27 @@
 # Changelog
 
+## [2026.11.07.0030] - 2026-11-07
+
+## 11 fixes and a test suite
+
+### Fixed
+
+- The window opens at 1024 pixels wide. The minimum width was 1100.
+- The hint text in the Options dialog meets the 4.5:1 contrast in the light theme.
+- CSV and HTML export of the Live views and of Relationships works. It failed with a binding error.
+- Suppressed findings stay suppressed after a restart. The suppression file was never read.
+- The HTML export of the Live tables encodes markup in names.
+- Fix scripts keep a name with a curly apostrophe inside one literal. A name could end the quoted text.
+- Fix scripts select an object by its exact name. The characters `[ ] * ?` in a name no longer act as a pattern.
+- Fix guidance stays on one line when a name holds a line break. A name could add a runnable line.
+- REL-01, MNT-01 and MNT-02 show their fix as guidance. Their scripts held placeholders (`<manufacturer>`, `<site>`) that Run Fix would have sent to the site.
+- COL-03 guidance names `-CollectionId`. The cmdlet has no `-Id`.
+- An unknown collection reference type shows as `type<n>`. It showed `type0`.
+
+### Added
+
+- `Invoke-Checks.ps1`, the CI workflow, and a Pester suite for the module, the window, the script logic and the lab write path (`Tests/TESTPLAN.md`).
+- `Invoke-HygieneFix` supports `-WhatIf`.
 ## [2026.10.12.0029] - 2026-10-12
 
 ## 1 fix

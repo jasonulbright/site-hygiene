@@ -25,7 +25,7 @@
 
 .NOTES
     ScriptName : start-sitehygiene.ps1
-    Version    : 2026.10.12.0029
+    Version    : 2026.11.07.0030
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', '', Justification='PS51-WPF-001..003: $global: survives closure scope-strip.')]
@@ -116,10 +116,18 @@ $global:LastScanPath = Join-Path $PSScriptRoot 'SiteHygiene.lastscan.json'
 function Get-ShSuppressedKeys {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Returns the full suppression key set by design.')]
     param()
-    $stored = Read-SuiteSettings -Path $global:SuppressPath -Defaults @{ Keys = @() }
     $set = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-    foreach ($k in @($stored.Keys)) {
-        if (-not [string]::IsNullOrWhiteSpace([string]$k)) { [void]$set.Add([string]$k) }
+    # Read-SuiteSettings cannot return a setting named Keys: it loops over $settings.Keys, and a hashtable that
+    # holds an entry named Keys answers with that entry, so the loop never runs and the file is never read. The
+    # file is read here instead, and an unreadable file counts as no suppressions.
+    if (Test-Path -LiteralPath $global:SuppressPath) {
+        try {
+            $doc = Get-Content -LiteralPath $global:SuppressPath -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+            foreach ($k in @($doc.Keys)) {
+                if (-not [string]::IsNullOrWhiteSpace([string]$k)) { [void]$set.Add([string]$k) }
+            }
+        }
+        catch { Write-Log ('Suppression file unreadable ({0}): {1}' -f $global:SuppressPath, $_.Exception.Message) -Level WARN }
     }
     # Comma-wrapped: a bare return would unroll the HashSet into strings.
     return ,$set
@@ -811,7 +819,7 @@ $btnRunFix.Add_Click({
             }
             $results = @{}
             foreach ($f in @($Findings)) {
-                $results[[string]$f.SuppressKey] = Invoke-HygieneFix -Finding $f
+                $results[[string]$f.SuppressKey] = Invoke-HygieneFix -Finding $f -Confirm:$false
             }
             $State.Results = $results
         }
@@ -1748,14 +1756,15 @@ function ConvertTo-DataTableForExport {
             if ($p.Name -ne 'StatusGlyph') { [void]$dt.Columns.Add($p.Name, [string]) }
         }
     } else {
-        return $dt
+        return ,$dt
     }
     foreach ($row in @($Rows)) {
         $vals = @()
         foreach ($col in $dt.Columns) { $vals += [string]$row.PSObject.Properties[$col.ColumnName].Value }
         [void]$dt.Rows.Add($vals)
     }
-    return $dt
+    # The comma keeps PowerShell from unrolling the table into its rows; the export functions take the table itself.
+    return ,$dt
 }
 
 function Get-ActiveExportInfo {
@@ -1893,7 +1902,7 @@ function Show-OptionsDialog {
             </Style>
             <Style x:Key="OptHint" TargetType="TextBlock">
                 <Setter Property="FontSize" Value="10"/>
-                <Setter Property="Foreground" Value="{DynamicResource MahApps.Brushes.Gray3}"/>
+                <Setter Property="Foreground" Value="{DynamicResource MahApps.Brushes.Gray1}"/>
                 <Setter Property="TextWrapping" Value="Wrap"/>
                 <Setter Property="Margin" Value="0,2,0,0"/>
             </Style>
