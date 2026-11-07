@@ -558,17 +558,23 @@ function Read-SuiteSettings {
         [Parameter(Mandatory)][hashtable]$Defaults
     )
 
+    # Never use .Keys / .Values / .Count on a settings hashtable: a setting
+    # with that name makes the dot access return the setting's value, not the
+    # collection. GetEnumerator() and the indexer are not shadowed.
     $settings = @{}
-    foreach ($k in $Defaults.Keys) { $settings[$k] = $Defaults[$k] }
+    foreach ($entry in $Defaults.GetEnumerator()) { $settings[$entry.Key] = $entry.Value }
 
     if (Test-Path -LiteralPath $Path) {
         try {
             # -Encoding UTF8: on 5.1 the default decoder mangles non-ASCII in
             # BOM-less UTF-8 files (hand-edited settings) without any error.
             $loaded = Get-Content -LiteralPath $Path -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
-            foreach ($k in @($settings.Keys)) {
-                $val = $loaded.$k
-                if ($null -ne $val) { $settings[$k] = $val }
+            # PSObject.Properties reads only real JSON properties. A dot access
+            # such as $loaded.Count returns 1 on PowerShell 7 when the file has
+            # no such property.
+            foreach ($k in @($Defaults.GetEnumerator() | ForEach-Object { $_.Key })) {
+                $prop = $loaded.PSObject.Properties[$k]
+                if ($prop -and $null -ne $prop.Value) { $settings[$k] = $prop.Value }
             }
         } catch { $null = $_ }
     }
@@ -1583,6 +1589,9 @@ function Show-CollectionPickerDialog {
 
     & $rebuildTree ''
 
+    # The highlighted collection is a candidate only. It becomes the result
+    # when ShowDialog returns $true; the Cancel button, the close button and
+    # Alt+F4 all leave DialogResult unset or $false.
     $script:PickerResult = $null
     $treePicker.Add_SelectedItemChanged({
         $node = $treePicker.SelectedItem
@@ -1604,13 +1613,15 @@ function Show-CollectionPickerDialog {
         }
     })
     $btnCancel.Add_Click({
-        $script:PickerResult = $null
         $dlg.DialogResult = $false
         $dlg.Close()
     })
 
-    [void]$dlg.ShowDialog()
-    return $script:PickerResult
+    $accepted = $dlg.ShowDialog()
+    $picked = $script:PickerResult
+    $script:PickerResult = $null
+    if ($accepted -eq $true) { return $picked }
+    return $null
 }
 
 # =============================================================================
@@ -1853,6 +1864,28 @@ function Get-SuiteUpdateDownload {
     }
 }
 
+function ConvertTo-SuiteNativeArgument {
+    # Start-Process joins -ArgumentList elements with single spaces and adds no
+    # quotes, so a path holding a space reaches the child as several arguments.
+    # This applies the CommandLineToArgvW rules: backslashes double only in
+    # front of a quote, and a trailing run doubles before the closing quote.
+    param([Parameter(Mandatory)][AllowEmptyString()][string]$Value)
+    $slash = [char]92
+    $builder = New-Object System.Text.StringBuilder
+    [void]$builder.Append('"')
+    $backslashes = 0
+    foreach ($ch in $Value.ToCharArray()) {
+        if ($ch -eq [char]'\') { $backslashes++; continue }
+        if ($ch -eq [char]'"') { [void]$builder.Append($slash, ($backslashes * 2 + 1)) }
+        else { [void]$builder.Append($slash, $backslashes) }
+        $backslashes = 0
+        [void]$builder.Append($ch)
+    }
+    [void]$builder.Append($slash, ($backslashes * 2))
+    [void]$builder.Append('"')
+    return $builder.ToString()
+}
+
 function Start-SuiteUpdateInstaller {
     <#
     .SYNOPSIS
@@ -1876,12 +1909,12 @@ function Start-SuiteUpdateInstaller {
         ('$p = Start-Process -FilePath ' + "'" + $quotedInstaller + "'" + ' -ArgumentList ' + "'/S'" + ' -PassThru -Wait')
     )
     if ($Relaunch) {
-        $quotedRelaunch = $Relaunch.Replace("'", "''")
+        $quotedRelaunch = (ConvertTo-SuiteNativeArgument -Value $Relaunch).Replace("'", "''")
         $lines += ('if ($p.ExitCode -eq 0) { Start-Process -FilePath ' + "'powershell.exe'" + ' -ArgumentList ' + "'-NoProfile','-ExecutionPolicy','Bypass','-File','" + $quotedRelaunch + "'" + ' }')
     }
     $bootstrap = Join-Path ([IO.Path]::GetTempPath()) ('suite-update-' + [guid]::NewGuid().ToString('N') + '.ps1')
     Set-Content -LiteralPath $bootstrap -Value ($lines -join "`r`n") -Encoding UTF8
-    Start-Process -FilePath 'powershell.exe' -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', $bootstrap | Out-Null
+    Start-Process -FilePath 'powershell.exe' -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', (ConvertTo-SuiteNativeArgument -Value $bootstrap) | Out-Null
     return $bootstrap
 }
 

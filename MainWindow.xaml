@@ -4,7 +4,7 @@
     xmlns:Controls="clr-namespace:MahApps.Metro.Controls;assembly=MahApps.Metro"
     Title="Site Hygiene"
     Width="1400" Height="860"
-    MinWidth="1100" MinHeight="680"
+    MinWidth="1024" MinHeight="680"
     WindowStartupLocation="CenterScreen"
     TitleCharacterCasing="Normal"
     GlowBrush="{DynamicResource MahApps.Brushes.Accent}"
@@ -253,12 +253,12 @@
 
             <!-- Action bar. The scan buttons and filters show on the Scan views, the
                  refresh buttons and status filter on the Live views. -->
-            <Border Grid.Row="1" Padding="16,10,16,10">
+            <Border Grid.Row="1" Padding="12,10,12,10">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*" MinWidth="60"/>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
@@ -280,7 +280,7 @@
                             Grid.Column="0"
                             Content="Refresh All"
                             Style="{StaticResource SquareInlineButtonStyle}"
-                            MinWidth="120"
+                            MinWidth="90"
                             Visibility="Collapsed"
                             ToolTip="Refresh every live area (deployments, content, DPs, clients, inactive devices, site components)"/>
 
@@ -288,7 +288,7 @@
                             Grid.Column="1"
                             Content="Pause Auto-Refresh"
                             Style="{StaticResource SquareInlineButtonStyle}"
-                            MinWidth="160"
+                            MinWidth="140"
                             Visibility="Collapsed"
                             ToolTip="Pause / resume the auto-refresh timer"/>
 
@@ -362,7 +362,7 @@
 
                     <ComboBox x:Name="cboStatus"
                               Grid.Column="7"
-                              Width="160"
+                              Width="130"
                               Margin="0,0,8,0"
                               FontSize="12"
                               Visibility="Collapsed"

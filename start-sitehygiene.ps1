@@ -25,7 +25,7 @@
 
 .NOTES
     ScriptName : start-sitehygiene.ps1
-    Version    : 2026.11.07.0030
+    Version    : 2026.11.07.0031
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', '', Justification='PS51-WPF-001..003: $global: survives closure scope-strip.')]
@@ -118,7 +118,8 @@ function Get-ShSuppressedKeys {
     param()
     $stored = Read-SuiteSettings -Path $global:SuppressPath -Defaults @{ Keys = @() }
     $set = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-    foreach ($k in @($stored.Keys)) {
+    # The indexer, not .Keys: the settings hashtable holds an entry named Keys.
+    foreach ($k in @($stored['Keys'])) {
         if (-not [string]::IsNullOrWhiteSpace([string]$k)) { [void]$set.Add([string]$k) }
     }
     # Comma-wrapped: a bare return would unroll the HashSet into strings.
@@ -811,7 +812,7 @@ $btnRunFix.Add_Click({
             }
             $results = @{}
             foreach ($f in @($Findings)) {
-                $results[[string]$f.SuppressKey] = Invoke-HygieneFix -Finding $f
+                $results[[string]$f.SuppressKey] = Invoke-HygieneFix -Finding $f -Confirm:$false
             }
             $State.Results = $results
         }
@@ -1748,14 +1749,15 @@ function ConvertTo-DataTableForExport {
             if ($p.Name -ne 'StatusGlyph') { [void]$dt.Columns.Add($p.Name, [string]) }
         }
     } else {
-        return $dt
+        return ,$dt
     }
     foreach ($row in @($Rows)) {
         $vals = @()
         foreach ($col in $dt.Columns) { $vals += [string]$row.PSObject.Properties[$col.ColumnName].Value }
         [void]$dt.Rows.Add($vals)
     }
-    return $dt
+    # The comma keeps PowerShell from unrolling the table into its rows; the export functions take the table itself.
+    return ,$dt
 }
 
 function Get-ActiveExportInfo {
@@ -1893,7 +1895,7 @@ function Show-OptionsDialog {
             </Style>
             <Style x:Key="OptHint" TargetType="TextBlock">
                 <Setter Property="FontSize" Value="10"/>
-                <Setter Property="Foreground" Value="{DynamicResource MahApps.Brushes.Gray3}"/>
+                <Setter Property="Foreground" Value="{DynamicResource MahApps.Brushes.Gray1}"/>
                 <Setter Property="TextWrapping" Value="Wrap"/>
                 <Setter Property="Margin" Value="0,2,0,0"/>
             </Style>
