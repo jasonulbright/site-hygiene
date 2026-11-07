@@ -43,6 +43,22 @@ Describe 'Test-WindowTestsAllowed' {
     }
 }
 
+Describe 'Test-WindowTestsAllowed signature' {
+    It 'has no ComputerName parameter' {
+        (Get-Command Test-WindowTestsAllowed).Parameters.ContainsKey('ComputerName') | Should -BeFalse
+    }
+
+    It 'has only the OptIn parameter of its own' {
+        $own = @((Get-Command Test-WindowTestsAllowed).Parameters.Keys | Where-Object { $_ -notin [System.Management.Automation.PSCmdlet]::CommonParameters })
+        $own | Should -Be @('OptIn')
+    }
+
+    It 'decides on the opt-in only' {
+        (Test-WindowTestsAllowed -OptIn '1').Allowed | Should -BeTrue
+        (Test-WindowTestsAllowed -OptIn '0').Allowed | Should -BeFalse
+    }
+}
+
 Describe 'Window test files' {
     It 'uses the guard in <Name>, which can open a window' -ForEach @(
         Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.Tests.ps1' -File |
