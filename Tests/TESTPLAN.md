@@ -4,8 +4,8 @@ Measured 2026-11-07 with `Invoke-Checks.ps1` (Pester 5.7.1, PSScriptAnalyzer 1.2
 
 | | Before | After |
 |---|---|---|
-| Tests | 181 | 850 on Windows PowerShell 5.1; 847 on PowerShell 7 (96 skip on 7: the contract tests need the ConfigMgr console) |
-| Module coverage | 81.4% (3016 of 3705 commands) | 98.3% of 3734 commands |
+| Tests | 181 | 876 as run by CI on both hosts (780 pass, 96 skip: the contract tests need the ConfigMgr console and run on a machine that has it) |
+| Module coverage | 81.4% (3016 of 3705 commands) | 98.3% of 3735 commands |
 | Lab steps | none | 22 (`Tests/Lab`) |
 
 Run: `.\Invoke-Checks.ps1` (lint, tests, coverage floor 80%). It runs in CI on both hosts (`.github/workflows/checks.yml`).
