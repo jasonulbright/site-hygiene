@@ -49,9 +49,10 @@ BeforeAll {
                 }
             }
             else {
-                $cmd = Get-Command $name -ErrorAction SilentlyContinue
-                # Only functions of SuiteCommon are checked here. Cmdlets are checked by the ConfigMgr contract test.
-                if (-not $cmd -or $cmd.CommandType -ne 'Function' -or $cmd.Source -ne 'SuiteCommon') { continue }
+                # Looked up in SuiteCommon itself, so an alias or a function of another module with the same name cannot hide the call.
+                # Cmdlets are checked by the ConfigMgr contract test.
+                $cmd = Get-Command -Name $name -Module SuiteCommon -CommandType Function -ErrorAction SilentlyContinue | Select-Object -First 1
+                if (-not $cmd) { continue }
                 $params = @($cmd.Parameters.Values | ForEach-Object { $_.Name; $_.Aliases })
             }
             foreach ($p in $named) {

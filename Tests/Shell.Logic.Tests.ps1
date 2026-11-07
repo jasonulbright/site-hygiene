@@ -535,15 +535,16 @@ Describe 'Export' {
         foreach ($v in 'Deployments', 'Content', 'DPs', 'Clients', 'Inactive', 'Site') { foreach ($x in 'csv', 'html') { @{ View = $v; Extension = $x } } }
     ) {
         $script:ActiveView = $View
-        $rows = @([PSCustomObject]@{ DeploymentName = 'A'; ContentName = 'A'; DPName = 'A'; DeviceName = 'A'; Name = 'A' }, [PSCustomObject]@{ DeploymentName = 'B'; ContentName = 'B'; DPName = 'B'; DeviceName = 'B'; Name = 'B' })
+        $rows = @([PSCustomObject]@{ DeploymentName = 'RowAlpha'; ContentName = 'RowAlpha'; DPName = 'RowAlpha'; DeviceName = 'RowAlpha'; Name = 'RowAlpha' }, [PSCustomObject]@{ DeploymentName = 'RowBeta'; ContentName = 'RowBeta'; DPName = 'RowBeta'; DeviceName = 'RowBeta'; Name = 'RowBeta' })
         $gridDeploy = [PSCustomObject]@{ ItemsSource = $rows }; $gridContent = $gridDeploy; $gridDPs = $gridDeploy; $gridClients = $gridDeploy; $gridInactive = $gridDeploy; $gridSite = $gridDeploy
         $global:Out = Join-Path $TestDrive ('live-{0}.{1}' -f $View, $Extension)
         Mock Show-ExportSaveDialog { $global:Out }
         Invoke-Export -Extension $Extension
         Test-Path -LiteralPath $global:Out | Should -BeTrue
         $text = [System.IO.File]::ReadAllText($global:Out)
-        $text | Should -BeLike '*A*'
-        $text | Should -BeLike '*B*'
+        $body = if ($Extension -eq 'html') { [regex]::Match($text, '(?s)<tbody>(.*)</tbody>').Groups[1].Value } else { $text }
+        $body | Should -Match 'RowAlpha'
+        $body | Should -Match 'RowBeta'
         $txtLog.Text | Should -BeLike ('*Exported {0}: *' -f $Extension.ToUpperInvariant())
     }
 

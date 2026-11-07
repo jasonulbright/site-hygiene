@@ -157,6 +157,11 @@ function New-HygieneFinding {
     <#
     .SYNOPSIS
         Uniform finding object every check returns.
+
+    .DESCRIPTION
+        A FixScript that starts with a comment is guidance for the operator, never a script to run. Its line
+        breaks are replaced with spaces, so a name from the site cannot add a line that Run Fix would execute.
+        A script that Run Fix may execute starts with its command. Put a comment after the command, not before.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification='Constructs an in-memory finding object; changes no system state.')]
     param(
@@ -2613,7 +2618,7 @@ function Test-HygMaintenanceWindowExpired {
             -ObjectType 'MaintenanceWindow' -ObjectId ("{0}|{1}" -f $w.CollectionID, $w.Name) -ObjectName ("{0} on {1}" -f $w.Name, $colName) `
             -Evidence ("The one-time maintenance window ended {0:yyyy-MM-dd HH:mm} and never recurs. A collection with any maintenance window, including an expired one, blocks required deployments outside a window." -f $end) `
             -Recommendation 'Delete the expired window. If the collection needs no window at all, delete every window on it.' `
-            -FixScript ("Remove-CMMaintenanceWindow -CollectionId '{0}' -MaintenanceWindowName '{1}' -Force" -f (ConvertTo-HygQuotedLiteral $w.CollectionID), (ConvertTo-HygQuotedLiteral $w.Name))
+            -FixScript ("Remove-CMMaintenanceWindow -CollectionId '{0}' -MaintenanceWindowName '{1}' -DisableWildcardHandling -Force" -f (ConvertTo-HygQuotedLiteral $w.CollectionID), (ConvertTo-HygQuotedLiteral $w.Name))
     }
 }
 
@@ -2927,9 +2932,18 @@ function Invoke-HygieneFix {
         # script at the first error of a ConfigMgr cmdlet. The error variable also catches an error that
         # a command writes without stopping, so no error passes as a success.
         $ErrorActionPreference = 'Stop'
-        $fixErrors = $null
-        $output = Invoke-Command -ScriptBlock ([scriptblock]::Create($fixScript)) -ErrorVariable fixErrors
-        if (@($fixErrors).Count -gt 0) { throw @($fixErrors)[0] }
+        # The script runs one top-level statement at a time. After each statement the error list is checked, so
+        # the first error ends the run even when a command carries -ErrorAction Continue or writes an error
+        # without stopping. No later statement runs.
+        $parseErrors = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseInput($fixScript, [ref]$null, [ref]$parseErrors)
+        if (@($parseErrors).Count -gt 0) { throw ('The fix script does not parse: {0}' -f @($parseErrors)[0].Message) }
+        $output = @()
+        foreach ($statement in @($ast.EndBlock.Statements)) {
+            $fixErrors = $null
+            $output += @(Invoke-Command -ScriptBlock ([scriptblock]::Create($statement.Extent.Text)) -ErrorVariable fixErrors)
+            if (@($fixErrors).Count -gt 0) { throw @($fixErrors)[0] }
+        }
         $text = (@($output) | Out-String).Trim()
         Write-Log ("Fix succeeded [{0}] {1}" -f $Finding.CheckId, $Finding.ObjectName)
         return [pscustomobject]@{ Success = $true; Output = $text; ErrorMessage = '' }

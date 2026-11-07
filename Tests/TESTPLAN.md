@@ -39,11 +39,13 @@ Each defect has a test that failed on the old code (the old module, script and X
 4. REL-01, MNT-01 and MNT-02 had runnable fix scripts with placeholders (`<manufacturer>`, `<site>`). Run Fix would have sent the placeholder to the site. Fixed: MNT-01 runs `Set-CMSiteMaintenanceTask -Name ... -Enabled $true -DisableWildcardHandling` (proven in the lab). MNT-02 (needs a backup destination) and REL-01 (the manufacturer name is not in the site data) are guidance only; their finding text says why.
 5. A curly apostrophe in a name ended the quoted name in a fix script. Fixed: every quote character is doubled.
 6. A line break in a name could add a runnable line to display-only guidance. Fixed: guidance is kept on one line.
-7. A `[ ] * ?` in a name acted as a pattern in the fix scripts that select by name. Fixed: `-DisableWildcardHandling`.
+7. A `[ ] * ?` in a name acted as a pattern in the fix scripts that select by name (applications, deployments, automatic deployment rules, maintenance windows). Fixed: `-DisableWildcardHandling`.
 8. The HTML export of the Live tables did not encode markup. Fixed.
 9. An unknown collection reference type showed as `type0` (`$_` inside a `switch`). Fixed.
 10. Suppressed findings were never read back after a restart: `Read-SuiteSettings` could not return a setting named `Keys`. Fixed in SuiteCommon 2026.11.07.0075, now vendored here. The app always wrote and reads the name `Keys` in `SiteHygiene.suppressions.json`, so there is no old data under another name and no migration; tests read files in the earlier format.
-11. CSV and HTML export of every Live view and of Relationships failed: the data table was unrolled into rows. Fixed.
+11. Run Fix did not stop at the first error when a command said `-ErrorAction Continue` or wrote an error without stopping. Fixed: the script runs one statement at a time and the error list is checked after each.
+12. CSV export of an empty table wrote an empty file. Fixed: it keeps the column names.
+13. CSV and HTML export of every Live view and of Relationships failed: the data table was unrolled into rows. Fixed.
 
 Hardening without a failing old-code test: `Invoke-HygieneFix` supports `-WhatIf` (the test for it did fail on the old code), runs with `ErrorActionPreference` Stop and also treats an error written without stopping as a failure; `New-HygieneFinding` accepts an empty object name.
 

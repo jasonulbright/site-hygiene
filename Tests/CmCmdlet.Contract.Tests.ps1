@@ -26,14 +26,14 @@ BeforeDiscovery {
     }
     $script:Calls = @(foreach ($m in 'SiteHygieneCommon.psm1', 'SiteHygieneLive.psm1') { Get-CmCmdletCall -Path (Join-Path $script:AppRoot "Module\$m") })
 
-    $script:FixTexts = @(Get-FixScriptText -Path (Join-Path $script:AppRoot 'Module\SiteHygieneCommon.psm1'))
+    $script:FixTexts = @(Get-FixScriptText -Path (Join-Path $script:AppRoot 'Module\SiteHygieneCommon.psm1')) + @(Get-GeneratedFixText)
 }
 
 BeforeAll {
     . "$PSScriptRoot\TestHelpers.ps1"
     $script:Found = @(foreach ($m in 'SiteHygieneCommon.psm1', 'SiteHygieneLive.psm1') { Get-CmCmdletCall -Path (Join-Path $script:AppRoot "Module\$m") })
 
-    $script:FixTexts = @(Get-FixScriptText -Path (Join-Path $script:AppRoot 'Module\SiteHygieneCommon.psm1'))
+    $script:FixTexts = @(Get-FixScriptText -Path (Join-Path $script:AppRoot 'Module\SiteHygieneCommon.psm1')) + @(Get-GeneratedFixText)
     $script:FixCalls = @()
     foreach ($f in @($script:FixTexts)) { foreach ($c in (Get-FixTextCall -Text $f.Text)) { $c.Line = $f.Line; $script:FixCalls += $c } }
 }
@@ -76,6 +76,17 @@ Describe 'ConfigMgr cmdlets in fix scripts and fix guidance' {
     It 'finds the fix texts and the cmdlets they name' {
         @($script:FixTexts).Count | Should -BeGreaterThan 50
         @($script:FixCalls).Count | Should -BeGreaterThan 30
+    }
+
+    It 'reads both cmdlets of a piped call, including Resume, with the named parameters' {
+        $calls = @(Get-FixTextCall -Text "Get-CMApplication -Name 'x' -DisableWildcardHandling | Resume-CMApplication")
+        $calls.Count | Should -Be 2
+        ($calls | Where-Object Command -eq 'Resume-CMApplication').Count | Should -Be 1
+        ($calls | Where-Object Command -eq 'Get-CMApplication').Parameters | Should -Be @('Name', 'DisableWildcardHandling')
+    }
+
+    It 'includes the generated APP-05 script in the fix texts' {
+        @($script:FixTexts | Where-Object { $_.Text -like '*Remove-CMApplicationRevisionHistory*' }).Count | Should -BeGreaterThan 0
     }
 
     It 'reads a cmdlet named in a comment and ignores quoted text, placeholders and the text after a second comment mark' {

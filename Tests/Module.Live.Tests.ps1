@@ -456,6 +456,7 @@ Describe 'Table exports' {
         $dt = New-Table -Columns 'Name' -Rows @()
         $out = Join-Path $script:dir 't.csv'
         { Export-HygieneTableCsv -DataTable $dt -OutputPath $out } | Should -Not -Throw
+        @(Get-Content -LiteralPath $out -Encoding UTF8) | Should -Be @('"Name"')
     }
 
     It 'marks failures with a glyph and bold, and good values with a check mark' {

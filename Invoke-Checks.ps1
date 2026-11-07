@@ -65,8 +65,12 @@ if (-not $SkipLint) {
 
 # ---- 2. Tests and coverage -------------------------------------------------
 $cfg = New-PesterConfiguration
-$testFiles = @(Get-ChildItem -LiteralPath $root -Recurse -Filter '*.Tests.ps1' -File |
-        Where-Object { $_.FullName -notlike '*\Tests\Lab\*' -and $_.FullName -notlike '*\.git\*' })
+$labDir = [System.IO.Path]::Combine($root, 'Tests', 'Lab') + [System.IO.Path]::DirectorySeparatorChar
+# Only Module and Tests are searched, so a vendored folder cannot add a test. Lab tests never run here.
+$testFiles = @(foreach ($dir in 'Module', 'Tests') {
+        $path = Join-Path $root $dir
+        if (Test-Path -LiteralPath $path) { Get-ChildItem -LiteralPath $path -Recurse -Filter '*.Tests.ps1' -File | Where-Object { -not $_.FullName.StartsWith($labDir, [System.StringComparison]::OrdinalIgnoreCase) } }
+    })
 if ($testFiles.Count -eq 0) { Write-Host 'No test file found.'; exit 1 }
 if ($SkipWindow) { $testFiles = @($testFiles | Where-Object { $_.Name -ne 'Window.Tests.ps1' }) }
 # Window tests open windows. They never run on the dev PC, and elsewhere only with SUITE_ALLOW_WINDOW_TESTS=1.

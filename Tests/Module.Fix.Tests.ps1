@@ -101,8 +101,24 @@ Describe 'Invoke-HygieneFix' {
         $r = Invoke-HygieneFix -Finding $f
         $r.Success | Should -BeFalse
         $r.ErrorMessage | Should -Be 'Cannot find the application.'
+        Should -Invoke Remove-CMPackage -ModuleName SiteHygieneCommon -Times 0 -Exactly
 
         @($script:logged | Where-Object { $_.Message -like 'Fix succeeded*' }).Count | Should -Be 0
+    }
+
+    It 'stops at the first error even when the command says -ErrorAction Continue' {
+        Mock Remove-CMApplication { Write-Error 'Cannot find the application.' } -ModuleName SiteHygieneCommon
+        $f = [PSCustomObject]@{ CheckId = 'APP-01'; ObjectName = 'App One'; FixScript = "Remove-CMApplication -Name 'App One' -ErrorAction Continue`r`nRemove-CMPackage -Id 'P0000001' -Force" }
+        $r = Invoke-HygieneFix -Finding $f
+        $r.Success | Should -BeFalse
+        Should -Invoke Remove-CMPackage -ModuleName SiteHygieneCommon -Times 0 -Exactly
+    }
+
+    It 'runs the statements of a script in order and returns the output of all' {
+        $f = [PSCustomObject]@{ CheckId = 'APP-01'; ObjectName = 'x'; FixScript = "Remove-CMApplication -Name 'a' -Force`r`nRemove-CMPackage -Id 'P1' -Force" }
+        $r = Invoke-HygieneFix -Finding $f
+        $r.Success | Should -BeTrue
+        $r.Output | Should -Be "removed`r`npackage removed"
     }
 
     It 'does not run anything with -WhatIf and says so' {
@@ -209,6 +225,7 @@ Describe 'Fix scripts with names that carry wildcard characters' {
         @{ Check = 'APP-03'; Cmdlet = 'Get-CMApplicationDeployment' }
         @{ Check = 'DPL-01'; Cmdlet = 'Get-CMApplicationDeployment' }
         @{ Check = 'UPD-03 disabled'; Cmdlet = 'Get-CMAutoDeploymentRule' }
+        @{ Check = 'COL-10'; Cmdlet = 'Remove-CMMaintenanceWindow' }
     ) {
         $row = @(Get-NameFinding -Name 'Tools [x64] *' | Where-Object { $_.Check -eq $Check })[0]
         $text = [string]$row.Finding[0].FixScript

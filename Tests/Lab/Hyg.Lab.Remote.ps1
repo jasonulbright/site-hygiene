@@ -80,7 +80,7 @@ try {
     $fDecoy = Get-FixFinding $findings 'APP-01' $appDecoy
     $fCurly = Get-FixFinding $findings 'APP-01' $appCurly
     Add-Result 'findings exist for the package, the collection and the three applications' ([bool]($fPkg -and $fColl -and $fWild -and $fDecoy -and $fCurly)) (($findings | Where-Object { $_.ObjectName -like "$prefix*" } | ForEach-Object { "$($_.CheckId) $($_.ObjectName)" }) -join '; ')
-    foreach ($f in @($fPkg, $fColl, $fWild, $fCurly)) { if (-not $f) { throw 'A finding for a test object is missing.' } }
+    foreach ($f in @($fPkg, $fColl, $fWild, $fDecoy, $fCurly)) { if (-not $f) { throw 'A finding for a test object is missing.' } }
     Add-Result 'the fix scripts of the test objects parse' ((@($fPkg, $fColl, $fWild, $fCurly) | Where-Object { $e = $null; [void][System.Management.Automation.Language.Parser]::ParseInput($_.FixScript, [ref]$null, [ref]$e); @($e).Count -gt 0 }).Count -eq 0) $fCurly.FixScript
 
     # --- Run Fix --------------------------------------------------------------------------------------
@@ -110,6 +110,8 @@ try {
     if (-not $task) { throw 'No recommended maintenance task exists on this site.' }
     $mntName = $task.TaskName
     $mntOriginal = [bool]$task.Enabled
+    # If the run is cut off before the cleanup, the harness shows this line so the flag can be put back by hand.
+    Set-Content -LiteralPath (Join-Path $ModuleRoot 'restore.txt') -Value ('Maintenance task [{0}] was enabled={1} before the test. Set it back: Set-CMSiteMaintenanceTask -Name ''{0}'' -Enabled ${1}' -f $mntName, $mntOriginal)
     Add-Result 'look before acting: the maintenance task and its state' $true ("$mntName enabled=$mntOriginal; $(@($mntBefore).Count) tasks recorded")
     if ($mntOriginal) { Set-CMSiteMaintenanceTask -Name $mntName -Enabled $false -DisableWildcardHandling }
     Add-Result 'the task is disabled for the test' (-not [bool](Get-CMSiteMaintenanceTask -Name $mntName).Enabled) $mntName

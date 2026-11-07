@@ -43,7 +43,14 @@ $script:MainMeasureScript = {
     $out = @()
     foreach ($view in $cfg.Views) {
         foreach ($v in $cfg.Views) { $w.FindName($v.Container).Visibility = if ($v.Name -eq $view.Name) { 'Visible' } else { 'Collapsed' } }
-        Initialize-ShellTheme -Window $w -Dark $Arguments.Dark -Views $cfg.Views `
+        # The action bar follows the view the way Set-ActiveView of the start script sets it.
+        $live = $view.Name -in 'Deployments', 'Content', 'DPs', 'Clients', 'Inactive', 'Site', 'Trends'
+        $bar = @{
+            btnScan = -not $live; btnRefreshAll = $live; btnPauseResume = $live; btnCopySummary = $live
+            cboStatus = ($live -and $view.Name -ne 'Trends'); cboCategory = ($view.Name -eq 'Findings'); cboSeverity = ($view.Name -eq 'Findings')
+            cboRelKind = ($view.Name -eq 'Relationships'); cboRelStatus = ($view.Name -eq 'Relationships'); txtFilter = ($view.Name -notin 'Summary', 'Trends')
+        }
+        foreach ($name in $bar.Keys) { $w.FindName($name).Visibility = if ($bar[$name]) { 'Visible' } else { 'Collapsed' } }        Initialize-ShellTheme -Window $w -Dark $Arguments.Dark -Views $cfg.Views `
             -OptionsButtonName $cfg.OptionsButton -LogLabelName $cfg.LogLabel -ActiveView $view.Name
         $out += [PSCustomObject]@{
             View        = $view.Name
@@ -76,6 +83,11 @@ $script:DialogMeasureScript = {
             $cb.Content = $t; $cb.FontSize = 12; $cb.IsChecked = $true
             [void]$panel.Children.Add($cb)
         }
+        # Entered text, so the contrast of the input text is measured too.
+        $w.FindName('txtSiteCode').Text = 'ABC'
+        $w.FindName('txtSmsProvider').Text = 'cm01.contoso.com'
+        $w.FindName('txtSqlServer').Text = 'sql01.contoso.com'
+        $w.FindName('txtPacing').Text = '0'
         Set-DialogTheme -Dialog $w -IsDark $Arguments.Dark
         foreach ($pane in $panes) {
             foreach ($p in $panes) { $w.FindName($p).Visibility = if ($p -eq $pane) { 'Visible' } else { 'Collapsed' } }

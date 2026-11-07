@@ -910,7 +910,11 @@ function Export-HygieneTableCsv {
         $rows += [PSCustomObject]$obj
     }
 
-    $rows | Export-Csv -LiteralPath $OutputPath -NoTypeInformation -Encoding UTF8
+    if ($rows.Count -eq 0) {
+        # Export-Csv writes nothing for no rows; the file keeps the column names.
+        Set-Content -LiteralPath $OutputPath -Value (($DataTable.Columns | ForEach-Object { '"{0}"' -f ($_.ColumnName -replace '"', '""') }) -join ',') -Encoding UTF8
+    }
+    else { $rows | Export-Csv -LiteralPath $OutputPath -NoTypeInformation -Encoding UTF8 }
     Write-Log "Exported CSV to $OutputPath"
 }
 

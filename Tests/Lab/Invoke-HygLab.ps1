@@ -24,8 +24,8 @@
 param(
     [Parameter(Mandatory)][string]$CredentialFile,
     [string]$ComputerName = 'CM01',
-    [string]$SiteCode = 'MCM',
-    [string]$Provider = 'CM01.CONTOSO.COM',
+    [ValidatePattern('^[A-Za-z0-9]{3}$')][string]$SiteCode = 'MCM',
+    [ValidatePattern('^[A-Za-z0-9.-]+$')][string]$Provider = 'CM01.CONTOSO.COM',
     [int]$TimeoutMinutes = 15
 )
 
@@ -39,6 +39,7 @@ $remoteRoot = $null
 $taskName = 'ZZTEST-SH-' + [guid]::NewGuid().ToString('N').Substring(0, 8)
 $results = @()
 $done = $false
+$script:CleanupFailed = $false
 try {
     $remoteRoot = Invoke-Command -Session $session -ScriptBlock {
         $p = Join-Path $env:SystemRoot ('Temp\ZZTEST-sh-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
@@ -103,19 +104,31 @@ finally {
     # Remove the task and the staged files only when the task finished. A task that never wrote its
     # result may still hold ZZTEST- objects; its staged files stay for inspection.
     # The task holds the lab password. A failed unregister is a failure of this run.
-    $cleanupErrors = @(Invoke-Command -Session $session -ArgumentList $taskName, $remoteRoot, ([bool]$done) -ScriptBlock {
-            param($t, $p, $finished)
-            if ($t -like 'ZZTEST-*') {
-                try { Stop-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue } catch { $null = $_ }
-                try { Unregister-ScheduledTask -TaskName $t -Confirm:$false -ErrorAction Stop } catch { "Could not unregister the task ${t}: $($_.Exception.Message)" }
-            }
-            if ($finished -and $p -like "$env:SystemRoot\Temp\ZZTEST-*") { Remove-Item -LiteralPath $p -Recurse -Force -ErrorAction SilentlyContinue }
-        })
-    foreach ($e in $cleanupErrors) { Write-Warning $e; $script:CleanupFailed = $true }
+    # A broken session (the cause of the error, or a lost connection) is replaced by a fresh one, so the
+    # cleanup still runs. The original error is not replaced: a cleanup problem is reported as a warning.
+    $cleanupSession = $session
+    if ($session.State -ne 'Opened') {
+        try { $cleanupSession = New-PSSession -ComputerName $ComputerName -Credential $LabCredential } catch { Write-Warning "No session for the cleanup: $($_.Exception.Message). Remove the scheduled task $taskName on $ComputerName by hand."; $cleanupSession = $null; $script:CleanupFailed = $true }
+    }
+    if ($cleanupSession) {
+        try {
+            $cleanupErrors = @(Invoke-Command -Session $cleanupSession -ArgumentList $taskName, $remoteRoot, ([bool]$done) -ScriptBlock {
+                    param($t, $p, $finished)
+                    if ($t -like 'ZZTEST-*') {
+                        try { Stop-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue } catch { $null = $_ }
+                        try { Unregister-ScheduledTask -TaskName $t -Confirm:$false -ErrorAction Stop } catch { "Could not unregister the task ${t}: $($_.Exception.Message)" }
+                    }
+                    if (-not $finished -and $p -like "$env:SystemRoot\Temp\ZZTEST-*" -and (Test-Path -LiteralPath (Join-Path $p 'restore.txt'))) { "Restore by hand: $(Get-Content -LiteralPath (Join-Path $p 'restore.txt'))" }
+                    if ($finished -and $p -like "$env:SystemRoot\Temp\ZZTEST-*") { Remove-Item -LiteralPath $p -Recurse -Force -ErrorAction SilentlyContinue }
+                })
+            foreach ($e in $cleanupErrors) { Write-Warning $e; if ($e -notlike 'Restore by hand*') { $script:CleanupFailed = $true } }
+        }
+        catch { Write-Warning "The cleanup failed: $($_.Exception.Message). Remove the scheduled task $taskName on $ComputerName by hand."; $script:CleanupFailed = $true }
+        if ($cleanupSession -ne $session) { Remove-PSSession $cleanupSession -ErrorAction SilentlyContinue }
+    }
     if (-not $done) { Write-Warning "The lab task did not finish. Staged files are in $remoteRoot on $ComputerName. Check the site for ZZTEST- objects." }
-    Remove-PSSession $session
+    Remove-PSSession $session -ErrorAction SilentlyContinue
 }
-
 if ($script:CleanupFailed) { $results += [PSCustomObject]@{ Step = 'task cleanup'; Ok = $false; Detail = 'The scheduled task is still registered on the site server. Remove it by hand.' } }
 foreach ($r in $results) { Write-Host ('{0} {1}  {2}' -f $(if ($r.Ok) { '[PASS]' } else { '[FAIL]' }), $r.Step, $r.Detail) }
 $bad = @($results | Where-Object { -not $_.Ok })

@@ -348,7 +348,7 @@ Describe 'Get-HygieneData' {
 Describe 'Get-HygieneRelationshipData' {
     BeforeEach {
         Mock Write-Log { } -ModuleName $script:Mod
-        $dt = "<AppMgmtDigest xmlns='http://schemas.microsoft.com/SystemCenterConfigurationManager/2009/AppMgmtDigest'><DeploymentType AuthoringScopeId='ScopeId_T' LogicalName='DeploymentType_X'><Title>Install</Title><Installer><Contents><Content><Location>\\srv\share\a</Location></Content></Contents></Installer><Supersedes/><Dependencies/></DeploymentType></AppMgmtDigest>"
+        $dt = "<AppMgmtDigest xmlns='http://schemas.microsoft.com/SystemCenterConfigurationManager/2009/AppMgmtDigest'><DeploymentType AuthoringScopeId='ScopeId_T' LogicalName='DeploymentType_X'><Title>Install</Title><Installer><Contents><Content><Location>\\srv\share\a</Location></Content></Contents></Installer><Supersedes/><Dependencies><DeploymentTypeRule xmlns='http://schemas.microsoft.com/SystemsCenterConfigurationManager/2009/06/14/Rules'><DeploymentTypeIntentExpression DesiredState='Required'><DeploymentTypeApplicationReference AuthoringScopeId='ScopeId_A' LogicalName='Application_2'/></DeploymentTypeIntentExpression></DeploymentTypeRule></Dependencies></DeploymentType></AppMgmtDigest>"
         $global:HygFx = $dt
         Mock Get-CMApplication {
             foreach ($i in 1..3) {
@@ -363,6 +363,8 @@ Describe 'Get-HygieneRelationshipData' {
         $r.Apps[2].Name | Should -Be 'App 2'
         $r.Apps[2].PSObject.Properties['SDMPackageXML'] | Should -BeNullOrEmpty
         @($r.ContentLocations).Count | Should -BeGreaterThan 0
+        $dep = @($r.Relationships | Where-Object { $_.Kind -eq 'Dependency' -and [int]$_.FromAppCIID -eq 1 -and [int]$_.ToAppCIID -eq 2 })
+        $dep.Count | Should -BeGreaterThan 0 -Because 'the dependency in the application XML must survive the prefetch'
         $r.PSObject.Properties['AutoInstallByModel'] | Should -Not -BeNullOrEmpty
     }
 

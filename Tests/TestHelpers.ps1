@@ -105,7 +105,7 @@ function Get-CmCmdletCall {
 
 function Get-CmCmdletCallFromAst {
     param([Parameter(Mandatory)][System.Management.Automation.Language.Ast]$Ast)
-    $calls = $Ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -match '^(Get|Set|New|Remove|Start|Invoke|Add|Copy|Convert|Export|Import|Approve|Deny)-CM' -and $n.GetCommandName() -ne 'Get-CMConnectionInfo' }, $true)
+    $calls = $Ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -match '^(Get|Set|New|Remove|Start|Invoke|Add|Copy|Convert|Export|Import|Approve|Deny|Resume)-CM' -and $n.GetCommandName() -ne 'Get-CMConnectionInfo' }, $true)
     foreach ($c in $calls) {
         @{ Command = $c.GetCommandName(); Parameters = @(Get-CommandParameterName -Command $c); Line = $c.Extent.StartLineNumber }
     }
@@ -176,4 +176,15 @@ function Get-FixScriptText {
             }
         }
     }
+}
+
+# Fix scripts that the module builds at run time (a joined list of lines), which Get-FixScriptText cannot read from the source.
+# APP-05 builds one Remove-CMApplicationRevisionHistory line per old revision.
+function Get-GeneratedFixText {
+    Import-AppModule
+    $data = [PSCustomObject]@{
+        Applications = @([PSCustomObject]@{ CI_ID = 501; ModelName = 'ScopeId_A/Application_1'; Name = 'App' })
+        AppRevisions = @([PSCustomObject]@{ ModelName = 'ScopeId_A/Application_1'; Revision = 1 })
+    }
+    foreach ($finding in @(Test-HygAppOldRevisions -Data $data)) { @{ Line = 0; Text = [string]$finding.FixScript } }
 }
