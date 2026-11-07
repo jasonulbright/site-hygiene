@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Main window of Site Hygiene, a scanner, repair tool, and live monitor for Configuration Manager sites.
 
@@ -25,7 +25,7 @@
 
 .NOTES
     ScriptName : start-sitehygiene.ps1
-    Version    : 2026.10.12.0029
+    Version    : 2026.11.07.0030
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', '', Justification='PS51-WPF-001..003: $global: survives closure scope-strip.')]
