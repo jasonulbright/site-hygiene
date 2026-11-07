@@ -15,16 +15,14 @@ $script:HarnessRoot = Split-Path -Parent $PSScriptRoot
 
 $script:HarnessSession = $null
 
-# Window tests open real windows, so they run only where that is allowed: never on the dev PC (AYW), and
-# elsewhere only with SUITE_ALLOW_WINDOW_TESTS=1 (CI and the lab machines set it). Every window test file
+# Window tests open real windows, so they run only with the opt-in SUITE_ALLOW_WINDOW_TESTS=1
+# (CI and the lab run scripts set it). Every window test file
 # calls this in BeforeDiscovery and skips its window tests when Allowed is false.
 function Test-WindowTestsAllowed {
     [CmdletBinding()]
     param(
-        [string]$ComputerName = $env:COMPUTERNAME,
         [string]$OptIn = $env:SUITE_ALLOW_WINDOW_TESTS
     )
-    if ($ComputerName -ieq 'AYW') { return [pscustomobject]@{ Allowed = $false; Reason = 'dev PC (AYW): window tests never run here' } }
     if ($OptIn -ne '1') { return [pscustomobject]@{ Allowed = $false; Reason = 'SUITE_ALLOW_WINDOW_TESTS is not 1' } }
     [pscustomobject]@{ Allowed = $true; Reason = '' }
 }

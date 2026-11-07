@@ -27,7 +27,7 @@ Run: `.\Invoke-Checks.ps1` (lint, tests, coverage floor 80%). It runs in CI on b
 
 ## Window test guard
 
-Window tests open real windows, so they run only where that is allowed. `Test-WindowTestsAllowed` (in `Tests/WindowHarness.ps1`) allows them only when `SUITE_ALLOW_WINDOW_TESTS` is `1` and the computer is not the dev PC (AYW). Otherwise the window tests report Skipped with the reason, no runspace or window is created, and `Invoke-Checks.ps1` prints one line (`Window tests skipped: ...`) and still passes. The window tests add no module coverage, so the coverage floor is the same with or without them. The CI workflow sets the opt-in. `Tests/WindowGuard.Tests.ps1` tests the guard and checks that every test file that can open a window uses it. The text checks of the window XAML and of the dialog titles do not open a window and always run.
+Window tests open a window only when `SUITE_ALLOW_WINDOW_TESTS` is `1`. `Test-WindowTestsAllowed` (in `Tests/WindowHarness.ps1`) decides on this opt-in only. CI and the lab run scripts set it. Otherwise the window tests report Skipped with the reason `SUITE_ALLOW_WINDOW_TESTS is not 1`, no runspace or window is created, and `Invoke-Checks.ps1` prints one line (`Window tests skipped: SUITE_ALLOW_WINDOW_TESTS is not 1.`) and still passes. The window tests add no module coverage, so the coverage floor is the same with or without them. `Tests/WindowGuard.Tests.ps1` tests the guard and checks that every test file that can open a window uses it. The text checks of the window XAML and of the dialog titles do not open a window and always run.
 
 ## Defects found
 
