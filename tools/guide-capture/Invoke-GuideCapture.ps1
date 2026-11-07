@@ -19,6 +19,9 @@
 .PARAMETER Target
     The lab computer name or address.
 
+.PARAMETER AddNew
+    Also copy images that are not in docsimages yet. Use it for the first capture of a new page.
+
 .PARAMETER LogonUser
     The domain account that has the interactive session on the lab computer.
 
@@ -32,7 +35,8 @@ param(
     [Parameter(Mandatory)][string]$LogonUser,
     [string]$SiteCode = 'MCM',
     [Parameter(Mandatory)][string]$SmsProvider,
-    [int]$Minutes = 15
+    [int]$Minutes = 15,
+    [switch]$AddNew
 )
 $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
@@ -41,6 +45,8 @@ $app = Split-Path $repo -Leaf
 $images = Join-Path $repo 'docs\images'
 . $CredentialScript
 $prefs = @{ SiteCode = $SiteCode; SMSProvider = $SmsProvider } | ConvertTo-Json
+$captureJson = @{ SiteCode = $SiteCode; SmsProvider = $SmsProvider } | ConvertTo-Json
+$failed = New-Object System.Collections.Generic.List[string]
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ('guide-capture-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory $tmp | Out-Null
 $session = New-PSSession -ComputerName $Target -Credential $LabCredential
@@ -48,12 +54,13 @@ try {
     foreach ($run in @(@{ Steps = 'steps-guide.ps1'; Prefs = $false }, @{ Steps = 'steps-console-missing.ps1'; Prefs = $true })) {
         $dest = "C:\guide\$app"
         Invoke-Command $session { param($d) Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.CommandLine -like '*C:\guide\*' -and $_.ProcessId -ne $PID } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; Start-Sleep -Seconds 2; if (Test-Path $d) { Remove-Item $d -Recurse -Force }; New-Item -ItemType Directory $d, 'C:\guide\ui' -Force | Out-Null } -ArgumentList $dest
-        foreach ($item in Get-ChildItem -LiteralPath $repo -Force | Where-Object { $_.Name -notin '.git', '.claude', '.github', 'Logs', 'Reports', 'screenshots', 'TestResults', 'docs', 'Tests', 'tools' -and $_.Name -notlike '*.prefs.json' -and $_.Name -notlike '*.windowstate.json' -and $_.Name -notlike '*.local.*' -and $_.Name -notlike '*.png' }) {
+        foreach ($item in Get-ChildItem -LiteralPath $repo -Force | Where-Object { $_.Name -notin '.git', '.claude', '.github', 'Logs', 'History', 'Reports', 'screenshots', 'TestResults', 'docs', 'Tests', 'tools' -and $_.Name -notlike '*.prefs.json' -and $_.Name -notlike '*.windowstate.json' -and $_.Name -notlike '*.lastscan.json' -and $_.Name -notlike '*.suppressions.json' -and $_.Name -notlike '*.local.*' -and $_.Name -notlike '*.png' }) {
             Copy-Item -LiteralPath $item.FullName -Destination "$dest\$($item.Name)" -ToSession $session -Recurse -Force
         }
         Copy-Item (Join-Path $here 'guilib.ps1') 'C:\guide\ui\guilib.ps1' -ToSession $session -Force
         Copy-Item (Join-Path $here 'main.ps1') 'C:\guide\ui\main.ps1' -ToSession $session -Force
         Copy-Item (Join-Path $here $run.Steps) 'C:\guide\ui\steps.ps1' -ToSession $session -Force
+        Invoke-Command $session { param($j) Set-Content C:\guide\ui\capture.json $j -Encoding UTF8 } -ArgumentList $captureJson
         Invoke-Command $session -ScriptBlock {
             param($a, $user, $json)
             if ($json) { Set-Content "C:\guide\$a\SiteHygiene.prefs.json" $json -Encoding UTF8 }
@@ -70,10 +77,15 @@ try {
         New-Item -ItemType Directory $out | Out-Null
         Copy-Item 'C:\guide\ui\out\*' $out -FromSession $session -Recurse -Force
         $log = Join-Path $out 'run.log'
-        if (Test-Path $log) { Get-Content $log | Where-Object { $_ -match 'ERROR' } | ForEach-Object { Write-Warning $_ } }
+        if (Test-Path $log) { Get-Content $log | Where-Object { $_ -match 'ERROR' } | ForEach-Object { Write-Warning $_; $failed.Add($_) } }
     }
-    foreach ($png in Get-ChildItem $tmp -Recurse -Filter *.png) {
-        if (Test-Path (Join-Path $images $png.Name)) { Copy-Item $png.FullName (Join-Path $images $png.Name) -Force }
+    # A failed section stops the capture before any guide image is replaced.
+    if ($failed.Count) { throw ("The capture failed. No image was replaced.`n" + ($failed -join "`n")) }
+    $captured = @(Get-ChildItem $tmp -Recurse -Filter *.png)
+    $missing = @(Get-ChildItem $images -Filter *.png | Where-Object { $captured.Name -notcontains $_.Name } | ForEach-Object { $_.Name })
+    if ($missing.Count) { throw ("The capture did not produce these guide images. No image was replaced.`n" + ($missing -join "`n")) }
+    foreach ($png in $captured) {
+        if ($AddNew -or (Test-Path (Join-Path $images $png.Name))) { Copy-Item $png.FullName (Join-Path $images $png.Name) -Force }
     }
 }
 finally {

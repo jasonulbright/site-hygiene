@@ -70,7 +70,7 @@ None. The settings are on [Options dialog](core/options.md).
 | Message or symptom | Cause | Fix |
 |---|---|---|
 | The log shows `Open Options to configure site code and SMS provider`. | The site code or the provider is empty. | Set the connection. |
-| The log shows `ConfigurationManager module not found`. | The console is not installed on this computer. | Install the console. |
+| The log shows `ConfigurationManager module not found`. | The console is not installed on this computer, or `SMS_ADMIN_UI_PATH` does not point to the bin\i386 folder of the console. | Install the console. If it is installed, set `SMS_ADMIN_UI_PATH` to its bin\i386 folder and start the tool again. |
 
 ## Links
 

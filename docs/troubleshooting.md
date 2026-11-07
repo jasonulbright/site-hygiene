@@ -19,7 +19,7 @@ None.
 | Message or symptom | Cause | Fix |
 |---|---|---|
 | Scan does nothing and the log asks you to open Options. | The site code or the provider is empty. | Set the connection. |
-| `ConfigurationManager module not found`. | The console is not installed on this computer. | Install the console. |
+| `ConfigurationManager module not found`. | The console is not installed on this computer, or `SMS_ADMIN_UI_PATH` does not point to the bin\i386 folder of the console. | Install the console. If it is installed, set `SMS_ADMIN_UI_PATH` to its bin\i386 folder and start the tool again. |
 | `Failed to connect to site`. | The provider name is wrong or not reachable, or the role is missing. | Check the provider, the network and the role. |
 | Client Health and Inactive Devices are empty. | No SQL Server is set. | Set **SQL Server** in **Options > Connection**. |
 | Content is empty. | All content is healthy. The view shows only failed and in-progress content. | None. |

@@ -20,7 +20,7 @@ None.
 |---|---|---|---|
 | `Open Options to configure site code and SMS provider, then scan.` | Status bar | The site code or the provider is empty. | Set both in **Options > Connection**. |
 | `Open Options to configure site code and SMS provider, then refresh.` | Status bar | The same, on a Live view. | The same. |
-| `ConfigurationManager module not found. Ensure the CM console is installed.` | Log | The console is not installed on this computer. | Install the console. |
+| `ConfigurationManager module not found. Ensure the CM console is installed.` | Log | The console is not installed on this computer, or `SMS_ADMIN_UI_PATH` does not point to the bin\i386 folder of the console. | Install the console. If it is installed, set `SMS_ADMIN_UI_PATH` to its bin\i386 folder and start the tool again. |
 | `Scan failed: Failed to connect to site <code> (provider <name>).` | Log | The tool could not connect. The module is missing, the provider is wrong or not reachable, or the account has no access. | Check the console, the provider name, the network and the role. |
 | `Refresh failed: Failed to connect to site <code> (provider <name>).` | Log | The same, on a refresh. | The same. |
 | `Scan failed.` and `Refresh failed.` | Status bar | See the log line before. | Read the log. |

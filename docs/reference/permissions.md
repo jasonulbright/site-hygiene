@@ -16,7 +16,7 @@ Use it to set up an account, or to find out why a read or a fix is refused.
 |---|---|
 | Start the tool | Read and write in the folder of the script. |
 | Scan, and Deployments, Content, Distribution Points and Site Health | The Configuration Manager console on the computer, and read access to the SMS Provider under your Configuration Manager role. |
-| Client Health and Inactive Devices | The `SqlServer` PowerShell module and read access to the `CM_<site>` database. |
+| Client Health and Inactive Devices | The Configuration Manager console and read access to the SMS Provider under your Configuration Manager role, because **Refresh All** reads the provider too. Also the `SqlServer` PowerShell module and read access to the `CM_<site>` database. |
 | Run Fix | The Configuration Manager rights that the fix script needs. The script is shown in the dialog. |
 | Alerts | Windows notifications for the toast. The alerts log needs no right. |
 

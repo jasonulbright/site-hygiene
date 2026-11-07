@@ -38,7 +38,8 @@ None.
 
 1. Close the tool.
 2. Delete `SiteHygiene.prefs.json` and `SiteHygiene.windowstate.json`.
-3. Start the tool. The window of the first start shows.
+3. Move the files of a retired ConfigMgr Health Dashboard install out of `legacy\mecm-health-dashboard` and out of the sibling `mecm-health-dashboard` folder. The tool imports them at the start and fills the empty settings from them. Keep them out until the tool has saved its default settings.
+4. Start the tool. The window of the first start shows.
 
 ## Limits
 

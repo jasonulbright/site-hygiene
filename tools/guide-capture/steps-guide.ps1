@@ -10,7 +10,7 @@ Section 'first run' {
   Shot $win 'start-first-run'
   Invoke-El (Get-El $win 'btnScan'); Start-Sleep -Seconds 2; Shot $win 'scan-without-connection'
   Invoke-El (Get-El $win 'btnOptions'); $d = Find-Last 'Options' 10; Shot $d 'options-connection-empty'
-  Set-Text (Get-El $d 'txtSiteCode') 'MCM'; Set-Text (Get-El $d 'txtSmsProvider') 'cm01.contoso.com'; Shot $d 'options-connection'
+  Set-Text (Get-El $d 'txtSiteCode') $Capture.SiteCode; Set-Text (Get-El $d 'txtSmsProvider') $Capture.SmsProvider; Shot $d 'options-connection'
   foreach ($c in @(@('btnCatScope', 'options-scan'), @('btnCatLive', 'options-live'), @('btnCatAlerts', 'options-alerts'), @('btnCatAbout', 'options-about'))) { Invoke-El (Get-El $d $c[0]); Start-Sleep -Milliseconds 600; Shot $d $c[1] }
   Invoke-El (Get-El $d 'btnOk'); Start-Sleep -Seconds 1
 }
