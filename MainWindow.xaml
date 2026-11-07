@@ -151,6 +151,13 @@
                 <Setter Property="BorderThickness" Value="0"/>
                 <Setter Property="Padding" Value="8"/>
             </Style>
+            <Style x:Key="TabHeaderText" TargetType="TextBlock">
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=TabItem}}" Value="True">
+                        <Setter Property="FontWeight" Value="Bold"/>
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
         </ResourceDictionary>
     </Window.Resources>
 
@@ -443,7 +450,7 @@
 
                     <TabControl x:Name="tabRelationships" Grid.Row="0" Margin="0,8,0,0"
                                 Controls:HeaderedControlHelper.HeaderFontSize="13">
-                        <TabItem Header="Inventory">
+                        <TabItem><TabItem.Header><TextBlock Text="Inventory" Style="{StaticResource TabHeaderText}" Foreground="{DynamicResource MahApps.Brushes.ThemeForeground}"/></TabItem.Header>
                             <DataGrid x:Name="gridRelationships"
                                       SelectionMode="Single"
                                       Style="{StaticResource ViewDataGrid}"
@@ -466,7 +473,7 @@
                                 </DataGrid.Columns>
                             </DataGrid>
                         </TabItem>
-                        <TabItem Header="Tree">
+                        <TabItem><TabItem.Header><TextBlock Text="Tree" Style="{StaticResource TabHeaderText}" Foreground="{DynamicResource MahApps.Brushes.ThemeForeground}"/></TabItem.Header>
                             <TreeView x:Name="treeRelationships"
                                       FontSize="12"
                                       BorderThickness="0"

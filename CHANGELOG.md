@@ -1,5 +1,13 @@
 # Changelog
 
+## [2026.11.07.0030] - 2026-11-07
+
+## 1 user guide ships with the release
+
+### Added
+
+- Add the user guide (docs/index.md) with images of the running window.
+
 ## [2026.10.12.0029] - 2026-10-12
 
 ## 1 fix
