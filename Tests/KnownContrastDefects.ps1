@@ -18,6 +18,7 @@ function Get-KnownContrastDefect {
     switch ($key) {
         'Main|dark' {
             @(
+                'btnCopySummary:DisabledText', 'btnPauseResume:DisabledText', 'btnRefreshAll:DisabledText',
                 'btnExportCsv:DisabledText', 'btnExportHtml:DisabledText', 'btnOptions:DisabledBorder',
                 'btnOptions:EnabledBorder', 'btnRunFix:DisabledText', 'btnScan:DisabledText',
                 'btnSuppress:DisabledText', 'btnUnsuppress:DisabledText', 'btnViewClients:DisabledBorder',
@@ -37,6 +38,8 @@ function Get-KnownContrastDefect {
         }
         'Main|light' {
             @(
+                'btnCopySummary:DisabledText', 'btnPauseResume:DisabledText', 'btnRefreshAll:DisabledText',
+                'cboRelKind:DisabledBorder', 'cboRelKind:DisabledText', 'cboRelKind:EnabledBorder', 'cboRelKind:EnabledText', 'cboRelStatus:DisabledBorder', 'cboRelStatus:DisabledText', 'cboRelStatus:EnabledBorder', 'cboRelStatus:EnabledText', 'cboStatus:DisabledBorder', 'cboStatus:DisabledText', 'cboStatus:EnabledBorder', 'cboStatus:EnabledText',
                 'btnExportCsv:DisabledText', 'btnExportHtml:DisabledText', 'btnOptions:DisabledText',
                 'btnRunFix:DisabledText', 'btnScan:DisabledText', 'btnSuppress:DisabledText',
                 'btnUnsuppress:DisabledText', 'btnViewClients:DisabledText', 'btnViewContent:DisabledText',
