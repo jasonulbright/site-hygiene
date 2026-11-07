@@ -16,7 +16,8 @@ $script:HarnessRoot = Split-Path -Parent $PSScriptRoot
 $script:HarnessSession = $null
 
 # Window tests open real windows, so they run only with the opt-in SUITE_ALLOW_WINDOW_TESTS=1
-# (CI and the lab run scripts set it). Every window test file
+# (CI sets it; for a lab run the operator sets it before running Invoke-Checks.ps1, and the
+# lab scripts neither set it nor run the window suite). Every window test file
 # calls this in BeforeDiscovery and skips its window tests when Allowed is false.
 function Test-WindowTestsAllowed {
     [CmdletBinding()]
