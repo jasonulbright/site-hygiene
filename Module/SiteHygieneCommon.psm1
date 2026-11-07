@@ -40,6 +40,24 @@ if (-not (Get-Module SuiteCommon)) {
 # observes the terminal state and disposes them.
 $script:AppContentProbeGraveyard = @()
 
+function ConvertTo-HygQuotedLiteral {
+    <#
+    .SYNOPSIS
+        Escapes text for the inside of a single-quoted PowerShell string.
+
+    .DESCRIPTION
+        PowerShell reads four more characters as a single quote besides the
+        apostrophe: the left, right, low and reversed single quotation marks
+        (U+2018, U+2019, U+201A, U+201B). Each one ends the string unless it
+        is doubled. A name from the site (an application, a rule, a window)
+        goes into a fix script only through this function.
+    #>
+    [OutputType([string])]
+    param([AllowNull()][AllowEmptyString()][string]$Text)
+
+    if ([string]::IsNullOrEmpty($Text)) { return '' }
+    return [regex]::Replace($Text, "['\u2018\u2019\u201A\u201B]", '$0$0')
+}
 # ---------------------------------------------------------------------------
 # Check catalog
 # ---------------------------------------------------------------------------
@@ -147,11 +165,15 @@ function New-HygieneFinding {
         [Parameter(Mandatory)][string]$Category,
         [Parameter(Mandatory)][string]$ObjectType,
         [AllowEmptyString()][string]$ObjectId = '',
-        [Parameter(Mandatory)][string]$ObjectName,
+        [Parameter(Mandatory)][AllowEmptyString()][string]$ObjectName,
         [Parameter(Mandatory)][string]$Evidence,
         [Parameter(Mandatory)][string]$Recommendation,
         [AllowEmptyString()][string]$FixScript = ''
     )
+
+    # A fix script that starts with a comment is guidance for the operator. A name from the site that holds a line
+    # break would otherwise start a new line, and the script would run that line. Guidance stays on one line.
+    if ($FixScript.TrimStart().StartsWith('#')) { $FixScript = [regex]::Replace($FixScript, '[\r\n\u0085\u2028\u2029]+', ' ') }
 
     return [pscustomobject]@{
         CheckId        = $CheckId
@@ -550,10 +572,12 @@ function Get-HygieneData {
         CollectionDependencies = @{ Label = 'collection reference edges'; FailureHint = 'COL-01 and COL-05..COL-09 are skipped'; Run = {
             Invoke-CMWmiQuery -Query 'SELECT DependentCollectionID, SourceCollectionID, RelationshipType FROM SMS_CollectionDependencies' -Option Fast -ErrorAction Stop |
             ForEach-Object {
+                # Inside the switch, $_ is the switch value, so the type is read into a variable first.
+                $relType = [int]$_.RelationshipType
                 [pscustomobject]@{
                     From = [string]$_.DependentCollectionID
                     To   = [string]$_.SourceCollectionID
-                    Kind = switch ([int]$_.RelationshipType) { 1 { 'limit' } 2 { 'include' } 3 { 'exclude' } default { "type$([int]$_.RelationshipType)" } }
+                    Kind = switch ($relType) { 1 { 'limit' } 2 { 'include' } 3 { 'exclude' } default { "type$relType" } }
                 }
             }
         } }
@@ -849,7 +873,7 @@ function Test-HygAppNoReferences {
             -ObjectType 'Application' -ObjectId ([string]$app.ModelName) -ObjectName $app.Name `
             -Evidence ("No deployments, no task sequence references, not part of any supersedence relationship, not a dependency target; created {0}, older than the {1}-day grace window." -f $app.DateCreated, $minAge) `
             -Recommendation 'Candidate for retirement and removal. Verify no out-of-band use (scripts, documentation) before deleting.' `
-            -FixScript ("Remove-CMApplication -Name '{0}' -Force" -f ($app.Name -replace "'", "''"))
+            -FixScript ("Remove-CMApplication -Name '{0}' -DisableWildcardHandling -Force" -f (ConvertTo-HygQuotedLiteral $app.Name))
     }
 }
 
@@ -867,7 +891,7 @@ function Test-HygAppRetiredDeployed {
             -ObjectType 'Application' -ObjectId ([string]$app.ModelName) -ObjectName $app.Name `
             -Evidence 'Application is retired (expired) but still has active deployments; clients targeted by them cannot install it.' `
             -Recommendation 'Remove the deployments, or reinstate the application if retiring it was a mistake.' `
-            -FixScript ("Get-CMApplicationDeployment -Name '{0}' | Remove-CMApplicationDeployment -Force" -f ($app.Name -replace "'", "''"))
+            -FixScript ("Get-CMApplicationDeployment -Name '{0}' -DisableWildcardHandling | Remove-CMApplicationDeployment -Force" -f (ConvertTo-HygQuotedLiteral $app.Name))
     }
 }
 
@@ -886,7 +910,7 @@ function Test-HygAppSupersededDeployed {
             -ObjectType 'Application' -ObjectId ([string]$app.ModelName) -ObjectName $app.Name `
             -Evidence 'Application is superseded by a newer application but its own deployments are still active.' `
             -Recommendation 'Deploy the superseding application and retire these deployments so clients converge on the replacement.' `
-            -FixScript ("Get-CMApplicationDeployment -Name '{0}' | Remove-CMApplicationDeployment -Force" -f ($app.Name -replace "'", "''"))
+            -FixScript ("Get-CMApplicationDeployment -Name '{0}' -DisableWildcardHandling | Remove-CMApplicationDeployment -Force" -f (ConvertTo-HygQuotedLiteral $app.Name))
     }
 }
 
@@ -957,7 +981,7 @@ function Test-HygPackageUnused {
             -ObjectType 'Package' -ObjectId $id -ObjectName $pkg.Name `
             -Evidence 'Package has no programs, no deployments, and no task sequence references.' `
             -Recommendation 'Candidate for deletion; its content still occupies distribution points and the content library.' `
-            -FixScript ("Remove-CMPackage -Id '{0}' -Force" -f $id)
+            -FixScript ("Remove-CMPackage -Id '{0}' -Force" -f (ConvertTo-HygQuotedLiteral $id))
     }
 }
 
@@ -1002,7 +1026,7 @@ function Test-HygCollectionEmptyUnused {
             -ObjectType 'Collection' -ObjectId $id -ObjectName $c.Name `
             -Evidence 'Empty collection with no deployments, no include/exclude references from other collections, not used as a limiting collection, and no collection variables.' `
             -Recommendation 'Delete unless it is a staging container someone still fills by hand.' `
-            -FixScript ("Remove-CMCollection -Id '{0}' -Force" -f $id)
+            -FixScript ("Remove-CMCollection -Id '{0}' -Force" -f (ConvertTo-HygQuotedLiteral $id))
     }
 }
 
@@ -1052,7 +1076,7 @@ function Test-HygIncrementalCeiling {
         -ObjectType 'Site' -ObjectId '' -ObjectName 'Incremental evaluation load' `
         -Evidence ("{0} collections use incremental evaluation; above the recommended ceiling of {1}, evaluation latency degrades site-wide. First 15 by name: {2}" -f $incremental.Count, $ceiling, $sample) `
         -Recommendation 'Switch rarely-changing collections to scheduled-only refresh until the count sits under the ceiling.' `
-        -FixScript "# Per collection: Set-CMCollection -Id <CollectionID> -RefreshType Periodic"
+        -FixScript "# Per collection: Set-CMCollection -CollectionId <CollectionID> -RefreshType Periodic"
 }
 
 # ---------------------------------------------------------------------------
@@ -1076,7 +1100,7 @@ function Test-HygDeploymentExpired {
             -ObjectType 'Deployment' -ObjectId ([string]$d.TargetCollectionID) -ObjectName ("{0} -> {1}" -f $d.ApplicationName, $d.CollectionName) `
             -Evidence ("Deployment expired {0} and no longer offers to clients; it is clutter in every deployment view." -f $d.ExpirationTime) `
             -Recommendation 'Remove the expired deployment.' `
-            -FixScript ("Get-CMApplicationDeployment -Name '{0}' -CollectionName '{1}' | Remove-CMApplicationDeployment -Force" -f ($d.ApplicationName -replace "'", "''"), ($d.CollectionName -replace "'", "''"))
+            -FixScript ("Get-CMApplicationDeployment -Name '{0}' -CollectionName '{1}' -DisableWildcardHandling | Remove-CMApplicationDeployment -Force" -f (ConvertTo-HygQuotedLiteral $d.ApplicationName), (ConvertTo-HygQuotedLiteral $d.CollectionName))
     }
 }
 
@@ -1191,7 +1215,7 @@ function Test-HygDeviceDuplicates {
             -ObjectType 'Device' -ObjectId $ids -ObjectName $group.Group[0].Name `
             -Evidence ("{0} device records share the name '{1}' (ResourceIDs {2}); deployments and reports split across them." -f $group.Count, $group.Group[0].Name, $ids) `
             -Recommendation 'Keep the active record and delete the stale duplicates.' `
-            -FixScript ("# Review each: Get-CMDevice -Name '{0}' | Select-Object ResourceID, LastActiveTime, ClientVersion" -f ($group.Group[0].Name -replace "'", "''"))
+            -FixScript ("# Review each: Get-CMDevice -Name '{0}' | Select-Object ResourceID, LastActiveTime, ClientVersion" -f (ConvertTo-HygQuotedLiteral $group.Group[0].Name))
     }
 
     # Placeholder GUIDs (unset firmware identifiers on cloned VMs and some
@@ -1371,7 +1395,7 @@ function Test-HygTaskSequenceRefs {
             -ObjectType 'BootImage' -ObjectId ([string]$bi.PackageID) -ObjectName $bi.Name `
             -Evidence 'Custom boot image is referenced by no task sequence.' `
             -Recommendation 'Delete it if the task sequences that used it are gone; its content still occupies DPs.' `
-            -FixScript ("Remove-CMBootImage -Id '{0}' -Force" -f $bi.PackageID)
+            -FixScript ("Remove-CMBootImage -Id '{0}' -Force" -f (ConvertTo-HygQuotedLiteral $bi.PackageID))
     }
     foreach ($dp in @($Data.DriverPackages)) {
         if ($referenced.Contains([string]$dp.PackageID)) { continue }
@@ -1379,7 +1403,7 @@ function Test-HygTaskSequenceRefs {
             -ObjectType 'DriverPackage' -ObjectId ([string]$dp.PackageID) -ObjectName $dp.Name `
             -Evidence 'Driver package is referenced by no task sequence.' `
             -Recommendation 'Delete it if the hardware model is retired; driver packages are among the largest content on DPs.' `
-            -FixScript ("Remove-CMDriverPackage -Id '{0}' -Force" -f $dp.PackageID)
+            -FixScript ("Remove-CMDriverPackage -Id '{0}' -Force" -f (ConvertTo-HygQuotedLiteral $dp.PackageID))
     }
 }
 
@@ -1416,7 +1440,7 @@ function Test-HygTaskSequenceApplications {
             -ObjectType 'Application' -ObjectId ([string]$app.ModelName) -ObjectName $app.Name `
             -Evidence ("Task sequence '{0}' installs this application. The application does not have the setting 'Allow this application to be installed from the Install Application task sequence action without being deployed'." -f $tsNames) `
             -Recommendation 'Set the option on the General tab of the application properties. The change makes a new application revision.' `
-            -FixScript ("Get-CMApplication -ModelName '{0}' | Set-CMApplication -AutoInstall `$true" -f $def.ModelName)
+            -FixScript ("Get-CMApplication -ModelName '{0}' | Set-CMApplication -AutoInstall `$true" -f (ConvertTo-HygQuotedLiteral $def.ModelName))
     }
 
     # SourceSize 0 covers an application with no content files.
@@ -1481,21 +1505,21 @@ function Test-HygAdrChecks {
                 -ObjectType 'ADR' -ObjectId '' -ObjectName $adr.Name `
                 -Evidence ("Automatic deployment rule's last run ended with error code {0}; new updates are not being deployed by it." -f $adr.LastErrorCode) `
                 -Recommendation 'Open the ADR run history (ruleengine.log on the site server) and fix the failure.' `
-                -FixScript ("# Rerun after fixing: Invoke-CMSoftwareUpdateAutoDeploymentRule -Name '{0}'" -f ($adr.Name -replace "'", "''"))
+                -FixScript ("# Rerun after fixing: Invoke-CMSoftwareUpdateAutoDeploymentRule -Name '{0}'" -f (ConvertTo-HygQuotedLiteral $adr.Name))
         }
         elseif (-not $adr.AutoDeploymentEnabled) {
             New-HygieneFinding -CheckId 'UPD-03' -Severity Info -Category 'Updates' `
                 -ObjectType 'ADR' -ObjectId '' -ObjectName $adr.Name `
                 -Evidence 'Automatic deployment rule is disabled.' `
                 -Recommendation 'Delete it if retired, or re-enable it if it should still run.' `
-                -FixScript ("Get-CMAutoDeploymentRule -Name '{0}' -Fast | Remove-CMAutoDeploymentRule -Force  # or re-enable in console" -f ($adr.Name -replace "'", "''"))
+                -FixScript ("Get-CMAutoDeploymentRule -Name '{0}' -DisableWildcardHandling -Fast | Remove-CMAutoDeploymentRule -Force  # or re-enable in console" -f (ConvertTo-HygQuotedLiteral $adr.Name))
         }
         elseif ($adr.LastRunTime -and $adr.LastRunTime -lt $staleCutoff) {
             New-HygieneFinding -CheckId 'UPD-03' -Severity Warning -Category 'Updates' `
                 -ObjectType 'ADR' -ObjectId '' -ObjectName $adr.Name `
                 -Evidence ("Automatic deployment rule is enabled but last ran {0} (over {1} days ago); its schedule may be broken." -f $adr.LastRunTime, $staleDays) `
                 -Recommendation 'Check the ADR schedule and the last evaluation in ruleengine.log.' `
-                -FixScript ("Invoke-CMSoftwareUpdateAutoDeploymentRule -Name '{0}'" -f ($adr.Name -replace "'", "''"))
+                -FixScript ("Invoke-CMSoftwareUpdateAutoDeploymentRule -Name '{0}' -DisableWildcardHandling" -f (ConvertTo-HygQuotedLiteral $adr.Name))
         }
     }
 }
@@ -1530,7 +1554,7 @@ function Test-HygMaintenanceTasks {
             -ObjectType 'MaintenanceTask' -ObjectId '' -ObjectName $t.TaskName `
             -Evidence ("Cleanup task '{0}' is disabled; the data it would prune accumulates in the site database." -f $t.TaskName) `
             -Recommendation 'Enable it unless a deliberate retention policy keeps it off.' `
-            -FixScript ("Set-CMSiteMaintenanceTask -MaintenanceTaskName '{0}' -Enabled `$true -SiteCode '<site>'" -f $t.TaskName)
+            -FixScript ("# Run on the site drive of the site that owns the task: Set-CMSiteMaintenanceTask -MaintenanceTaskName '{0}' -Enabled `$true -SiteCode <site code>" -f $t.TaskName)
     }
 
     $backup = @($Data.MaintenanceTasks | Where-Object { $_.TaskName -eq 'Backup Site Server' }) | Select-Object -First 1
@@ -1539,7 +1563,7 @@ function Test-HygMaintenanceTasks {
             -ObjectType 'MaintenanceTask' -ObjectId '' -ObjectName 'Backup Site Server' `
             -Evidence 'The Backup Site Server maintenance task is disabled.' `
             -Recommendation 'Enable it, or confirm an SQL-level backup of the site database (plus CD.Latest) covers recovery instead.' `
-            -FixScript "Set-CMSiteMaintenanceTask -MaintenanceTaskName 'Backup Site Server' -Enabled `$true -SiteCode '<site>'"
+            -FixScript "# Run on the site drive of the site that owns the task: Set-CMSiteMaintenanceTask -MaintenanceTaskName 'Backup Site Server' -Enabled `$true -SiteCode <site code>"
     }
 }
 
@@ -1873,7 +1897,7 @@ function Test-HygRelationshipChecks {
                 -ObjectType 'Supersedence' -ObjectId (& $modelOf $r.FromAppCIID) -ObjectName $pair `
                 -Evidence ("Superseding application '{0}' is disabled; the replacement cannot deploy while the rule stands." -f $r.FromAppName) `
                 -Recommendation 'Enable the superseding application or remove the supersedence relationship.' `
-                -FixScript ("Get-CMApplication -Name '{0}' | Resume-CMApplication" -f ($r.FromAppName -replace "'", "''"))
+                -FixScript ("Get-CMApplication -Name '{0}' -DisableWildcardHandling | Resume-CMApplication" -f (ConvertTo-HygQuotedLiteral $r.FromAppName))
         }
     }
 
@@ -1908,7 +1932,7 @@ function Test-HygRelationshipChecks {
                 -ObjectType 'Dependency' -ObjectId (& $modelOf $r.FromAppCIID) -ObjectName $pair `
                 -Evidence ("Dependency target '{0}' is disabled; automatic dependency installs will fail." -f $r.ToAppName) `
                 -Recommendation 'Enable the dependency target or remove the dependency.' `
-                -FixScript ("Get-CMApplication -Name '{0}' | Resume-CMApplication" -f ($r.ToAppName -replace "'", "''"))
+                -FixScript ("Get-CMApplication -Name '{0}' -DisableWildcardHandling | Resume-CMApplication" -f (ConvertTo-HygQuotedLiteral $r.ToAppName))
         }
         elseif ($toApp -and -not $toApp.HasContent) {
             # ContentLocation is optional for script deployment types. This
@@ -1918,7 +1942,7 @@ function Test-HygRelationshipChecks {
                 -ObjectType 'Dependency' -ObjectId (& $modelOf $r.FromAppCIID) -ObjectName $pair `
                 -Evidence ("Dependency target '{0}' reports HasContent=false. Contentless script deployment types can be valid, so this is not evidence of an installation or distribution failure." -f $r.ToAppName) `
                 -Recommendation 'Verify the target has an enabled deployment type and that its install command does not require packaged source content.' `
-                -FixScript ("# Review deployment types for '{0}'; no automatic remediation is safe for HasContent=false" -f ($r.ToAppName -replace "'", "''"))
+                -FixScript ("# Review deployment types for '{0}'; no automatic remediation is safe for HasContent=false" -f (ConvertTo-HygQuotedLiteral $r.ToAppName))
         }
     }
 
@@ -1943,12 +1967,13 @@ function Test-HygRelationshipChecks {
                 -ObjectType 'Application' -ObjectId ([string]$app.ModelName) -ObjectName $app.Name `
                 -Evidence 'Application participates in supersedence/dependency relationships but has no Manufacturer set, which makes relationship views hard to audit.' `
                 -Recommendation 'Fill in the Manufacturer field.' `
-                -FixScript ("Set-CMApplication -Name '{0}' -Publisher '<manufacturer>'" -f ($app.Name -replace "'", "''"))
+                -FixScript ("# Set the manufacturer in the console, or run: Set-CMApplication -Name '{0}' -DisableWildcardHandling -Publisher <manufacturer>" -f (ConvertTo-HygQuotedLiteral $app.Name))
         }
     }
 }
 
 function Build-HygRelationshipTree {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseApprovedVerbs', '', Justification='Build is approved from PowerShell 6; Windows PowerShell 5.1 does not list it. The name is part of the module interface.')]
     <#
     .SYNOPSIS
         Builds a nested node tree for one relationship kind, rooted at
@@ -2187,7 +2212,7 @@ function Test-HygAppContentPath {
                 -ObjectType 'DeploymentType' -ObjectId (& $appIdOf $loc.AppCIID) -ObjectName ("{0} / {1}" -f $loc.AppName, $loc.DTName) `
                 -Evidence ("Content source '{0}' did not answer within {1}s from this workstation; its state is unknown, not missing." -f $path, [int]($ProbeTimeoutMs / 1000)) `
                 -Recommendation 'Probe the path from the site server, where rights and routes may differ.' `
-                -FixScript ("# From the site server: Test-Path -LiteralPath '{0}'" -f ($path -replace "'", "''"))
+                -FixScript ("# From the site server: Test-Path -LiteralPath '{0}'" -f (ConvertTo-HygQuotedLiteral $path))
         }
         else {
             New-HygieneFinding -CheckId 'APP-04' -Severity Warning -Category 'Applications' `
@@ -2336,7 +2361,7 @@ function Test-HygDeploymentBroadRequired {
             -ObjectType 'Deployment' -ObjectId ("{0}|{1}" -f $d.SoftwareName, $id) -ObjectName ("{0} -> {1}" -f $d.SoftwareName, $name) `
             -Evidence ("Required deployment of '{0}' targets the built-in collection '{1}' ({2}). Every current and future resource in the site receives it, with no pilot group and no way to exclude a resource." -f $d.SoftwareName, $name, $id) `
             -Recommendation 'Re-target the deployment to a custom collection limited to the intended resources, then remove this deployment.' `
-            -FixScript ("# Review first: Get-CMDeployment -CollectionName '{0}' | Where-Object SoftwareName -eq '{1}'" -f $name, ($d.SoftwareName -replace "'", "''"))
+            -FixScript ("# Review first: Get-CMDeployment -CollectionName '{0}' | Where-Object SoftwareName -eq '{1}'" -f $name, (ConvertTo-HygQuotedLiteral $d.SoftwareName))
     }
 }
 
@@ -2370,7 +2395,7 @@ function Test-HygDeployedDisabledObject {
             -ObjectType 'Deployment' -ObjectId ("{0}|{1}" -f $pkg, $d.CollectionID) -ObjectName ("{0} -> {1}" -f $d.SoftwareName, $d.CollectionName) `
             -Evidence ("The deployment to '{0}' runs the {1}, which is disabled. Clients receive the policy and never run it." -f $d.CollectionName, $what) `
             -Recommendation 'Enable the object if the deployment is still wanted; otherwise remove the deployment.' `
-            -FixScript ("# Review: Get-CMDeployment -CollectionName '{0}' | Where-Object PackageID -eq '{1}'" -f ($d.CollectionName -replace "'", "''"), $pkg)
+            -FixScript ("# Review: Get-CMDeployment -CollectionName '{0}' | Where-Object PackageID -eq '{1}'" -f (ConvertTo-HygQuotedLiteral $d.CollectionName), $pkg)
     }
 }
 
@@ -2468,7 +2493,7 @@ function Test-HygDistributionPointChecks {
             -ObjectType 'DistributionPointGroup' -ObjectId ([string]$g.GroupID) -ObjectName $g.Name `
             -Evidence ("The distribution point group has no members and {0} content item(s) assigned. Content distributed to it reaches no server." -f $g.AssignedContentCount) `
             -Recommendation 'Add the intended distribution points, or delete the group.' `
-            -FixScript ("# Review: Get-CMDistributionPointGroup -Name '{0}'" -f ($g.Name -replace "'", "''"))
+            -FixScript ("# Review: Get-CMDistributionPointGroup -Name '{0}'" -f (ConvertTo-HygQuotedLiteral $g.Name))
     }
 }
 
@@ -2513,7 +2538,7 @@ function Test-HygComplianceChecks {
             -ObjectType 'ClientSettings' -ObjectId ([string]$s.SettingsID) -ObjectName $s.Name `
             -Evidence 'The custom client settings object is deployed to no collection. It applies to no client.' `
             -Recommendation 'Deploy the settings to the intended collection, or delete them.' `
-            -FixScript ("# Review: Get-CMClientSetting -Name '{0}'" -f ($s.Name -replace "'", "''"))
+            -FixScript ("# Review: Get-CMClientSetting -Name '{0}'" -f (ConvertTo-HygQuotedLiteral $s.Name))
     }
 }
 
@@ -2559,7 +2584,7 @@ function Test-HygAdminDeletedAccount {
             -ObjectType 'AdministrativeUser' -ObjectId ([string]$a.AdminID) -ObjectName $a.LogonName `
             -Evidence ("The site reports that the Active Directory account for this administrative user is deleted. Roles: {0}." -f $roles) `
             -Recommendation 'Remove the administrative user from the site.' `
-            -FixScript ("# Review, then remove: Get-CMAdministrativeUser -Name '{0}'" -f ($a.LogonName -replace "'", "''"))
+            -FixScript ("# Review, then remove: Get-CMAdministrativeUser -Name '{0}'" -f (ConvertTo-HygQuotedLiteral $a.LogonName))
     }
 }
 
@@ -2588,7 +2613,7 @@ function Test-HygMaintenanceWindowExpired {
             -ObjectType 'MaintenanceWindow' -ObjectId ("{0}|{1}" -f $w.CollectionID, $w.Name) -ObjectName ("{0} on {1}" -f $w.Name, $colName) `
             -Evidence ("The one-time maintenance window ended {0:yyyy-MM-dd HH:mm} and never recurs. A collection with any maintenance window, including an expired one, blocks required deployments outside a window." -f $end) `
             -Recommendation 'Delete the expired window. If the collection needs no window at all, delete every window on it.' `
-            -FixScript ("Remove-CMMaintenanceWindow -CollectionId '{0}' -MaintenanceWindowName '{1}' -Force" -f $w.CollectionID, ($w.Name -replace "'", "''"))
+            -FixScript ("Remove-CMMaintenanceWindow -CollectionId '{0}' -MaintenanceWindowName '{1}' -Force" -f (ConvertTo-HygQuotedLiteral $w.CollectionID), (ConvertTo-HygQuotedLiteral $w.Name))
     }
 }
 
@@ -2871,13 +2896,17 @@ function Invoke-HygieneFix {
         Must be called from the CM site drive. The exact script is logged
         before execution and the outcome after, so the log carries a
         complete record of every mutation this tool performs. The script
-        runs with ErrorAction Stop so a partial failure surfaces instead
-        of reporting success.
+        runs with ErrorAction Stop, for terminating and non-terminating
+        errors alike, so a partial failure surfaces instead of reporting
+        success: the first error ends the script, and no later line runs.
+
+        The caller confirms with the operator first (the GUI shows the
+        script). With -WhatIf the script is not run.
 
     .OUTPUTS
         [pscustomobject] Success, Output, ErrorMessage.
     #>
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification='Confirmation happens in the GUI before this is called; the function is the execution primitive.')]
+    [CmdletBinding(SupportsShouldProcess)]
     param([Parameter(Mandatory)][pscustomobject]$Finding)
 
     $fixScript = [string]$Finding.FixScript
@@ -2887,10 +2916,20 @@ function Invoke-HygieneFix {
     if ((Get-Location).Provider.Name -ne 'CMSite') {
         return [pscustomobject]@{ Success = $false; Output = ''; ErrorMessage = 'Fix execution requires the CM site drive as the current location.' }
     }
+    if (-not $PSCmdlet.ShouldProcess(("[{0}] {1}" -f $Finding.CheckId, $Finding.ObjectName), $fixScript)) {
+        return [pscustomobject]@{ Success = $false; Output = ''; ErrorMessage = 'Not run: the fix was skipped by -WhatIf or declined at the confirmation.' }
+    }
 
     Write-Log ("Fix executing [{0}] {1}: {2}" -f $Finding.CheckId, $Finding.ObjectName, $fixScript)
     try {
-        $output = Invoke-Command -ScriptBlock ([scriptblock]::Create($fixScript)) -ErrorAction Stop
+        # Invoke-Command -ErrorAction Stop does not reach into the script block: a cmdlet that writes a
+        # non-terminating error would pass as a success. The preference variable in this scope stops the
+        # script at the first error of a ConfigMgr cmdlet. The error variable also catches an error that
+        # a command writes without stopping, so no error passes as a success.
+        $ErrorActionPreference = 'Stop'
+        $fixErrors = $null
+        $output = Invoke-Command -ScriptBlock ([scriptblock]::Create($fixScript)) -ErrorVariable fixErrors
+        if (@($fixErrors).Count -gt 0) { throw @($fixErrors)[0] }
         $text = (@($output) | Out-String).Trim()
         Write-Log ("Fix succeeded [{0}] {1}" -f $Finding.CheckId, $Finding.ObjectName)
         return [pscustomobject]@{ Success = $true; Output = $text; ErrorMessage = '' }
@@ -3063,7 +3102,7 @@ function Test-HygCollectionEvaluationChecks {
                 -ObjectType 'Collection' -ObjectId $c.CollectionID -ObjectName $c.Name `
                 -Evidence ("Incremental updates are enabled AND a full evaluation runs {0}. A full update on an incremental collection is only a backup evaluation; running it sub-daily duplicates work the incremental cycle already does, and each full evaluation also evaluates every dependent collection." -f $freqText) `
                 -Recommendation 'Keep incremental updates and drop the full schedule back to a rare backup, or remove it.' `
-                -FixScript ("Set-CMCollection -CollectionId '{0}' -RefreshType Continuous" -f $c.CollectionID)
+                -FixScript ("Set-CMCollection -CollectionId '{0}' -RefreshType Continuous" -f (ConvertTo-HygQuotedLiteral $c.CollectionID))
         }
 
         if ($c.RefreshType -in 2, 6 -and $c.DirectRuleCount -gt 0 -and $c.QueryRuleCount -eq 0 -and @($c.IncludeIDs).Count -eq 0 -and @($c.ExcludeIDs).Count -eq 0) {
@@ -3073,7 +3112,7 @@ function Test-HygCollectionEvaluationChecks {
                     -ObjectType 'Collection' -ObjectId $c.CollectionID -ObjectName $c.Name `
                     -Evidence ("Membership is {0} direct rule(s) only and the limiting collection '{1}' is not incrementally updated. Direct membership never changes on its own, so the scheduled evaluation re-computes an identical result every cycle." -f $c.DirectRuleCount, (& $nameOf ([string]$c.LimitToCollectionID))) `
                     -Recommendation 'Disable the update schedule; direct-rule collections update when the rule changes.' `
-                    -FixScript ("Set-CMCollection -CollectionId '{0}' -RefreshType Manual" -f $c.CollectionID)
+                    -FixScript ("Set-CMCollection -CollectionId '{0}' -RefreshType Manual" -f (ConvertTo-HygQuotedLiteral $c.CollectionID))
             }
         }
     }

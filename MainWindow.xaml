@@ -4,7 +4,7 @@
     xmlns:Controls="clr-namespace:MahApps.Metro.Controls;assembly=MahApps.Metro"
     Title="Site Hygiene"
     Width="1400" Height="860"
-    MinWidth="1100" MinHeight="680"
+    MinWidth="1024" MinHeight="680"
     WindowStartupLocation="CenterScreen"
     TitleCharacterCasing="Normal"
     GlowBrush="{DynamicResource MahApps.Brushes.Accent}"
