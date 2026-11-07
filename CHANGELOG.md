@@ -9,7 +9,7 @@
 - The window opens at 1024 pixels wide. The minimum width was 1100.
 - The hint text in the Options dialog meets the 4.5:1 contrast in the light theme.
 - CSV and HTML export of the Live views and of Relationships works. It failed with a binding error.
-- Suppressed findings stay suppressed after a restart. The suppression file was never read.
+- Suppressed findings stay suppressed after a restart. The suppression file was never read. The fix is in the shared SuiteCommon (2026.11.07.0075); the app needs no change to its file. Earlier versions wrote the suppressions as `Keys` in `SiteHygiene.suppressions.json`, and the app reads the same name, so no migration is needed.
 - The HTML export of the Live tables encodes markup in names.
 - Fix scripts keep a name with a curly apostrophe inside one literal. A name could end the quoted text.
 - Fix scripts select an object by its exact name. The characters `[ ] * ?` in a name no longer act as a pattern.
@@ -18,6 +18,10 @@
 - MNT-02 and REL-01 show guidance only. The backup task needs a backup destination, and the manufacturer name is not in the site data. Their scripts held placeholders (`<site>`, `<manufacturer>`) that Run Fix would have sent to the site. The finding text says why.
 - COL-03 guidance names `-CollectionId`. The cmdlet has no `-Id`.
 - An unknown collection reference type shows as `type<n>`. It showed `type0`.
+
+### Changed
+
+- Refresh the vendored SuiteCommon to 2026.11.07.0075.
 
 ### Added
 

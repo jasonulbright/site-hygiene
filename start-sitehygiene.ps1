@@ -116,18 +116,11 @@ $global:LastScanPath = Join-Path $PSScriptRoot 'SiteHygiene.lastscan.json'
 function Get-ShSuppressedKeys {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Returns the full suppression key set by design.')]
     param()
+    $stored = Read-SuiteSettings -Path $global:SuppressPath -Defaults @{ Keys = @() }
     $set = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-    # Read-SuiteSettings cannot return a setting named Keys: it loops over $settings.Keys, and a hashtable that
-    # holds an entry named Keys answers with that entry, so the loop never runs and the file is never read. The
-    # file is read here instead, and an unreadable file counts as no suppressions.
-    if (Test-Path -LiteralPath $global:SuppressPath) {
-        try {
-            $doc = Get-Content -LiteralPath $global:SuppressPath -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
-            foreach ($k in @($doc.Keys)) {
-                if (-not [string]::IsNullOrWhiteSpace([string]$k)) { [void]$set.Add([string]$k) }
-            }
-        }
-        catch { Write-Log ('Suppression file unreadable ({0}): {1}' -f $global:SuppressPath, $_.Exception.Message) -Level WARN }
+    # The indexer, not .Keys: the settings hashtable holds an entry named Keys.
+    foreach ($k in @($stored['Keys'])) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$k)) { [void]$set.Add([string]$k) }
     }
     # Comma-wrapped: a bare return would unroll the HashSet into strings.
     return ,$set

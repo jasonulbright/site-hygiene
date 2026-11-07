@@ -280,13 +280,29 @@ Describe 'Suppression keys and preferences' {
         (Get-ShSuppressedKeys).Count | Should -Be 1
     }
 
-    It 'reads a damaged suppression file as no suppressions and warns' {
-        Mock Write-Log { }
+    It 'reads a damaged suppression file as no suppressions without an error' {
         Set-Content -LiteralPath $global:SuppressPath -Value '{broken'
+        { Get-ShSuppressedKeys } | Should -Not -Throw
         (Get-ShSuppressedKeys).Count | Should -Be 0
-        Should -Invoke Write-Log -Times 1 -Exactly -ParameterFilter { $Level -eq 'WARN' -and $Message -like 'Suppression file unreadable*' }
     }
 
+    It 'reads a file in the format that earlier versions wrote: <Case>' -ForEach @(
+        @{ Case = 'several keys'; Json = '{"Keys":["APP-01|a","PKG-01|b"]}'; Count = 2 }
+        @{ Case = 'one key as a plain string'; Json = '{"Keys":"APP-01|a"}'; Count = 1 }
+        @{ Case = 'an empty list'; Json = '{"Keys":[]}'; Count = 0 }
+        @{ Case = 'no Keys property'; Json = '{"Other":1}'; Count = 0 }
+    ) {
+        Set-Content -LiteralPath $global:SuppressPath -Value $Json
+        (Get-ShSuppressedKeys).Count | Should -Be $Count
+    }
+
+    It 'leaves the file of an earlier version unchanged when it reads it' {
+        $json = '{"Keys":["APP-01|a"]}'
+        Set-Content -LiteralPath $global:SuppressPath -Value $json
+        $before = [System.IO.File]::ReadAllBytes($global:SuppressPath)
+        $null = Get-ShSuppressedKeys
+        [System.IO.File]::ReadAllBytes($global:SuppressPath) | Should -Be $before
+    }
     It 'returns the defaults without a file and keeps a saved value' {
         $p = Get-ShPreferences
         $p.DarkMode | Should -BeTrue

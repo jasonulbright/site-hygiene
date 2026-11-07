@@ -42,7 +42,7 @@ Each defect has a test that failed on the old code (the old module, script and X
 7. A `[ ] * ?` in a name acted as a pattern in the fix scripts that select by name. Fixed: `-DisableWildcardHandling`.
 8. The HTML export of the Live tables did not encode markup. Fixed.
 9. An unknown collection reference type showed as `type0` (`$_` inside a `switch`). Fixed.
-10. Suppressed findings were never read back after a restart: `Read-SuiteSettings` cannot return a setting named `Keys`. Fixed: the app reads its file itself.
+10. Suppressed findings were never read back after a restart: `Read-SuiteSettings` could not return a setting named `Keys`. Fixed in SuiteCommon 2026.11.07.0075, now vendored here. The app always wrote and reads the name `Keys` in `SiteHygiene.suppressions.json`, so there is no old data under another name and no migration; tests read files in the earlier format.
 11. CSV and HTML export of every Live view and of Relationships failed: the data table was unrolled into rows. Fixed.
 
 Hardening without a failing old-code test: `Invoke-HygieneFix` supports `-WhatIf` (the test for it did fail on the old code), runs with `ErrorActionPreference` Stop and also treats an error written without stopping as a failure; `New-HygieneFinding` accepts an empty object name.
@@ -50,7 +50,7 @@ Hardening without a failing old-code test: `Invoke-HygieneFix` supports `-WhatIf
 ## Not covered, and why
 
 - Contrast of disabled controls, the sidebar button border, the light combo boxes and text boxes, and the unselected tab headers misses the standard (text 4.5:1, borders 3:1). The cause is the shared SuiteCommon palette and the MahApps styles. `Tests/KnownContrastDefects.ps1` lists each violation. The window test fails on a new one and on a listed one that is fixed. The fix belongs in `app-packager-suite`.
-- `Read-SuiteSettings` in SuiteCommon returns nothing for a setting named `Keys` (and for `Values` or `Count`). The fix belongs in `app-packager-suite`; the app works around it.
+- SuiteCommon is vendored from `app-packager-suite` and is not edited here.
 - The dialogs and grids are not shown with a full data set, so their layout with long values is not measured.
 - The scan, refresh and Run Fix click handlers, the background runspace, the timer and the Trends chart run inside the window with a site. The lab run covers the module calls that they make, not the clicks.
 - Client Health and Inactive Devices need SQL. They run only against mocks.
