@@ -5,8 +5,10 @@
 Run the full suite. The release stops if a test fails.
 
 ```powershell
-powershell -NoProfile -Command "Import-Module Pester -MinimumVersion 5.0; $r = Invoke-Pester -Path Tests -PassThru -Output None; 'passed {0} failed {1}' -f $r.PassedCount, $r.FailedCount"
+.\Invoke-Checks.ps1
 ```
+
+Run it under Windows PowerShell 5.1 and under PowerShell 7 (`pwsh -NoProfile -File .\Invoke-Checks.ps1`). Both runs must pass.
 
 ## 2. Version
 

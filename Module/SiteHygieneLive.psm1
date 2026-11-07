@@ -15,6 +15,7 @@
     database.
 #>
 function New-HygieneSqlParameter {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification='Builds a value in memory; changes no state.')]
     <#
     .SYNOPSIS
         Builds the Invoke-Sqlcmd parameter set for a site database query.
@@ -909,7 +910,11 @@ function Export-HygieneTableCsv {
         $rows += [PSCustomObject]$obj
     }
 
-    $rows | Export-Csv -LiteralPath $OutputPath -NoTypeInformation -Encoding UTF8
+    if ($rows.Count -eq 0) {
+        # Export-Csv writes nothing for no rows; the file keeps the column names.
+        Set-Content -LiteralPath $OutputPath -Value (($DataTable.Columns | ForEach-Object { '"{0}"' -f ($_.ColumnName -replace '"', '""') }) -join ',') -Encoding UTF8
+    }
+    else { $rows | Export-Csv -LiteralPath $OutputPath -NoTypeInformation -Encoding UTF8 }
     Write-Log "Exported CSV to $OutputPath"
 }
 
@@ -953,7 +958,10 @@ function Export-HygieneTableHtml {
     $glyphWarn  = [char]0x26A0
     $glyphErr   = [char]0x2717
 
-    $headerRow = ($DataTable.Columns | ForEach-Object { "<th>$($_.ColumnName)</th>" }) -join ''
+    # Every value comes from the site (a device, a deployment, a collection) and goes into markup as text.
+    $encode = { param($Text) [System.Net.WebUtility]::HtmlEncode([string]$Text) }
+    $safeTitle = & $encode $ReportTitle
+    $headerRow = ($DataTable.Columns | ForEach-Object { "<th>$(& $encode $_.ColumnName)</th>" }) -join ''
     $bodyRows = foreach ($row in $DataTable.Rows) {
         $cells = foreach ($col in $DataTable.Columns) {
             $val = [string]$row[$col.ColumnName]
@@ -979,17 +987,17 @@ function Export-HygieneTableHtml {
                 $prefix = '<span class="glyph">' + $glyphWarn + '</span>'
                 $cssClass = ' class="attn"'
             }
-            "<td$cssClass>$prefix$val</td>"
+            "<td$cssClass>$prefix$(& $encode $val)</td>"
         }
         "<tr>$($cells -join '')</tr>"
     }
 
     $html = @(
         '<!DOCTYPE html>',
-        '<html><head><meta charset="utf-8"><title>' + $ReportTitle + '</title>',
+        '<html><head><meta charset="utf-8"><title>' + $safeTitle + '</title>',
         $css,
         '</head><body>',
-        "<h1>$ReportTitle</h1>",
+        "<h1>$safeTitle</h1>",
         "<div class='summary'>Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') | Rows: $($DataTable.Rows.Count)</div>",
         "<table><thead><tr>$headerRow</tr></thead>",
         "<tbody>$($bodyRows -join "`r`n")</tbody></table>",
@@ -1001,6 +1009,7 @@ function Export-HygieneTableHtml {
 }
 
 function New-HygieneLiveSummaryText {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification='Builds a value in memory; changes no state.')]
     <#
     .SYNOPSIS
         Returns a plain text summary of all health counts for clipboard/log.
