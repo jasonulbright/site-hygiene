@@ -4,8 +4,8 @@ Measured 2026-11-07 with `Invoke-Checks.ps1` (Pester 5.7.1, PSScriptAnalyzer 1.2
 
 | | Before | After |
 |---|---|---|
-| Tests | 181 | 876 as run by CI on both hosts (780 pass, 96 skip: the contract tests need the ConfigMgr console and run on a machine that has it) |
-| Module coverage | 81.4% (3016 of 3705 commands) | 98.3% of 3735 commands |
+| Tests | 181 | 889 as run by CI on both hosts (790 pass, 99 skip: the contract tests need the ConfigMgr console and run on a machine that has it) |
+| Module coverage | 81.4% (3016 of 3705 commands) | 98.3% of 3753 commands |
 | Lab steps | none | 22 (`Tests/Lab`) |
 
 Run: `.\Invoke-Checks.ps1` (lint, tests, coverage floor 80%). It runs in CI on both hosts (`.github/workflows/checks.yml`).
@@ -33,7 +33,7 @@ Window tests open real windows, so they run only where that is allowed. `Test-Wi
 
 Each defect has a test that failed on the old code (the old module, script and XAML text swapped in) and passes now.
 
-1. The window minimum width was 1100, above 1024. Fixed: 1024.
+1. The window minimum width was 1100, above 1024, and the action bar of the Live views ran off the window at 1024 (Copy Summary). Fixed: minimum width 1024 and a narrower action bar.
 2. The Options dialog hint text missed 4.5:1 in the light theme. Fixed: a darker brush.
 3. COL-03 guidance named `Set-CMCollection -Id`; the cmdlet has no `-Id`. Fixed: `-CollectionId`.
 4. REL-01, MNT-01 and MNT-02 had runnable fix scripts with placeholders (`<manufacturer>`, `<site>`). Run Fix would have sent the placeholder to the site. Fixed: MNT-01 runs `Set-CMSiteMaintenanceTask -Name ... -Enabled $true -DisableWildcardHandling` (proven in the lab). MNT-02 (needs a backup destination) and REL-01 (the manufacturer name is not in the site data) are guidance only; their finding text says why.
