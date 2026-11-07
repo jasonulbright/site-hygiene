@@ -1553,8 +1553,8 @@ function Test-HygMaintenanceTasks {
         New-HygieneFinding -CheckId 'MNT-01' -Severity Info -Category 'Site' `
             -ObjectType 'MaintenanceTask' -ObjectId '' -ObjectName $t.TaskName `
             -Evidence ("Cleanup task '{0}' is disabled; the data it would prune accumulates in the site database." -f $t.TaskName) `
-            -Recommendation 'Enable it unless a deliberate retention policy keeps it off.' `
-            -FixScript ("# Run on the site drive of the site that owns the task: Set-CMSiteMaintenanceTask -MaintenanceTaskName '{0}' -Enabled `$true -SiteCode <site code>" -f $t.TaskName)
+            -Recommendation 'Enable it unless a deliberate retention policy keeps it off. Run Fix enables the task on the connected site; a site with its own task of that name needs the same step there.' `
+            -FixScript ("Set-CMSiteMaintenanceTask -Name '{0}' -Enabled `$true -DisableWildcardHandling" -f (ConvertTo-HygQuotedLiteral $t.TaskName))
     }
 
     $backup = @($Data.MaintenanceTasks | Where-Object { $_.TaskName -eq 'Backup Site Server' }) | Select-Object -First 1
@@ -1562,8 +1562,8 @@ function Test-HygMaintenanceTasks {
         New-HygieneFinding -CheckId 'MNT-02' -Severity Warning -Category 'Site' `
             -ObjectType 'MaintenanceTask' -ObjectId '' -ObjectName 'Backup Site Server' `
             -Evidence 'The Backup Site Server maintenance task is disabled.' `
-            -Recommendation 'Enable it, or confirm an SQL-level backup of the site database (plus CD.Latest) covers recovery instead.' `
-            -FixScript "# Run on the site drive of the site that owns the task: Set-CMSiteMaintenanceTask -MaintenanceTaskName 'Backup Site Server' -Enabled `$true -SiteCode <site code>"
+            -Recommendation 'Enable it, or confirm an SQL-level backup of the site database (plus CD.Latest) covers recovery instead. Run Fix is not offered: enabling the task needs a backup destination that only you know. Set the destination, then enable the task.' `
+            -FixScript "# Set the backup destination and enable the task: Set-CMSiteMaintenanceTask -Name 'Backup Site Server' -SiteBackupPath <backup path> -Enabled `$true"
     }
 }
 
@@ -1966,7 +1966,7 @@ function Test-HygRelationshipChecks {
             New-HygieneFinding -CheckId 'REL-01' -Severity Info -Category 'Relationships' `
                 -ObjectType 'Application' -ObjectId ([string]$app.ModelName) -ObjectName $app.Name `
                 -Evidence 'Application participates in supersedence/dependency relationships but has no Manufacturer set, which makes relationship views hard to audit.' `
-                -Recommendation 'Fill in the Manufacturer field.' `
+                -Recommendation 'Fill in the Manufacturer field. Run Fix is not offered: the site data does not hold the manufacturer name, and only a person knows it.' `
                 -FixScript ("# Set the manufacturer in the console, or run: Set-CMApplication -Name '{0}' -DisableWildcardHandling -Publisher <manufacturer>" -f (ConvertTo-HygQuotedLiteral $app.Name))
         }
     }

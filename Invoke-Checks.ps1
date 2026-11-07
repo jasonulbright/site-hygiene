@@ -38,7 +38,8 @@ $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 $failed = $false
 
-Import-Module Pester -MinimumVersion 5.0 -ErrorAction Stop
+# Pester 5 only: the tests use the 5.x configuration and syntax, and Pester 6 changes them.
+Import-Module Pester -MinimumVersion 5.0 -MaximumVersion 5.99.99 -ErrorAction Stop
 
 # ---- 1. Lint ---------------------------------------------------------------
 if (-not $SkipLint) {

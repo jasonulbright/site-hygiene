@@ -3,7 +3,9 @@
 # Creates one ZZTEST- device collection, one ZZTEST- package and three ZZTEST- applications, scans the
 # site for them, and runs their fix scripts with Invoke-HygieneFix: the success path, -WhatIf, a missing
 # object, a script whose first line fails, a name with a wildcard character and a name with a curly
-# apostrophe. Removes everything it created, also when a step fails. It compares every other collection,
+# apostrophe. It also runs the MNT-01 fix on one real maintenance task: the task settings are site wide, so
+# the script records every task before the first change, changes only the Enabled flag of the one task, and
+# puts that flag back in the cleanup, also when a step fails. Removes everything it created, also when a step fails. It compares every other collection,
 # package and application with a snapshot taken before the first change. Only objects named
 # ZZTEST-SH-<tag>-* change.
 param(
@@ -29,12 +31,19 @@ $appDecoy = "${prefix}app 1"
 $appCurly = "${prefix}it$([char]0x2019)s app"   # a right single quotation mark
 $ns = "root\SMS\site_$SiteCode"
 $snapshot = $null
+$mntName = $null
+$mntOriginal = $null
+$mntBefore = $null
+$mntRecommended = @('Delete Aged Inventory History', 'Delete Aged Discovery Data', 'Delete Obsolete Client Discovery Data', 'Delete Aged Client Operations', 'Delete Aged Log Data')
 
 function Get-Snapshot {
     $c = @(Get-CimInstance -Namespace $ns -ClassName SMS_Collection -Filter 'CollectionType = 2' | Where-Object { $_.Name -notlike 'ZZTEST-*' } | ForEach-Object { '{0}|{1}' -f $_.CollectionID, $_.Name } | Sort-Object)
     $p = @(Get-CMPackage -Fast | Where-Object { $_.Name -notlike 'ZZTEST-*' } | ForEach-Object { '{0}|{1}' -f $_.PackageID, $_.Name } | Sort-Object)
     $a = @(Get-CMApplication -Fast | Where-Object { $_.LocalizedDisplayName -notlike 'ZZTEST-*' } | ForEach-Object { '{0}|{1}' -f $_.CI_ID, $_.LocalizedDisplayName } | Sort-Object)
     [PSCustomObject]@{ Collections = $c; Packages = $p; Applications = $a }
+}
+function Get-MaintenanceSnapshot {
+    @(Get-CMSiteMaintenanceTask | Sort-Object TaskName | ForEach-Object { '{0}|{1}|{2}|{3}|{4}|{5}|{6}' -f $_.TaskName, $_.Enabled, ($_.DaysOfWeek), ($_.BeginTime), ($_.LatestBeginTime), ($_.DeleteOlderThanDays), ($_.DeviceName) })
 }
 function Test-AppExists { param([string]$Name) [bool](@(Get-CMApplication -Fast | Where-Object { $_.LocalizedDisplayName -ceq $Name }).Count) }
 function Get-FixFinding { param($Findings, [string]$Check, [string]$Name) @($Findings | Where-Object { $_.CheckId -eq $Check -and $_.ObjectName -ceq $Name })[0] }
@@ -95,6 +104,25 @@ try {
     $r = Invoke-HygieneFix -Finding $partial -Confirm:$false
     Add-Result 'a script whose first line fails reports a failure and its second line does not run' ((-not $r.Success) -and (Test-AppExists $appDecoy)) "success=$($r.Success) error=[$($r.ErrorMessage)]"
 
+    # --- MNT-01 on a real maintenance task --------------------------------------------------------------
+    $mntBefore = Get-MaintenanceSnapshot
+    $task = @(Get-CMSiteMaintenanceTask | Where-Object { $_.TaskName -in $mntRecommended } | Sort-Object TaskName)[0]
+    if (-not $task) { throw 'No recommended maintenance task exists on this site.' }
+    $mntName = $task.TaskName
+    $mntOriginal = [bool]$task.Enabled
+    Add-Result 'look before acting: the maintenance task and its state' $true ("$mntName enabled=$mntOriginal; $(@($mntBefore).Count) tasks recorded")
+    if ($mntOriginal) { Set-CMSiteMaintenanceTask -Name $mntName -Enabled $false -DisableWildcardHandling }
+    Add-Result 'the task is disabled for the test' (-not [bool](Get-CMSiteMaintenanceTask -Name $mntName).Enabled) $mntName
+    $mdata = Get-HygieneData -Datasets 'MaintenanceTasks'
+    $mf = @(Test-HygMaintenanceTasks -Data $mdata | Where-Object { $_.CheckId -eq 'MNT-01' -and $_.ObjectName -ceq $mntName })[0]
+    Add-Result 'MNT-01 names the task and its fix is runnable' ([bool]$mf -and (Test-HygieneFixExecutable -FixScript $mf.FixScript)) $mf.FixScript
+    $wi = Invoke-HygieneFix -Finding $mf -WhatIf
+    Add-Result 'MNT-01 under -WhatIf changes nothing' ((-not $wi.Success) -and -not [bool](Get-CMSiteMaintenanceTask -Name $mntName).Enabled) ''
+    $r = Invoke-HygieneFix -Finding $mf -Confirm:$false
+    Add-Result 'fix MNT-01 enables the task' ($r.Success -and [bool](Get-CMSiteMaintenanceTask -Name $mntName).Enabled) $r.ErrorMessage
+    $mb = @(Test-HygMaintenanceTasks -Data (Get-HygieneData -Datasets 'MaintenanceTasks') | Where-Object { $_.CheckId -eq 'MNT-02' })
+    Add-Result 'MNT-02 stays guidance only' (@($mb | Where-Object { Test-HygieneFixExecutable -FixScript $_.FixScript }).Count -eq 0) ''
+
     $okTwo = [pscustomobject]@{ CheckId = 'APP-01'; ObjectName = 'decoy'; FixScript = $fDecoy.FixScript }
     $r = Invoke-HygieneFix -Finding $okTwo -Confirm:$false
     Add-Result 'fix APP-01 removes the decoy' ($r.Success -and -not (Test-AppExists $appDecoy)) $r.ErrorMessage
@@ -113,6 +141,9 @@ finally {
         foreach ($p in @(Get-CMPackage -Fast | Where-Object { $_.Name -like "$prefix*" })) {
             try { Remove-CMPackage -Id $p.PackageID -Force -ErrorAction Stop } catch { Add-Result "cleanup package $($p.Name)" $false $_.Exception.Message }
         }
+        if ($mntName -and $null -ne $mntOriginal) {
+            try { Set-CMSiteMaintenanceTask -Name $mntName -Enabled $mntOriginal -DisableWildcardHandling -ErrorAction Stop } catch { Add-Result "restore maintenance task $mntName" $false $_.Exception.Message }
+        }
         for ($pass = 1; $pass -le 3; $pass++) {
             foreach ($c in @(Get-CMDeviceCollection -Name "$prefix*" -ErrorAction SilentlyContinue)) {
                 if ($c.Name -notlike "$prefix*") { continue }
@@ -129,6 +160,9 @@ finally {
             $after = Get-Snapshot
             $same = ((@($snapshot.Collections) -join "`n") -ceq (@($after.Collections) -join "`n")) -and ((@($snapshot.Packages) -join "`n") -ceq (@($after.Packages) -join "`n")) -and ((@($snapshot.Applications) -join "`n") -ceq (@($after.Applications) -join "`n"))
             Add-Result 'other collections, packages and applications are unchanged' $same ''
+        }
+        if ($mntBefore) {
+            Add-Result 'maintenance tasks are restored exactly' ((@($mntBefore) -join "`n") -ceq (@(Get-MaintenanceSnapshot) -join "`n")) "$mntName enabled=$mntOriginal"
         }
     } catch { Add-Result 'verify cleanup' $false $_.Exception.Message }
 }

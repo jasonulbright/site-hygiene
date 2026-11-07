@@ -14,7 +14,8 @@
 - Fix scripts keep a name with a curly apostrophe inside one literal. A name could end the quoted text.
 - Fix scripts select an object by its exact name. The characters `[ ] * ?` in a name no longer act as a pattern.
 - Fix guidance stays on one line when a name holds a line break. A name could add a runnable line.
-- REL-01, MNT-01 and MNT-02 show their fix as guidance. Their scripts held placeholders (`<manufacturer>`, `<site>`) that Run Fix would have sent to the site.
+- MNT-01 Run Fix enables the cleanup task with `Set-CMSiteMaintenanceTask -Name` on the connected site. The old script held the placeholder `-SiteCode '<site>'` and could not run.
+- MNT-02 and REL-01 show guidance only. The backup task needs a backup destination, and the manufacturer name is not in the site data. Their scripts held placeholders (`<site>`, `<manufacturer>`) that Run Fix would have sent to the site. The finding text says why.
 - COL-03 guidance names `-CollectionId`. The cmdlet has no `-Id`.
 - An unknown collection reference type shows as `type<n>`. It showed `type0`.
 

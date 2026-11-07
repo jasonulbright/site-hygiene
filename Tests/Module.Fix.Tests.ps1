@@ -266,3 +266,45 @@ Describe 'Fix guidance and placeholders' {
     }
 }
 
+Describe 'Fixes for maintenance tasks and manufacturers' {
+    BeforeAll {
+        $script:Tasks = [PSCustomObject]@{ MaintenanceTasks = @(
+                [PSCustomObject]@{ TaskName = 'Delete Aged Discovery Data'; Enabled = $false }
+                [PSCustomObject]@{ TaskName = 'Backup Site Server'; Enabled = $false }) }
+        $script:Found = @(Test-HygMaintenanceTasks -Data $script:Tasks)
+    }
+
+    It 'enables a cleanup task with the native cmdlet, by exact name, on the connected site' {
+        $f = $script:Found | Where-Object CheckId -eq 'MNT-01'
+        Test-HygieneFixExecutable -FixScript $f.FixScript | Should -BeTrue
+        $f.FixScript | Should -Be 'Set-CMSiteMaintenanceTask -Name ''Delete Aged Discovery Data'' -Enabled $true -DisableWildcardHandling'
+        $p = Get-FixParse -Text $f.FixScript
+        $p.Errors | Should -Be 0
+        $p.Statements | Should -Be 1
+        $f.FixScript | Should -Not -Match '<'
+    }
+
+    It 'gives only guidance for the backup task and says a backup destination is needed' {
+        $f = $script:Found | Where-Object CheckId -eq 'MNT-02'
+        Test-HygieneFixExecutable -FixScript $f.FixScript | Should -BeFalse
+        $f.FixScript | Should -Match '-SiteBackupPath'
+        $f.Recommendation | Should -Match 'backup destination'
+        $f.Recommendation | Should -Match 'Run Fix is not offered'
+    }
+
+    It 'gives only guidance for a missing manufacturer and says only a person knows the name' {
+        $dt = "<AppMgmtDigest xmlns='http://schemas.microsoft.com/SystemCenterConfigurationManager/2009/AppMgmtDigest'><DeploymentType AuthoringScopeId='ScopeId_T' LogicalName='DeploymentType_X'><Title>Install</Title><Installer><Contents/></Installer><Supersedes/><Dependencies><DeploymentTypeRule xmlns='http://schemas.microsoft.com/SystemsCenterConfigurationManager/2009/06/14/Rules'><DeploymentTypeIntentExpression DesiredState='Required'><DeploymentTypeApplicationReference AuthoringScopeId='S' LogicalName='B'/></DeploymentTypeIntentExpression></DeploymentTypeRule></Dependencies></DeploymentType></AppMgmtDigest>"
+        $apps = @(
+            [PSCustomObject]@{ CI_ID = 1; ModelName = 'S/A'; Name = 'NoVendor'; SoftwareVersion = '1'; Manufacturer = ''; IsEnabled = $true; IsExpired = $false; IsSuperseded = $false; IsSuperseding = $false; HasContent = $true; NumberOfDeploymentTypes = 1; SDMPackageXML = $dt }
+            [PSCustomObject]@{ CI_ID = 2; ModelName = 'S/B'; Name = 'HasVendor'; SoftwareVersion = '1'; Manufacturer = 'Contoso'; IsEnabled = $true; IsExpired = $false; IsSuperseded = $false; IsSuperseding = $false; HasContent = $true; NumberOfDeploymentTypes = 0; SDMPackageXML = '' })
+        $parsed = ConvertTo-HygRelationships -Applications $apps
+        $lookup = @{}
+        foreach ($a in $apps) { $lookup[[int]$a.CI_ID] = $a }
+        $rel = [PSCustomObject]@{ Apps = $lookup; Relationships = $parsed.Relationships; ContentLocations = $parsed.ContentLocations; DatasetNotes = $parsed.ParseNotes }
+        $f = @(Test-HygRelationshipChecks -RelationshipData $rel | Where-Object CheckId -eq 'REL-01')
+        $f.Count | Should -Be 1
+        Test-HygieneFixExecutable -FixScript $f[0].FixScript | Should -BeFalse
+        $f[0].Recommendation | Should -Match 'Run Fix is not offered'
+        $f[0].Recommendation | Should -Match 'only a person knows'
+    }
+}

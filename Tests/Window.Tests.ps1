@@ -116,17 +116,18 @@ Describe 'Main window XAML' {
         @($r | Where-Object { $_.Name -ne $first -and $_.Vis -ne 'Collapsed' }) | Should -BeNullOrEmpty
     }
 
-    It 'opens at the requested size <Size> in the <Theme> theme; a larger minimum size would stop it' -ForEach $script:Matrix {
-        $r = Invoke-WpfSta -Arguments @{ Xaml = $script:AppConfig.Xaml; W = $W; H = $H; Dark = $Dark } -Script {
-            $w = Open-TestWindow -XamlPath (Join-Path $Root $Arguments.Xaml) -Dark $Arguments.Dark -Width $Arguments.W -Height $Arguments.H
-            $o = [PSCustomObject]@{ Width = $w.ActualWidth; Height = $w.ActualHeight }
+    It 'declares a minimum size that fits the requested size <Size>' -ForEach $script:Matrix {
+        # The real window size depends on the screen of the machine (a CI runner screen is about 1044 pixels wide),
+        # so the test reads the declared minimum size, which does not.
+        $r = Invoke-WpfSta -Arguments @{ Xaml = $script:AppConfig.Xaml } -Script {
+            $w = Open-TestWindow -XamlPath (Join-Path $Root $Arguments.Xaml)
+            $o = [PSCustomObject]@{ MinW = $w.MinWidth; MinH = $w.MinHeight }
             $w.Close(); $o
         }
-        $r.Width | Should -Be $W
-        $r.Height | Should -Be $H
+        $r.MinW | Should -BeLessOrEqual $W
+        $r.MinH | Should -BeLessOrEqual $H
     }
 }
-
 Describe 'Dialog windows' {
     It 'finds the dialog XAML in the script' {
         $script:DialogXaml.Count | Should -Be 1

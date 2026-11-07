@@ -4,9 +4,9 @@ Measured 2026-11-07 with `Invoke-Checks.ps1` (Pester 5.7.1, PSScriptAnalyzer 1.2
 
 | | Before | After |
 |---|---|---|
-| Tests | 181 | 847 on Windows PowerShell 5.1; 847 on PowerShell 7 (96 skip on 7: the contract tests need the ConfigMgr console) |
+| Tests | 181 | 850 on Windows PowerShell 5.1; 847 on PowerShell 7 (96 skip on 7: the contract tests need the ConfigMgr console) |
 | Module coverage | 81.4% (3016 of 3705 commands) | 98.3% of 3734 commands |
-| Lab steps | none | 15 (`Tests/Lab`) |
+| Lab steps | none | 22 (`Tests/Lab`) |
 
 Run: `.\Invoke-Checks.ps1` (lint, tests, coverage floor 80%). It runs in CI on both hosts (`.github/workflows/checks.yml`).
 
@@ -23,7 +23,7 @@ Run: `.\Invoke-Checks.ps1` (lint, tests, coverage floor 80%). It runs in CI on b
 | Real cmdlet signatures | `CmCmdlet.Contract.Tests.ps1` | Every ConfigMgr call in the modules, and every cmdlet named in a fix script or fix guidance, uses only parameters that the real cmdlet has. Runs where the console is installed |
 | Start without the console | `Startup.Tests.ps1` | Plain message, `$false`, no raw exception |
 | Windows | `Window.Tests.ps1` | Main window with its ten views and the Options dialog with its five panes: names, titles, no clipped text and nothing off screen at 1024x720 and 1440x900 in both themes, text and control contrast |
-| Lab | `Lab/Invoke-HygLab.ps1` | ZZTEST- collection, package and three applications on CM01: scan, then Run Fix with success, `-WhatIf`, a missing object, a first line that fails, a name with `[1]` and a name with a curly apostrophe. Checks that nothing else changed |
+| Lab | `Lab/Invoke-HygLab.ps1` | ZZTEST- collection, package and three applications on CM01: scan, then Run Fix with success, `-WhatIf`, a missing object, a first line that fails, a name with `[1]` and a name with a curly apostrophe. Also MNT-01 on one real maintenance task (records all 47 tasks, disables one recommended task, runs the fix, restores the flag, compares all tasks). Checks that nothing else changed |
 
 ## Defects found
 
@@ -32,7 +32,7 @@ Each defect has a test that failed on the old code (the old module, script and X
 1. The window minimum width was 1100, above 1024. Fixed: 1024.
 2. The Options dialog hint text missed 4.5:1 in the light theme. Fixed: a darker brush.
 3. COL-03 guidance named `Set-CMCollection -Id`; the cmdlet has no `-Id`. Fixed: `-CollectionId`.
-4. REL-01, MNT-01 and MNT-02 had runnable fix scripts with placeholders (`<manufacturer>`, `<site>`). Run Fix would have sent the placeholder to the site. Fixed: guidance only.
+4. REL-01, MNT-01 and MNT-02 had runnable fix scripts with placeholders (`<manufacturer>`, `<site>`). Run Fix would have sent the placeholder to the site. Fixed: MNT-01 runs `Set-CMSiteMaintenanceTask -Name ... -Enabled $true -DisableWildcardHandling` (proven in the lab). MNT-02 (needs a backup destination) and REL-01 (the manufacturer name is not in the site data) are guidance only; their finding text says why.
 5. A curly apostrophe in a name ended the quoted name in a fix script. Fixed: every quote character is doubled.
 6. A line break in a name could add a runnable line to display-only guidance. Fixed: guidance is kept on one line.
 7. A `[ ] * ?` in a name acted as a pattern in the fix scripts that select by name. Fixed: `-DisableWildcardHandling`.
