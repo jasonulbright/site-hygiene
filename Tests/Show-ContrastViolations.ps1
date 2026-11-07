@@ -11,6 +11,8 @@
 param()
 . "$PSScriptRoot\TestHelpers.ps1"
 . "$PSScriptRoot\WindowHarness.ps1"
+$guard = Test-WindowTestsAllowed
+if (-not $guard.Allowed) { throw ('This tool opens windows and does not run here: {0}.' -f $guard.Reason) }
 . "$PSScriptRoot\WindowConfig.ps1"
 . "$PSScriptRoot\KnownContrastDefects.ps1"
 Import-AppModule

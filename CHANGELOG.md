@@ -1,6 +1,6 @@
 # Changelog
 
-## [2026.11.07.0030] - 2026-11-07
+## [2026.11.07.0031] - 2026-11-07
 
 ## 11 fixes and a test suite
 
@@ -23,6 +23,20 @@
 
 - `Invoke-Checks.ps1`, the CI workflow, and a Pester suite for the module, the window, the script logic and the lab write path (`Tests/TESTPLAN.md`).
 - `Invoke-HygieneFix` supports `-WhatIf`.
+
+## [2026.11.07.0030] - 2026-11-07
+
+## 1 fix and a user guide
+
+### Fixed
+
+- Show the Inventory and Tree tab headers of the Relationships view in the theme text color. They were dim and hard to read.
+
+### Added
+
+- Add the user guide (docs/index.md) with images of the running window.
+- Add tools/guide-capture, one command that regenerates every image of the guide on a lab computer.
+
 ## [2026.10.12.0029] - 2026-10-12
 
 ## 1 fix

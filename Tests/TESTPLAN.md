@@ -25,6 +25,10 @@ Run: `.\Invoke-Checks.ps1` (lint, tests, coverage floor 80%). It runs in CI on b
 | Windows | `Window.Tests.ps1` | Main window with its ten views and the Options dialog with its five panes: names, titles, no clipped text and nothing off screen at 1024x720 and 1440x900 in both themes, text and control contrast |
 | Lab | `Lab/Invoke-HygLab.ps1` | ZZTEST- collection, package and three applications on CM01: scan, then Run Fix with success, `-WhatIf`, a missing object, a first line that fails, a name with `[1]` and a name with a curly apostrophe. Also MNT-01 on one real maintenance task (records all 47 tasks, disables one recommended task, runs the fix, restores the flag, compares all tasks). Checks that nothing else changed |
 
+## Window test guard
+
+Window tests open real windows, so they run only where that is allowed. `Test-WindowTestsAllowed` (in `Tests/WindowHarness.ps1`) allows them only when `SUITE_ALLOW_WINDOW_TESTS` is `1` and the computer is not the dev PC (AYW). Otherwise the window tests report Skipped with the reason, no runspace or window is created, and `Invoke-Checks.ps1` prints one line (`Window tests skipped: ...`) and still passes. The window tests add no module coverage, so the coverage floor is the same with or without them. The CI workflow sets the opt-in. `Tests/WindowGuard.Tests.ps1` tests the guard and checks that every test file that can open a window uses it. The text checks of the window XAML and of the dialog titles do not open a window and always run.
+
 ## Defects found
 
 Each defect has a test that failed on the old code (the old module, script and XAML text swapped in) and passes now.

@@ -31,7 +31,7 @@ function Get-KnownContrastDefect {
                 'btnViewSite:DisabledText', 'btnViewSite:EnabledBorder', 'btnViewSummary:DisabledBorder',
                 'btnViewSummary:DisabledText', 'btnViewSummary:EnabledBorder', 'btnViewTrends:DisabledBorder',
                 'btnViewTrends:DisabledText', 'btnViewTrends:EnabledBorder', 'chkShowSuppressed:DisabledText',
-                'text:Inventory', 'text:Run Fix', 'text:Tree',
+                'text:Run Fix',
                 'titlebar:inactive'
             )
         }
@@ -48,8 +48,8 @@ function Get-KnownContrastDefect {
                 'cboSeverity:EnabledText', 'cboTrendMetric:DisabledBorder', 'cboTrendMetric:DisabledText',
                 'cboTrendMetric:EnabledBorder', 'cboTrendMetric:EnabledText', 'cboTrendRange:DisabledBorder',
                 'cboTrendRange:DisabledText', 'cboTrendRange:EnabledBorder', 'cboTrendRange:EnabledText',
-                'chkShowSuppressed:DisabledText', 'text:Inventory', 'text:Run Fix',
-                'text:Tree', 'titlebar:inactive', 'txtFilter:DisabledBorder',
+                'chkShowSuppressed:DisabledText', 'text:Run Fix',
+                'titlebar:inactive', 'txtFilter:DisabledBorder',
                 'txtFilter:EnabledBorder'
             )
         }
