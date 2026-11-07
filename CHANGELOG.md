@@ -6,7 +6,7 @@
 
 ### Fixed
 
-- The window opens at 1024 pixels wide. The minimum width was 1100.
+- The window opens at 1024 pixels wide. The minimum width was 1100. The action bar of the Live views fits at that width; Copy Summary ran off the window and the filter box could shrink to nothing.
 - The hint text in the Options dialog meets the 4.5:1 contrast in the light theme.
 - CSV and HTML export of the Live views and of Relationships works. It failed with a binding error.
 - Suppressed findings stay suppressed after a restart. The suppression file was never read. The fix is in the shared SuiteCommon (2026.11.07.0075); the app needs no change to its file. Earlier versions wrote the suppressions as `Keys` in `SiteHygiene.suppressions.json`, and the app reads the same name, so no migration is needed.

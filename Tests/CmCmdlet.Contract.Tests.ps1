@@ -81,7 +81,7 @@ Describe 'ConfigMgr cmdlets in fix scripts and fix guidance' {
     It 'reads both cmdlets of a piped call, including Resume, with the named parameters' {
         $calls = @(Get-FixTextCall -Text "Get-CMApplication -Name 'x' -DisableWildcardHandling | Resume-CMApplication")
         $calls.Count | Should -Be 2
-        ($calls | Where-Object Command -eq 'Resume-CMApplication').Count | Should -Be 1
+        @($calls | Where-Object Command -eq 'Resume-CMApplication').Count | Should -Be 1
         ($calls | Where-Object Command -eq 'Get-CMApplication').Parameters | Should -Be @('Name', 'DisableWildcardHandling')
     }
 
