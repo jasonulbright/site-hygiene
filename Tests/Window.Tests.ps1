@@ -6,7 +6,7 @@
 BeforeDiscovery {
     . "$PSScriptRoot\WindowHarness.ps1"
     . "$PSScriptRoot\WindowConfig.ps1"
-    # No window opens unless this guard allows it (never on the dev PC). The skipped tests report the reason.
+    # No window opens unless this guard allows it (the opt-in must be set). The skipped tests report the reason.
     $script:WindowGuard = Test-WindowTestsAllowed
     if (-not $script:WindowGuard.Allowed) { Write-Host ('Window tests skipped: {0}' -f $script:WindowGuard.Reason) }
     $script:Matrix = foreach ($dark in $true, $false) {

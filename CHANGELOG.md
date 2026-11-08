@@ -1,5 +1,14 @@
 # Changelog
 
+## [2026.11.07.0032] - 2026-11-07
+
+## Window tests need 1 opt-in and no host check
+
+### Changed
+
+- Run window tests only when the SUITE_ALLOW_WINDOW_TESTS opt-in is set.
+- Print one skip line when the opt-in is not set.
+
 ## [2026.11.07.0031] - 2026-11-07
 
 ## 11 fixes and a test suite

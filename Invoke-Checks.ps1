@@ -73,13 +73,12 @@ $testFiles = @(foreach ($dir in 'Module', 'Tests') {
     })
 if ($testFiles.Count -eq 0) { Write-Host 'No test file found.'; exit 1 }
 if ($SkipWindow) { $testFiles = @($testFiles | Where-Object { $_.Name -ne 'Window.Tests.ps1' }) }
-# Window tests open windows. They never run on the dev PC, and elsewhere only with SUITE_ALLOW_WINDOW_TESTS=1.
+# Window tests open windows. They run only with SUITE_ALLOW_WINDOW_TESTS=1.
 # Window tests add no module coverage, so the coverage floor is the same with or without them.
 . (Join-Path $root 'Tests\WindowHarness.ps1')
 $windowGuard = Test-WindowTestsAllowed
 if (-not $windowGuard.Allowed -and -not $SkipWindow) {
-    if ($env:COMPUTERNAME -ieq 'removed') { Write-Host 'Window tests skipped: dev PC (removed). Run them on CM01/CLIENT01 or in CI.' }
-    else { Write-Host 'Window tests skipped: SUITE_ALLOW_WINDOW_TESTS is not 1.' }
+    Write-Host 'Window tests skipped: SUITE_ALLOW_WINDOW_TESTS is not 1.'
     $testFiles = @($testFiles | Where-Object { $_.Name -ne 'Window.Tests.ps1' })
 }
 $cfg.Run.Path = $testFiles.FullName

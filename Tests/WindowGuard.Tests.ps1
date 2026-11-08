@@ -1,45 +1,45 @@
 #Requires -Modules Pester
-# The guard that keeps window tests from opening a window on the dev PC. This file opens no window. It checks
-# the guard function with injected values, and checks that every test file that can open a window uses the guard.
+# The guard that keeps window tests from opening a window unless the opt-in is set. This file opens no window.
+# It checks the guard function with injected values, and checks that every test file that can open a window uses the guard.
 
 BeforeAll {
     . "$PSScriptRoot\WindowHarness.ps1"
-    $script:OtherName = 'CM01'
 }
 
 Describe 'Test-WindowTestsAllowed' {
-    It 'refuses the dev PC <Name> even with the opt-in' -ForEach @(
-        @{ Name = 'removed' }, @{ Name = 'removed' }, @{ Name = 'removed' }
-    ) {
-        $g = Test-WindowTestsAllowed -ComputerName $Name -OptIn '1'
-        $g.Allowed | Should -BeFalse
-        $g.Reason | Should -BeLike '*removed*'
-    }
-
-    It 'allows another computer with the opt-in 1' {
-        $g = Test-WindowTestsAllowed -ComputerName $script:OtherName -OptIn '1'
+    It 'allows the window tests with the opt-in 1' {
+        $g = Test-WindowTestsAllowed -OptIn '1'
         $g.Allowed | Should -BeTrue
         $g.Reason | Should -Be ''
     }
 
-    It 'refuses another computer when the opt-in is <Case>' -ForEach @(
+    It 'refuses the window tests when the opt-in is <Case>' -ForEach @(
         @{ Case = 'empty'; OptIn = '' }, @{ Case = 'null'; OptIn = $null }, @{ Case = '0'; OptIn = '0' }, @{ Case = 'true'; OptIn = 'true' }, @{ Case = '11'; OptIn = '11' }
     ) {
-        $g = Test-WindowTestsAllowed -ComputerName $script:OtherName -OptIn $OptIn
+        $g = Test-WindowTestsAllowed -OptIn $OptIn
         $g.Allowed | Should -BeFalse
         $g.Reason | Should -Be 'SUITE_ALLOW_WINDOW_TESTS is not 1'
     }
 
-    It 'gives a reason whenever it refuses' -ForEach @(
-        @{ Name = 'removed'; OptIn = '1' }, @{ Name = 'removed'; OptIn = '' }, @{ Name = 'CLIENT01'; OptIn = '' }
-    ) {
-        (Test-WindowTestsAllowed -ComputerName $Name -OptIn $OptIn).Reason | Should -Not -BeNullOrEmpty
+    It 'reads the opt-in from the environment by default' {
+        $g = Test-WindowTestsAllowed
+        $g.Allowed | Should -Be ($env:SUITE_ALLOW_WINDOW_TESTS -eq '1')
+    }
+}
+
+Describe 'Test-WindowTestsAllowed signature' {
+    It 'has no ComputerName parameter' {
+        (Get-Command Test-WindowTestsAllowed).Parameters.ContainsKey('ComputerName') | Should -BeFalse
     }
 
-    It 'reads the computer name and the opt-in from the environment by default' {
-        $g = Test-WindowTestsAllowed
-        $expected = ($env:COMPUTERNAME -ine 'removed') -and ($env:SUITE_ALLOW_WINDOW_TESTS -eq '1')
-        $g.Allowed | Should -Be $expected
+    It 'has only the OptIn parameter of its own' {
+        $own = @((Get-Command Test-WindowTestsAllowed).Parameters.Keys | Where-Object { $_ -notin [System.Management.Automation.PSCmdlet]::CommonParameters })
+        $own | Should -Be @('OptIn')
+    }
+
+    It 'decides on the opt-in only' {
+        (Test-WindowTestsAllowed -OptIn '1').Allowed | Should -BeTrue
+        (Test-WindowTestsAllowed -OptIn '0').Allowed | Should -BeFalse
     }
 }
 
