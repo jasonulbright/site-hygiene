@@ -1,5 +1,25 @@
 # Changelog
 
+## [2026.11.12.0033] - 2026-11-12
+
+## Buttons and field titles readable in both themes
+
+### Fixed
+
+- Show white text on blue buttons in the light theme.
+- Raise the dark theme button border contrast to 3:1.
+- Remove raw exception text from the window. The log file keeps it.
+
+### Changed
+
+- Use one shared themed style for every button.
+- Show field titles in bold 14 pt and field values in normal weight.
+- Retake the guide images.
+
+### Added
+
+- Add guard tests for the button style, the contrast pairs and the exception text.
+
 ## [2026.11.07.0032] - 2026-11-07
 
 ## Window tests need 1 opt-in and no host check
