@@ -1940,7 +1940,7 @@ function Show-OptionsDialog {
                 <Setter Property="MinWidth" Value="90"/><Setter Property="Height" Value="32"/>
                 <Setter Property="Background" Value="{DynamicResource MahApps.Brushes.Accent}"/>
                 <Setter Property="Foreground" Value="{DynamicResource MahApps.Brushes.IdealForeground}"/>
-                <Setter Property="BorderBrush" Value="{DynamicResource MahApps.Brushes.Accent}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource MahApps.Brushes.ThemeForeground}"/>
                 <Setter Property="Margin" Value="0,0,8,0"/>
                 <Setter Property="Controls:ControlsHelper.ContentCharacterCasing" Value="Normal"/>
             </Style>
