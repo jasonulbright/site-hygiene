@@ -20,14 +20,14 @@ None.
 |---|---|---|
 | `SiteCode` | **Site Code** | Empty. |
 | `SMSProvider` | **SMS Provider FQDN** | Empty. |
-| `SQLServer` | **SQL Server (optional)** | Empty. |
-| `SqlTrustServerCertificate` | **Trust the SQL Server certificate** | `true`. |
+| `SQLServer` | **SQL Server (Optional)** | Empty. |
+| `SqlTrustServerCertificate` | **Trust the SQL Server Certificate** | `true`. |
 | `ScanScopes` | The areas of **Options > Scan** | All areas. |
-| `ProviderPacingMs` | Pause between provider calls | `0`. |
-| `AutoRefreshMinutes` | Auto-refresh interval | `15`. |
-| `InactiveThresholdDays` | Inactivity threshold | `14`. |
-| `AlertsEnabled` | **Enable threshold alerts** | `true`. |
-| `AlertCompliancePct` | Deployment compliance floor | `80`. |
+| `ProviderPacingMs` | **Pause Between Provider Calls** | `0`. |
+| `AutoRefreshMinutes` | **Auto-Refresh Interval** | `15`. |
+| `InactiveThresholdDays` | **Inactivity Threshold** | `14`. |
+| `AlertsEnabled` | **Enable Threshold Alerts** | `true`. |
+| `AlertCompliancePct` | **Deployment Compliance Floor** | `80`. |
 | `DarkMode` | **Dark Theme** switch | `true`. |
 
 `SiteHygiene.windowstate.json` keeps the size, the place and the open view of the window.

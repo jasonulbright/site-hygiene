@@ -27,7 +27,7 @@ None.
 
 - A plain extract of the zip (no `suite-manifest.json`) makes no call to GitHub. A failed update check is ignored. The tool does not change a proxy setting.
 - The toast of an alert is local.
-- **Trust the SQL Server certificate** is on by default. The connection is encrypted but the certificate is not checked.
+- **Trust the SQL Server Certificate** is on by default. The connection is encrypted but the certificate is not checked.
 
 ## Troubleshooting
 

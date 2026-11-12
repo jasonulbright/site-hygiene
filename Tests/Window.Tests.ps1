@@ -146,7 +146,8 @@ Describe 'Dialog windows' -Skip:(-not $script:WindowGuard.Allowed) {
         $r = Invoke-WpfSta -Arguments @{ Xaml = $script:DialogXaml[$Index] } -Script {
             [xml]$x = $Arguments.Xaml
             $w = [System.Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $x))
-            $names = [regex]::Matches($Arguments.Xaml, 'x:Name="([^"]+)"') | ForEach-Object { $_.Groups[1].Value }
+            # A name inside a ControlTemplate belongs to the template, not to the window, so FindName cannot find it.
+            $names = @($x.SelectNodes("//*[@*[local-name()='Name']][not(ancestor::*[local-name()='ControlTemplate'])]") | ForEach-Object { $_.GetAttribute('Name', 'http://schemas.microsoft.com/winfx/2006/xaml') })
             [PSCustomObject]@{ Type = $w.GetType().Name; Missing = @($names | Where-Object { -not $w.FindName($_) }); Count = @($names).Count }
         }
         $r.Type | Should -Be 'MetroWindow'
@@ -201,8 +202,8 @@ Describe 'Dialog text' {
 
 
     It 'builds the Run Fix confirmation title from the check id, not from the app title' {
-        $script:ShellText | Should -Match "Run fix for \{0\}\?"
-        $script:ShellText | Should -Match "Run \{0\} fixes\?"
+        $script:ShellText | Should -Match "Run Fix for \{0\}\?"
+        $script:ShellText | Should -Match "Run \{0\} Fixes\?"
     }
 
 

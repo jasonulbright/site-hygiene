@@ -66,7 +66,8 @@ function Test-SQLConnection {
         return $false
     }
     catch {
-        Write-Log "SQL connection failed to $SQLServer / $dbName : $_" -Level ERROR
+        Write-Log "SQL connection failed to $SQLServer / $dbName : $_" -Level ERROR -Quiet
+        Write-Log 'SQL connection failed. The log file has the details.' -Level ERROR
         return $false
     }
 }
@@ -203,7 +204,8 @@ function Get-DeploymentDetails {
         return $results
     }
     catch {
-        Write-Log "Failed to get deployment details: $_" -Level WARN
+        Write-Log "Failed to get deployment details: $_" -Level WARN -Quiet
+        Write-Log 'Deployment details are unavailable. The log file has the details.' -Level WARN
         return @()
     }
 }
@@ -343,7 +345,8 @@ function Get-ContentNameMap {
         Write-Log "Content name lookup: $($map.Count) items resolved"
     }
     catch {
-        Write-Log "Failed to build content name lookup: $_" -Level WARN
+        Write-Log "Failed to build content name lookup: $_" -Level WARN -Quiet
+        Write-Log 'The content name lookup failed. The log file has the details.' -Level WARN
     }
 
     return $map
@@ -536,7 +539,8 @@ function Get-ClientHealthSummary {
         return $results
     }
     catch {
-        Write-Log "Client health SQL query failed: $_" -Level ERROR
+        Write-Log "Client health SQL query failed: $_" -Level ERROR -Quiet
+        Write-Log 'Client health SQL query failed. The log file has the details.' -Level ERROR
         throw
     }
 }
@@ -616,7 +620,8 @@ function Get-InactiveDevices {
         return $results
     }
     catch {
-        Write-Log "Inactive devices SQL query failed: $_" -Level ERROR
+        Write-Log "Inactive devices SQL query failed: $_" -Level ERROR -Quiet
+        Write-Log 'Inactive devices SQL query failed. The log file has the details.' -Level ERROR
         throw
     }
 }
@@ -683,7 +688,8 @@ function Get-SiteComponentHealth {
         return $results
     }
     catch {
-        Write-Log "Site component health query failed: $_" -Level ERROR
+        Write-Log "Site component health query failed: $_" -Level ERROR -Quiet
+        Write-Log 'Site component health query failed. The log file has the details.' -Level ERROR
         throw
     }
 }
@@ -729,7 +735,8 @@ function Get-SiteSystemHealth {
         return $results
     }
     catch {
-        Write-Log "Site system health query failed: $_" -Level ERROR
+        Write-Log "Site system health query failed: $_" -Level ERROR -Quiet
+        Write-Log 'Site system health query failed. The log file has the details.' -Level ERROR
         throw
     }
 }
@@ -828,7 +835,8 @@ function Add-MetricsHistoryEntry {
         Write-Log "Metrics history: snapshot appended ($($kept.Count) rows retained)" -Quiet
     }
     catch {
-        Write-Log "Failed to append metrics history: $_" -Level WARN
+        Write-Log "Failed to append metrics history: $_" -Level WARN -Quiet
+        Write-Log 'The metrics history was not saved. The log file has the details.' -Level WARN
     }
 }
 
@@ -855,7 +863,8 @@ function Get-MetricsHistory {
         return @($rows | Sort-Object TimestampValue)
     }
     catch {
-        Write-Log "Failed to read metrics history: $_" -Level WARN
+        Write-Log "Failed to read metrics history: $_" -Level WARN -Quiet
+        Write-Log 'The metrics history was not read. The log file has the details.' -Level WARN
         return @()
     }
 }
@@ -1090,7 +1099,8 @@ function Import-HygieneLegacyDashboardState {
             }
         }
         catch {
-            Write-Log ("Legacy dashboard preferences not imported ({0}): {1}" -f $legacyPrefs, $_.Exception.Message) -Level WARN
+            Write-Log ("Legacy dashboard preferences not imported ({0}): {1}" -f $legacyPrefs, $_.Exception.Message) -Level WARN -Quiet
+            Write-Log 'The legacy dashboard preferences were not imported. The log file has the details.' -Level WARN
         }
     }
 
@@ -1103,7 +1113,8 @@ function Import-HygieneLegacyDashboardState {
             Write-Log ("Imported metrics history from {0}" -f $legacyHistory)
         }
         catch {
-            Write-Log ("Legacy metrics history not imported ({0}): {1}" -f $legacyHistory, $_.Exception.Message) -Level WARN
+            Write-Log ("Legacy metrics history not imported ({0}): {1}" -f $legacyHistory, $_.Exception.Message) -Level WARN -Quiet
+            Write-Log 'The legacy metrics history was not imported. The log file has the details.' -Level WARN
         }
     }
 

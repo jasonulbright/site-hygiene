@@ -227,7 +227,8 @@ Describe 'Content reads' {
     It 'returns an empty map and logs a warning when the lookup fails' {
         Mock Invoke-CMWmiQuery { throw 'no class' } -ModuleName $script:Mod
         (Get-ContentNameMap).Count | Should -Be 0
-        Should -Invoke Write-Log -ModuleName $script:Mod -Times 1 -Exactly -ParameterFilter { $Level -eq 'WARN' }
+        Should -Invoke Write-Log -ModuleName $script:Mod -Times 1 -Exactly -ParameterFilter { $Level -eq 'WARN' -and $Quiet }
+        Should -Invoke Write-Log -ModuleName $script:Mod -Times 1 -Exactly -ParameterFilter { $Level -eq 'WARN' -and -not $Quiet -and $Message -like '*The log file has the details.' }
     }
 
     It 'returns the rows of one distribution point from the cached rows' {
@@ -297,7 +298,8 @@ Describe 'SQL reads' {
     It 'logs and rethrows when the client query fails' {
         Mock Invoke-Sqlcmd { throw 'login failed' } -ModuleName $script:Mod
         { Get-ClientHealthSummary -SQLServer 'sql01' -SiteCode 'MCM' } | Should -Throw '*login failed*'
-        Should -Invoke Write-Log -ModuleName $script:Mod -Times 1 -Exactly -ParameterFilter { $Level -eq 'ERROR' }
+        Should -Invoke Write-Log -ModuleName $script:Mod -Times 1 -Exactly -ParameterFilter { $Level -eq 'ERROR' -and $Quiet }
+        Should -Invoke Write-Log -ModuleName $script:Mod -Times 1 -Exactly -ParameterFilter { $Level -eq 'ERROR' -and -not $Quiet -and $Message -like '*The log file has the details.' }
     }
 
     It 'reads inactive devices with the threshold in the query and a null day count for DBNull' {
@@ -368,7 +370,8 @@ Describe 'Site health reads' {
     It 'logs and rethrows when <Name> fails' -ForEach @(@{ Name = 'Get-SiteComponentHealth' }, @{ Name = 'Get-SiteSystemHealth' }) {
         Mock Invoke-CMWmiQuery { throw 'wmi failed' } -ModuleName $script:Mod
         { & $Name } | Should -Throw '*wmi failed*'
-        Should -Invoke Write-Log -ModuleName $script:Mod -Times 1 -Exactly -ParameterFilter { $Level -eq 'ERROR' }
+        Should -Invoke Write-Log -ModuleName $script:Mod -Times 1 -Exactly -ParameterFilter { $Level -eq 'ERROR' -and $Quiet }
+        Should -Invoke Write-Log -ModuleName $script:Mod -Times 1 -Exactly -ParameterFilter { $Level -eq 'ERROR' -and -not $Quiet -and $Message -like '*The log file has the details.' }
     }
 }
 
@@ -418,7 +421,8 @@ Describe 'Metrics history' {
 
     It 'does not throw when the history path cannot be written' {
         { Add-MetricsHistoryEntry -HistoryPath (Join-Path $script:dir "bad`0name.csv") } | Should -Not -Throw
-        Should -Invoke Write-Log -ModuleName $script:Mod -Times 1 -Exactly -ParameterFilter { $Level -eq 'WARN' }
+        Should -Invoke Write-Log -ModuleName $script:Mod -Times 1 -Exactly -ParameterFilter { $Level -eq 'WARN' -and $Quiet }
+        Should -Invoke Write-Log -ModuleName $script:Mod -Times 1 -Exactly -ParameterFilter { $Level -eq 'WARN' -and -not $Quiet -and $Message -like '*The log file has the details.' }
     }
 
     It 'returns rows inside the day range, oldest first, and an empty list for a missing file' {
@@ -553,7 +557,8 @@ Describe 'Import-HygieneLegacyDashboardState' {
         Set-Content -LiteralPath (Join-Path $script:legacy 'MECMHealthDash.prefs.json') -Value '{not json'
         $r = Import-HygieneLegacyDashboardState -LegacyRoot $script:legacy -PrefsPath $script:prefs -HistoryPath $script:hist
         $r.ImportedKeys.Count | Should -Be 0
-        Should -Invoke Write-Log -ModuleName $script:Mod -Times 1 -Exactly -ParameterFilter { $Level -eq 'WARN' }
+        Should -Invoke Write-Log -ModuleName $script:Mod -Times 1 -Exactly -ParameterFilter { $Level -eq 'WARN' -and $Quiet }
+        Should -Invoke Write-Log -ModuleName $script:Mod -Times 1 -Exactly -ParameterFilter { $Level -eq 'WARN' -and -not $Quiet -and $Message -like '*The log file has the details.' }
     }
 
     It 'returns nothing imported for an empty legacy folder' {

@@ -8,6 +8,7 @@ $script:AppConfig = @{
     Xaml          = 'MainWindow.xaml'
     OptionsButton = 'btnOptions'
     LogLabel      = 'lblLogOutput'
+    WorkflowButtons = @('btnScan', 'btnRefreshAll', 'btnPauseResume', 'btnSuppress', 'btnUnsuppress', 'btnRunFix', 'btnExportCsv', 'btnExportHtml', 'btnCopySummary', 'btnCancelScan')
     Views         = @(
         @{ Name = 'Findings';      Container = 'viewFindings';      Button = 'btnViewFindings' }
         @{ Name = 'Relationships'; Container = 'viewRelationships'; Button = 'btnViewRelationships' }
@@ -50,7 +51,7 @@ $script:MainMeasureScript = {
             cboStatus = ($live -and $view.Name -ne 'Trends'); cboCategory = ($view.Name -eq 'Findings'); cboSeverity = ($view.Name -eq 'Findings')
             cboRelKind = ($view.Name -eq 'Relationships'); cboRelStatus = ($view.Name -eq 'Relationships'); txtFilter = ($view.Name -notin 'Summary', 'Trends')
         }
-        foreach ($name in $bar.Keys) { $w.FindName($name).Visibility = if ($bar[$name]) { 'Visible' } else { 'Collapsed' } }        Initialize-ShellTheme -Window $w -Dark $Arguments.Dark -Views $cfg.Views `
+        foreach ($name in $bar.Keys) { $w.FindName($name).Visibility = if ($bar[$name]) { 'Visible' } else { 'Collapsed' } }        Initialize-ShellTheme -Window $w -Dark $Arguments.Dark -Views $cfg.Views -WorkflowButtonName $cfg.WorkflowButtons `
             -OptionsButtonName $cfg.OptionsButton -LogLabelName $cfg.LogLabel -ActiveView $view.Name
         $out += [PSCustomObject]@{
             View        = $view.Name

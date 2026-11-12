@@ -215,6 +215,8 @@ $btnCancelScan    = $window.FindName('btnCancelScan')
 $lblLogOutput = $window.FindName('lblLogOutput')
 $txtLog       = $window.FindName('txtLog')
 $txtStatus    = $window.FindName('txtStatus')
+$txtStatusSiteCode = $window.FindName('txtSiteCode')
+$txtStatusProvider = $window.FindName('txtSmsProvider')
 
 if ($txtVersion) { $txtVersion.Text = "v$script:AppVersion" }
 $null = $txtAppTitle
@@ -260,17 +262,23 @@ $script:ScanViews = @('Findings', 'Relationships', 'Summary')
 $script:LiveViews = @('Deployments', 'Content', 'DPs', 'Clients', 'Inactive', 'Site', 'Trends')
 $script:ActiveView = 'Findings'
 
+# Every button of the main window takes the same themed style. SuiteCommon paints them: blue with white text in the light theme, dark in the dark theme.
+$script:WorkflowButtons = @($btnScan, $btnRefreshAll, $btnPauseResume, $btnSuppress, $btnUnsuppress, $btnRunFix, $btnExportCsv, $btnExportHtml, $btnCopySummary, $btnCancelScan)
+
 Initialize-SuiteTheme -Window $window `
     -IsDarkGetter { [bool]$global:Prefs['DarkMode'] } `
     -ActiveViewGetter { $script:ActiveView } `
     -ViewButtons $script:ViewButtons `
     -OptionsButton $btnOptions `
+    -WorkflowButtons $script:WorkflowButtons `
+    -OptionsButtons @($btnOptions) `
     -LogLabel $lblLogOutput
 
 $__startIsDark = [bool]$global:Prefs['DarkMode']
 $toggleTheme.IsOn = $__startIsDark
 $txtThemeLabel.Text = if ($__startIsDark) { 'Dark Theme' } else { 'Light Theme' }
 Update-SidebarButtonTheme
+Set-ButtonTheme
 
 $toggleTheme.Add_Toggled({
     $isDark = [bool]$toggleTheme.IsOn
@@ -279,6 +287,7 @@ $toggleTheme.Add_Toggled({
     $global:Prefs['DarkMode'] = $isDark
     Save-ShPreferences -Prefs $global:Prefs
     Update-SidebarButtonTheme
+    Set-ButtonTheme
     Update-TitleBarBrushes
     if ($script:ActiveView -eq 'Trends') { Update-TrendChart }
     Add-LogLine ('Theme: {0}' -f $(if ($isDark) { 'dark' } else { 'light' }))
@@ -286,16 +295,16 @@ $toggleTheme.Add_Toggled({
 
 # === View switching ===
 $script:ViewMeta = @{
-    'Findings'      = @{ Title = 'Findings';             Subtitle = 'Every hygiene finding from the last scan. Select a row for evidence, recommendation, and the fix script.'; Watermark = 'Filter by object, evidence, or check id...' }
-    'Relationships' = @{ Title = 'Relationships';        Subtitle = 'Every supersedence and dependency relationship resolved from SDMPackageXML, healthy ones included. Select a row or a tree node for the application detail.'; Watermark = 'Filter by source, target, or deployment type...' }
-    'Summary'       = @{ Title = 'Summary';              Subtitle = 'Per-check counts for the last scan, plus notes about datasets the scan could not read.'; Watermark = '' }
-    'Deployments'   = @{ Title = 'Deployments';          Subtitle = 'Application, package, software-update, and task-sequence deployments. Refresh to populate.'; Watermark = 'Filter by deployment, collection, or type...' }
-    'Content'       = @{ Title = 'Content Distribution'; Subtitle = 'Only content with failed or in-progress DP-content pairs is shown. Healthy items are filtered out at the source.'; Watermark = 'Filter by content, package id, or type...' }
-    'DPs'           = @{ Title = 'Distribution Points';  Subtitle = 'DP roster with site assignment, status from SMS_SiteSystemSummarizer, and pull-DP flag.'; Watermark = 'Filter by name or site...' }
-    'Clients'       = @{ Title = 'Client Health';        Subtitle = 'Per-device CCM health and active status. Requires SQL Server access (CM_<site> database).'; Watermark = 'Filter by device, health, or OS...' }
-    'Inactive'      = @{ Title = 'Inactive Devices';     Subtitle = 'Devices exceeding the inactivity threshold (configured in Options). SQL-backed.'; Watermark = 'Filter by device or OS...' }
-    'Site'          = @{ Title = 'Site Health';          Subtitle = 'Site components (SMS_ComponentSummarizer) + site-system roles (SMS_SiteSystemSummarizer) in one rollup.'; Watermark = 'Filter by name, server, or type...' }
-    'Trends'        = @{ Title = 'Trends';               Subtitle = 'Rolling history per live metric, captured at each completed refresh. Pick a metric and a 7 / 30 / 90 day range.'; Watermark = '' }
+    'Findings'      = @{ Title = 'Findings';             Subtitle = 'Each hygiene finding from the last scan. Select a row to see the evidence, the recommendation and the fix script.'; Watermark = 'Filter by object, evidence, or check id...' }
+    'Relationships' = @{ Title = 'Relationships';        Subtitle = 'Each supersedence and dependency relationship in the application definitions, including the healthy ones. Select a row or a tree node to see the application details.'; Watermark = 'Filter by source, target, or deployment type...' }
+    'Summary'       = @{ Title = 'Summary';              Subtitle = 'The finding count of each check from the last scan, and notes about the data that the scan could not read.'; Watermark = '' }
+    'Deployments'   = @{ Title = 'Deployments';          Subtitle = 'Application, package, software update and task sequence deployments. Click Refresh All to load them.'; Watermark = 'Filter by deployment, collection, or type...' }
+    'Content'       = @{ Title = 'Content Distribution'; Subtitle = 'Content that failed or is in progress on a distribution point. Healthy content is not shown.'; Watermark = 'Filter by content, package id, or type...' }
+    'DPs'           = @{ Title = 'Distribution Points';  Subtitle = 'Each distribution point with its site, its status and its pull distribution point setting.'; Watermark = 'Filter by name or site...' }
+    'Clients'       = @{ Title = 'Client Health';        Subtitle = 'The client health and the active status of each device. This view needs access to the site database.'; Watermark = 'Filter by device, health, or OS...' }
+    'Inactive'      = @{ Title = 'Inactive Devices';     Subtitle = 'Devices that exceed the inactivity threshold from Options. This view needs access to the site database.'; Watermark = 'Filter by device or OS...' }
+    'Site'          = @{ Title = 'Site Health';          Subtitle = 'The status of the site components and the site system roles.'; Watermark = 'Filter by name, server, or type...' }
+    'Trends'        = @{ Title = 'Trends';               Subtitle = 'The history of each live metric, saved at each completed refresh. Select a metric and a range of 7, 30 or 90 days.'; Watermark = '' }
 }
 
 function Set-ControlVisible {
@@ -341,6 +350,7 @@ function Set-ActiveView {
         [MahApps.Metro.Controls.TextBoxHelper]::SetWatermark($txtFilter, [string]$meta.Watermark)
     }
     Update-SidebarButtonTheme
+    Set-ButtonTheme
     Update-Filter
     Update-StatusBarSummary
     if ($View -eq 'Trends') { Update-TrendChart }
@@ -658,7 +668,7 @@ $btnSuppress.Add_Click({
 
 $btnUnsuppress.Add_Click({
     $sel = @($gridFindings.SelectedItems)
-    if ($sel.Count -eq 0) { Add-LogLine 'Unsuppress: select one or more findings first (enable Show suppressed to see them).'; return }
+    if ($sel.Count -eq 0) { Add-LogLine 'Unsuppress: select one or more findings first (turn on Show Suppressed to see them).'; return }
     foreach ($row in $sel) { [void]$script:SuppressedKeys.Remove([string]$row.SuppressKey) }
     Save-ShSuppressedKeys -KeySet $script:SuppressedKeys
     Add-LogLine ('Unsuppressed {0} finding(s).' -f $sel.Count)
@@ -783,7 +793,7 @@ $btnRunFix.Add_Click({
     if (Test-BgBusy -Action 'Run Fix') { return }
 
     $scriptLines = @($rows | ForEach-Object { ('[{0}] {1}' -f $_.CheckId, $_.FixScript) })
-    $title = if ($rows.Count -eq 1) { ('Run fix for {0}?' -f $rows[0].CheckId) } else { ('Run {0} fixes?' -f $rows.Count) }
+    $title = if ($rows.Count -eq 1) { ('Run Fix for {0}?' -f $rows[0].CheckId) } else { ('Run {0} Fixes?' -f $rows.Count) }
     $msg = ("This runs the following against site {0}:`r`n`r`n{1}" -f $global:Prefs.SiteCode, ($scriptLines -join "`r`n"))
     if (-not (Show-ConfirmDialog -Title $title -Message $msg -Owner $window)) { return }
 
@@ -807,7 +817,7 @@ $btnRunFix.Add_Click({
         try {
             if (-not (Test-CMConnection)) {
                 if (-not (Connect-CMSite -SiteCode $SiteCode -SMSProvider $SMSProvider)) {
-                    $State.ErrorMsg = "Failed to connect to site $SiteCode (provider $SMSProvider)."; return
+                    $State.ErrorMsg = "Failed to connect to site $SiteCode (SMS Provider $SMSProvider)."; return
                 }
             }
             $results = @{}
@@ -816,7 +826,7 @@ $btnRunFix.Add_Click({
             }
             $State.Results = $results
         }
-        catch { $State.ErrorMsg = $_.Exception.Message }
+        catch { $State.ErrorDetail = $_.Exception.Message; $State.ErrorMsg = 'An error occurred. The log file has the details.' }
         finally { $State.Done = $true }
     }).AddArgument([string]$global:Prefs.SiteCode).AddArgument([string]$global:Prefs.SMSProvider).AddArgument($findings).AddArgument($script:BgState)
 
@@ -830,6 +840,7 @@ $btnRunFix.Add_Click({
 
         if ($script:BgState.ErrorMsg) {
             foreach ($row in $script:FixRowsByKey.Values) { $row.FixState = 'Failed' }
+            if ($script:BgState.ErrorDetail) { Write-Log ('Run Fix failed: {0}' -f $script:BgState.ErrorDetail) -Level ERROR -Quiet }
             Add-LogLine ('Run Fix failed: {0}' -f $script:BgState.ErrorMsg) -Level ERROR
             Set-StatusText 'Fix failed - see log.'
         }
@@ -844,8 +855,8 @@ $btnRunFix.Add_Click({
                 }
                 else {
                     $row.FixState = 'Failed'; $failed++
-                    $reason = if ($result) { $result.ErrorMessage } else { 'no result returned' }
-                    Add-LogLine ('Fix failed [{0}] {1}: {2}' -f $row.CheckId, $row.ObjectName, $reason) -Level WARN
+                    if ($result -and $result.ErrorMessage) { Write-Log ('Fix failed [{0}] {1}: {2}' -f $row.CheckId, $row.ObjectName, $result.ErrorMessage) -Level WARN -Quiet }
+                    Add-LogLine ('Fix failed [{0}] {1}. {2}' -f $row.CheckId, $row.ObjectName, $(if ($result) { 'The log file has the details.' } else { 'The fix returned no result.' })) -Level WARN
                 }
             }
             Add-LogLine ('Run Fix complete: {0} fixed, {1} failed. Rescan to confirm.' -f $fixed, $failed)
@@ -865,8 +876,8 @@ function Invoke-Scan {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification='Posts work to bg runspace.')]
     param()
     if (-not $global:Prefs.SiteCode -or -not $global:Prefs.SMSProvider) {
-        Add-LogLine 'Scan: site code and SMS provider must be set in Options first.' -Level WARN
-        Set-StatusText 'Open Options to configure site code and SMS provider, then scan.'
+        Add-LogLine 'Scan: set the site code and the SMS Provider in Options first.' -Level WARN
+        Set-StatusText 'Open Options to set the site code and the SMS Provider, then scan.'
         return
     }
     if (Test-BgBusy -Action 'Scan') { return }
@@ -900,7 +911,7 @@ function Invoke-Scan {
             if (-not (Test-CMConnection)) {
                 $State.Step = "Connecting to $SiteCode..."
                 $ok = Connect-CMSite -SiteCode $SiteCode -SMSProvider $SMSProvider
-                if (-not $ok) { $State.ErrorMsg = "Failed to connect to site $SiteCode (provider $SMSProvider)."; return }
+                if (-not $ok) { $State.ErrorMsg = "Failed to connect to site $SiteCode (SMS Provider $SMSProvider)."; return }
             }
             $datasets = @(Get-HygieneRequiredDataset -Scopes $Scopes)
 
@@ -929,7 +940,7 @@ function Invoke-Scan {
             $State.Notes    = $notes
             $State.RelData  = $relData
         }
-        catch { $State.ErrorMsg = $_.Exception.Message }
+        catch { $State.ErrorDetail = $_.Exception.Message; $State.ErrorMsg = 'An error occurred. The log file has the details.' }
         finally { $State.Done = $true }
     }).AddArgument($siteCode).AddArgument($smsProvider).AddArgument($script:BgState).AddArgument([string[]]$scopes).AddArgument($pacing)
 
@@ -948,6 +959,7 @@ function Invoke-Scan {
             if ($script:BgState.ErrorMsg) {
                 $progressOverlay.Visibility = [System.Windows.Visibility]::Collapsed
                 $btnScan.IsEnabled = $true
+                if ($script:BgState.ErrorDetail) { Write-Log ('Scan failed: {0}' -f $script:BgState.ErrorDetail) -Level ERROR -Quiet }
                 Add-LogLine ('Scan failed: {0}' -f $script:BgState.ErrorMsg) -Level ERROR
                 Set-StatusText 'Scan failed.'
                 return
@@ -1274,7 +1286,7 @@ function Update-StatusBarSummary {
     param()
     $parts = @()
     $isLive = $script:ActiveView -in $script:LiveViews
-    if (-not $global:Prefs.SiteCode -or -not $global:Prefs.SMSProvider) { $parts += 'Open Options to configure site code and SMS provider' }
+    if (-not $global:Prefs.SiteCode -or -not $global:Prefs.SMSProvider) { $parts += 'Open Options to set the site code and the SMS Provider' }
     elseif ($script:LastScanTime -or $script:LiveConnected) { $parts += ('Connected to {0}' -f $global:Prefs.SiteCode) }
     elseif ($isLive) { $parts += 'Ready. Click Refresh All.' }
     else { $parts += 'Ready. Click Scan.' }
@@ -1282,7 +1294,7 @@ function Update-StatusBarSummary {
     if ($isLive) {
         if ($script:DeploymentCounts) { $parts += ('{0} deployments / {1} failed' -f $script:DeploymentCounts.TotalDeployments, $script:DeploymentCounts.FailedDeployments) }
         if ($script:ContentCounts)    { $parts += ('{0} content issues' -f $script:ContentCounts.TotalContentWithIssues) }
-        if ($script:DPCounts)         { $parts += ('{0} DPs / {1} offline' -f $script:DPCounts.TotalDPs, $script:DPCounts.OfflineCount) }
+        if ($script:DPCounts)         { $parts += ('{0} distribution points / {1} offline' -f $script:DPCounts.TotalDPs, $script:DPCounts.OfflineCount) }
         if ($script:ClientCounts)     { $parts += ('{0} unhealthy / {1} inactive' -f $script:ClientCounts.UnhealthyCount, $script:ClientCounts.InactiveCount) }
         if ($script:InactiveCounts)   { $parts += ('{0} stale devices' -f $script:InactiveCounts.InactiveCount) }
         if ($script:SiteCounts)       { $parts += ('site {0} OK / {1} crit' -f $script:SiteCounts.OKCount, $script:SiteCounts.CriticalCount) }
@@ -1299,6 +1311,9 @@ function Update-StatusBarSummary {
         if ($script:LastScanTime) { $parts += ('last scan {0}' -f $script:LastScanTime.ToString('HH:mm:ss')) }
     }
     Set-StatusText ($parts -join '   |   ')
+    # The site code and the SMS Provider show in their own boxes. The titles next to the boxes are bold 14 pt; the values keep the body style.
+    if ($txtStatusSiteCode) { $txtStatusSiteCode.Text = [string]$global:Prefs.SiteCode }
+    if ($txtStatusProvider) { $txtStatusProvider.Text = [string]$global:Prefs.SMSProvider }
 }
 
 # =============================================================================
@@ -1524,8 +1539,8 @@ function Invoke-RefreshAll {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification='Posts work to the background runspace and arms a DispatcherTimer.')]
     param()
     if (-not $global:Prefs.SiteCode -or -not $global:Prefs.SMSProvider) {
-        Add-LogLine 'Refresh: site code and SMS provider must be set in Options first.' -Level WARN
-        Set-StatusText 'Open Options to configure site code and SMS provider, then refresh.'
+        Add-LogLine 'Refresh: set the site code and the SMS Provider in Options first.' -Level WARN
+        Set-StatusText 'Open Options to set the site code and the SMS Provider, then refresh.'
         return
     }
     # A timer tick during a scan is dropped; the next tick retries.
@@ -1559,7 +1574,7 @@ function Invoke-RefreshAll {
             if (-not (Test-CMConnection)) {
                 $State.Step = "Connecting to $SiteCode..."
                 $ok = Connect-CMSite -SiteCode $SiteCode -SMSProvider $SMSProvider
-                if (-not $ok) { $State.ErrorMsg = "Failed to connect to site $SiteCode (provider $SMSProvider)."; return }
+                if (-not $ok) { $State.ErrorMsg = "Failed to connect to site $SiteCode (SMS Provider $SMSProvider)."; return }
             }
 
             $sqlOk = $false
@@ -1587,7 +1602,7 @@ function Invoke-RefreshAll {
             try {
                 $dpData = @(Get-DPHealth)
                 $dpCounts = Get-DPHealthCounts -DPData $dpData
-            } catch { $dpData = @(); Write-Log ('Distribution point status unavailable: {0}' -f $_.Exception.Message) -Level WARN }
+            } catch { $dpData = @(); Write-Log ('Distribution point status unavailable: {0}' -f $_.Exception.Message) -Level WARN -Quiet; Add-LogLine 'Distribution point status unavailable. The log file has the details.' -Level WARN }
 
             $clientData = @(); $clientCounts = $null
             $inactiveData = @(); $inactiveCounts = $null
@@ -1632,7 +1647,7 @@ function Invoke-RefreshAll {
                 SiteCounts       = $siteCounts
             }
         }
-        catch { $State.ErrorMsg = $_.Exception.Message }
+        catch { $State.ErrorDetail = $_.Exception.Message; $State.ErrorMsg = 'An error occurred. The log file has the details.' }
         finally { $State.Done = $true }
     }).AddArgument($siteCode).AddArgument($smsProvider).AddArgument($sqlServer).AddArgument($threshold).AddArgument($script:BgState).AddArgument($trustSql)
 
@@ -1652,6 +1667,7 @@ function Invoke-RefreshAll {
                 $progressOverlay.Visibility = [System.Windows.Visibility]::Collapsed
                 $btnRefreshAll.IsEnabled = $true
                 $script:LiveConnected = $false
+                if ($script:BgState.ErrorDetail) { Write-Log ('Refresh failed: {0}' -f $script:BgState.ErrorDetail) -Level ERROR -Quiet }
                 Add-LogLine ('Refresh failed: {0}' -f $script:BgState.ErrorMsg) -Level ERROR
                 Set-StatusText 'Refresh failed.'
                 # A transient failure must not stop the cadence.
@@ -1870,7 +1886,40 @@ function Show-OptionsDialog {
                 <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Fonts.xaml" />
                 <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Themes/Dark.Steel.xaml" />
             </ResourceDictionary.MergedDictionaries>
-            <Style x:Key="CategoryRowStyle" TargetType="Button" BasedOn="{StaticResource MahApps.Styles.Button.Square}">
+            <!-- The same template and style as the main window. The colors come from MahApps resources and from the code that themes the dialog. -->
+            <ControlTemplate x:Key="ThemedButtonTemplate" TargetType="Button">
+                <Border x:Name="Bd"
+                        Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}"
+                        SnapsToDevicePixels="True">
+                    <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                      VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                      Margin="{TemplateBinding Padding}"
+                                      RecognizesAccessKey="True"
+                                      SnapsToDevicePixels="True"/>
+                </Border>
+                <ControlTemplate.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter TargetName="Bd" Property="Opacity" Value="0.85"/>
+                    </Trigger>
+                    <Trigger Property="IsKeyboardFocused" Value="True">
+                        <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource MahApps.Brushes.ThemeForeground}"/>
+                    </Trigger>
+                    <Trigger Property="IsPressed" Value="True">
+                        <Setter TargetName="Bd" Property="Opacity" Value="0.7"/>
+                    </Trigger>
+                    <Trigger Property="IsEnabled" Value="False">
+                        <Setter TargetName="Bd" Property="Opacity" Value="0.5"/>
+                    </Trigger>
+                </ControlTemplate.Triggers>
+            </ControlTemplate>
+            <Style x:Key="ThemedButtonStyle" TargetType="Button" BasedOn="{StaticResource MahApps.Styles.Button.Square}">
+                <Setter Property="Template" Value="{StaticResource ThemedButtonTemplate}"/>
+                <Setter Property="Foreground" Value="{DynamicResource MahApps.Brushes.ThemeForeground}"/>
+                <Setter Property="BorderThickness" Value="1"/>
+            </Style>
+            <Style x:Key="CategoryRowStyle" TargetType="Button" BasedOn="{StaticResource ThemedButtonStyle}">
                 <Setter Property="Height" Value="36"/>
                 <Setter Property="HorizontalContentAlignment" Value="Left"/>
                 <Setter Property="Padding" Value="14,0,14,0"/>
@@ -1878,18 +1927,26 @@ function Show-OptionsDialog {
                 <Setter Property="Controls:ControlsHelper.ContentCharacterCasing" Value="Normal"/>
                 <Setter Property="Margin" Value="0"/>
             </Style>
-            <Style x:Key="DialogButton" TargetType="Button" BasedOn="{StaticResource MahApps.Styles.Button.Square}">
+            <!-- The one secondary style: a gray fill, the theme text color and a visible border. Cancel uses it. The primary style is DialogAccentButton. -->
+            <Style x:Key="DialogButton" TargetType="Button" BasedOn="{StaticResource ThemedButtonStyle}">
+                <Setter Property="Background" Value="{DynamicResource MahApps.Brushes.Gray10}"/>
+                <Setter Property="Foreground" Value="{DynamicResource MahApps.Brushes.ThemeForeground}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource MahApps.Brushes.ThemeForeground}"/>
                 <Setter Property="MinWidth" Value="90"/><Setter Property="Height" Value="32"/>
                 <Setter Property="Margin" Value="0,0,8,0"/>
                 <Setter Property="Controls:ControlsHelper.ContentCharacterCasing" Value="Normal"/>
             </Style>
-            <Style x:Key="DialogAccentButton" TargetType="Button" BasedOn="{StaticResource MahApps.Styles.Button.Square.Accent}">
+            <Style x:Key="DialogAccentButton" TargetType="Button" BasedOn="{StaticResource ThemedButtonStyle}">
                 <Setter Property="MinWidth" Value="90"/><Setter Property="Height" Value="32"/>
+                <Setter Property="Background" Value="{DynamicResource MahApps.Brushes.Accent}"/>
+                <Setter Property="Foreground" Value="{DynamicResource MahApps.Brushes.IdealForeground}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource MahApps.Brushes.ThemeForeground}"/>
                 <Setter Property="Margin" Value="0,0,8,0"/>
                 <Setter Property="Controls:ControlsHelper.ContentCharacterCasing" Value="Normal"/>
             </Style>
             <Style x:Key="OptLabel" TargetType="TextBlock">
                 <Setter Property="FontSize" Value="11"/>
+                <Setter Property="FontWeight" Value="Bold"/>
                 <Setter Property="Foreground" Value="{DynamicResource MahApps.Brushes.Gray1}"/>
                 <Setter Property="Margin" Value="0,12,0,2"/>
             </Style>
@@ -1923,39 +1980,39 @@ function Show-OptionsDialog {
         <Border Grid.Column="1" Grid.Row="0" Background="{DynamicResource MahApps.Brushes.Gray8}"/>
         <Grid Grid.Column="2" Grid.Row="0" Margin="20,16,20,16">
             <StackPanel x:Name="paneConnection" Visibility="Visible">
-                <TextBlock Text="Configuration Manager Connection" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,10"/>
-                <TextBlock Style="{StaticResource OptLabel}" Text="Site Code"/>
+                <TextBlock Text="Configuration Manager Connection" FontSize="13" FontWeight="Bold" Margin="0,0,0,10"/>
+                <TextBlock Style="{StaticResource OptLabel}" FontSize="14" FontWeight="Bold" Text="Site Code"/>
                 <TextBox x:Name="txtSiteCode" FontSize="12" Padding="6,4,6,4" MaxLength="3"
                          Controls:TextBoxHelper.Watermark="e.g. MCM" Width="120" HorizontalAlignment="Left"/>
-                <TextBlock Style="{StaticResource OptLabel}" Text="SMS Provider FQDN"/>
+                <TextBlock Style="{StaticResource OptLabel}" FontSize="14" FontWeight="Bold" Text="SMS Provider FQDN"/>
                 <TextBox x:Name="txtSmsProvider" FontSize="12" Padding="6,4,6,4"
                          Controls:TextBoxHelper.Watermark="e.g. cm01.contoso.com"/>
-                <TextBlock Style="{StaticResource OptHint}" Text="Used for the CM PSDrive root. Every scan and live query runs through that connection under your Configuration Manager role. A scan never mutates the site; the account only needs read access."/>
-                <TextBlock Style="{StaticResource OptLabel}" Text="SQL Server (optional)"/>
+                <TextBlock Style="{StaticResource OptHint}" Text="The app uses these values for the ConfigMgr drive. Every scan and live query runs through this connection with your ConfigMgr security role. A scan changes nothing, so the account needs read access only."/>
+                <TextBlock Style="{StaticResource OptLabel}" Text="SQL Server (Optional)"/>
                 <TextBox x:Name="txtSqlServer" FontSize="12" Padding="6,4,6,4"
                          Controls:TextBoxHelper.Watermark="e.g. cm01.contoso.com (blank to skip SQL views)"/>
-                <TextBlock Style="{StaticResource OptHint}" Text="SQL instance hosting CM_&lt;site&gt; (FQDN or FQDN\InstanceName). Leave blank to skip the Client Health and Inactive Devices views."/>
-                <CheckBox x:Name="chkSqlTrustCert" Content="Trust the SQL Server certificate" FontSize="12" Margin="0,10,0,0"/>
-                <TextBlock Style="{StaticResource OptHint}" Text="The connection stays encrypted, but the server certificate is not validated. Clear this when the SQL Server certificate is trusted by this workstation."/>
+                <TextBlock Style="{StaticResource OptHint}" Text="The SQL Server instance that hosts the site database CM_&lt;site&gt;. Use the FQDN or FQDN\InstanceName. Leave the box empty to skip the Client Health and Inactive Devices views."/>
+                <CheckBox x:Name="chkSqlTrustCert" Content="Trust the SQL Server Certificate" FontSize="12" Margin="0,10,0,0"/>
+                <TextBlock Style="{StaticResource OptHint}" Text="The connection stays encrypted, but the app does not validate the server certificate. Clear this box when this computer trusts the SQL Server certificate."/>
             </StackPanel>
             <StackPanel x:Name="paneScope" Visibility="Collapsed">
-                <TextBlock Text="Scan" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,10"/>
-                <TextBlock Text="A scan queries only the datasets the selected areas need. Areas marked slow read one object at a time from the SMS Provider and scale with object count."
+                <TextBlock Text="Scan" FontSize="13" FontWeight="Bold" Margin="0,0,0,10"/>
+                <TextBlock Text="A scan reads only the data that the selected areas need. An area marked slow reads one object at a time from the SMS Provider, so it takes longer on a large site."
                            FontSize="11" TextWrapping="Wrap" Margin="0,0,0,10"
                            Foreground="{DynamicResource MahApps.Brushes.Gray1}"/>
                 <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="190">
                     <StackPanel x:Name="panelScopes"/>
                 </ScrollViewer>
-                <TextBlock Text="Rescan deltas are recorded only when every area is selected."
+                <TextBlock Text="The app records the changes since the last scan only when you select every area."
                            FontSize="11" TextWrapping="Wrap" Margin="0,10,0,0"
                            Foreground="{DynamicResource MahApps.Brushes.Gray1}"/>
-                <TextBlock Style="{StaticResource OptLabel}" Text="Pause between provider calls (milliseconds)"/>
+                <TextBlock Style="{StaticResource OptLabel}" Text="Pause Between Provider Calls (Milliseconds)"/>
                 <TextBox x:Name="txtPacing" FontSize="12" Padding="6,4,6,4" Width="120" HorizontalAlignment="Left" MaxLength="5"/>
-                <TextBlock Style="{StaticResource OptHint}" Text="Scan queries run one after another. A pause spaces them out on a busy SMS Provider; 0 sends them back to back."/>
+                <TextBlock Style="{StaticResource OptHint}" Text="The scan runs its queries one after another. A pause spaces them out on a busy SMS Provider. Enter 0 for no pause."/>
             </StackPanel>
             <StackPanel x:Name="paneLive" Visibility="Collapsed">
-                <TextBlock Text="Live" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,10"/>
-                <TextBlock Style="{StaticResource OptLabel}" Text="Auto-refresh interval (minutes)"/>
+                <TextBlock Text="Live" FontSize="13" FontWeight="Bold" Margin="0,0,0,10"/>
+                <TextBlock Style="{StaticResource OptLabel}" Text="Auto-Refresh Interval (Minutes)"/>
                 <ComboBox x:Name="cboRefreshInterval" Width="160" HorizontalAlignment="Left" FontSize="12">
                     <ComboBoxItem Content="0"/>
                     <ComboBoxItem Content="5"/>
@@ -1964,8 +2021,8 @@ function Show-OptionsDialog {
                     <ComboBoxItem Content="30"/>
                     <ComboBoxItem Content="60"/>
                 </ComboBox>
-                <TextBlock Style="{StaticResource OptHint}" Text="The timer arms after the first live refresh of a session, or at launch when the window last showed a Live view. 0 turns it off. Manual refresh resets it; Pause / Resume sits on the action bar."/>
-                <TextBlock Style="{StaticResource OptLabel}" Text="Inactivity threshold (days)"/>
+                <TextBlock Style="{StaticResource OptHint}" Text="The timer starts after the first live refresh of a session, or at launch when the window last showed a Live view. 0 turns it off. A manual refresh resets the timer. Use Pause Auto-Refresh on the action bar to stop it."/>
+                <TextBlock Style="{StaticResource OptLabel}" Text="Inactivity Threshold (Days)"/>
                 <ComboBox x:Name="cboInactiveDays" Width="160" HorizontalAlignment="Left" FontSize="12">
                     <ComboBoxItem Content="7"/>
                     <ComboBoxItem Content="14"/>
@@ -1973,14 +2030,14 @@ function Show-OptionsDialog {
                     <ComboBoxItem Content="60"/>
                     <ComboBoxItem Content="90"/>
                 </ComboBox>
-                <TextBlock Style="{StaticResource OptHint}" Text="Devices with no DDR contact in this many days appear in the Inactive Devices view."/>
+                <TextBlock Style="{StaticResource OptHint}" Text="A device with no discovery data record (DDR) contact in this many days shows in the Inactive Devices view."/>
             </StackPanel>
             <StackPanel x:Name="paneAlerts" Visibility="Collapsed">
-                <TextBlock Text="Alerts" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,10"/>
-                <CheckBox x:Name="chkAlertsEnabled" Content="Enable threshold alerts" FontSize="12" Margin="0,4,0,0"/>
+                <TextBlock Text="Alerts" FontSize="13" FontWeight="Bold" Margin="0,0,0,10"/>
+                <CheckBox x:Name="chkAlertsEnabled" Content="Enable Threshold Alerts" FontSize="12" Margin="0,4,0,0"/>
                 <TextBlock Style="{StaticResource OptHint}"
-                           Text="On each completed live refresh, alerts fire when a metric crosses into breach: any critical site component / site system, any critical distribution point, any failed DP-content pair, or overall deployment compliance below the floor. Alerts repeat only after the metric recovers and breaches again."/>
-                <TextBlock Style="{StaticResource OptLabel}" Text="Deployment compliance floor (%)"/>
+                           Text="After each live refresh, an alert shows when a metric crosses its limit. The metrics are a critical site component or site system, a critical distribution point, a failed content distribution, and deployment compliance below the floor. An alert shows again only after the metric recovers and crosses its limit again."/>
+                <TextBlock Style="{StaticResource OptLabel}" Text="Deployment Compliance Floor (%)"/>
                 <ComboBox x:Name="cboAlertCompliance" Width="160" HorizontalAlignment="Left" FontSize="12">
                     <ComboBoxItem Content="70"/>
                     <ComboBoxItem Content="80"/>
@@ -1988,14 +2045,14 @@ function Show-OptionsDialog {
                     <ComboBoxItem Content="95"/>
                 </ComboBox>
                 <TextBlock Style="{StaticResource OptHint}"
-                           Text="Delivery is local-only: a Windows toast notification plus an audit line in Logs\SiteHygiene-alerts.log and the log drawer."/>
+                           Text="An alert shows as a Windows toast notification. The app also writes a line to Logs\SiteHygiene-alerts.log and to the log pane."/>
             </StackPanel>
             <StackPanel x:Name="paneAbout" Visibility="Collapsed">
-                <TextBlock Text="About" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,10"/>
-                <TextBlock x:Name="txtAboutVersion" Text="Site Hygiene" FontSize="13" FontWeight="SemiBold"/>
-                <TextBlock Text="Configuration Manager site hygiene scanning: unused applications and packages, dead collections, stale and failing deployments, and every application relationship. Every finding carries its evidence and the PowerShell a fix would run. A scan changes nothing. Run Fix runs a script only after you confirm it."
+                <TextBlock Text="About" FontSize="13" FontWeight="Bold" Margin="0,0,0,10"/>
+                <TextBlock x:Name="txtAboutVersion" Text="Site Hygiene" FontSize="13" FontWeight="Bold"/>
+                <TextBlock Text="Scans a ConfigMgr site for unused applications and packages, empty collections, stale and failing deployments, and application relationships. Each finding shows its evidence and the PowerShell that a fix runs. A scan changes nothing. Run Fix runs a script only after you confirm."
                            FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0"/>
-                <TextBlock Text="The Live views show current deployment, content, distribution point, client, and site status on demand and on a timer, with history and threshold alerts. They create no findings and change nothing."
+                <TextBlock Text="The Live views show the current status of deployments, content, distribution points, clients and the site. They refresh on demand and on a timer, and they keep a history and raise threshold alerts. They create no findings and change nothing."
                            FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0"/>
                 <TextBlock Text="Author: Jason Ulbright. License: MIT."
                            FontSize="11" Margin="0,16,0,0" Foreground="{DynamicResource MahApps.Brushes.Gray1}"/>
@@ -2016,6 +2073,15 @@ function Show-OptionsDialog {
     $dlg.Owner = $window
     Install-TitleBarDragFallback -Window $dlg
     Set-DialogTheme -Dialog $dlg
+    # The category buttons look like the sidebar buttons of the main window: accent color with the ideal foreground in the light theme.
+    foreach ($catName in 'btnCatConnection', 'btnCatScope', 'btnCatLive', 'btnCatAlerts', 'btnCatAbout') {
+        $cat = $dlg.FindName($catName)
+        if (-not [bool]$global:Prefs['DarkMode']) {
+            $cat.Background = $dlg.TryFindResource('MahApps.Brushes.Accent')
+            $cat.Foreground = $dlg.TryFindResource('MahApps.Brushes.IdealForeground')
+            $cat.BorderBrush = $dlg.TryFindResource('MahApps.Brushes.Accent')
+        }
+    }
 
     $panes = @{
         Connection = $dlg.FindName('paneConnection')
@@ -2081,7 +2147,7 @@ function Show-OptionsDialog {
         $checked = @($scopeBoxes | Where-Object { $_.IsChecked } | ForEach-Object { [string]$_.Tag })
         if ($checked.Count -eq 0) {
             & $showPane 'Scope'
-            [void][System.Windows.MessageBox]::Show($dlg, 'Select at least one scan area.', 'Scan scope')
+            [void][System.Windows.MessageBox]::Show($dlg, 'Select at least one scan area.', 'Scan Scope')
             return
         }
         $pacing = 0
@@ -2146,7 +2212,7 @@ $window.Add_Loaded({
     Set-ActiveView -View $script:ActiveView
     Update-SuppressCount
     $gridSummary.ItemsSource = @(Get-HygieneScanSummary -Findings @())
-    Add-LogLine 'Site Hygiene ready. Configure Site / Provider in Options, then click Scan or Refresh All.'
+    Add-LogLine 'Site Hygiene ready. Set the site code and the SMS Provider in Options, then click Scan or Refresh All.'
     # The timer arms at launch only for a window that last showed a Live
     # view; a scan-focused session never starts polling on its own.
     if ($script:ActiveView -in $script:LiveViews -and $global:Prefs.SiteCode -and $global:Prefs.SMSProvider) {

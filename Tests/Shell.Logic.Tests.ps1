@@ -333,7 +333,7 @@ Describe 'Status text and log' {
     It 'asks for the site settings first' {
         $global:Prefs = @{ SiteCode = ''; SMSProvider = 'cm01' }
         Update-StatusBarSummary
-        $txtStatus.Text | Should -Be 'Open Options to configure site code and SMS provider'
+        $txtStatus.Text | Should -Be 'Open Options to set the site code and the SMS Provider'
     }
 
     It 'says what to click on a scan view and on a live view' {

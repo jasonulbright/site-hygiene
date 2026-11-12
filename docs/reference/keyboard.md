@@ -25,7 +25,7 @@ Press Tab from the sidebar. The focus goes in this order:
 3. The filter box.
 4. The category list and the severity list.
 5. **Export CSV** and **Export HTML**.
-6. **Suppress**, **Unsuppress** and **Show suppressed**. **Run Fix** is skipped while it is disabled.
+6. **Suppress**, **Unsuppress** and **Show Suppressed**. **Run Fix** is skipped while it is disabled.
 7. The grid.
 
 ### Keys

@@ -42,7 +42,7 @@ If you select **Scan** before you set the connection, the log asks you to open O
 2. Type the **Site Code**, for example `MCM`.
 3. Type the **SMS Provider FQDN**, for example `cm01.contoso.com`.
 4. Optional: type the **SQL Server** that hosts the `CM_<site>` database. Leave it blank to skip the Client Health and Inactive Devices views.
-5. Select **OK**.
+5. Select **OK**. The right end of the status bar shows the SMS Provider and the site code. Their titles are bold.
 
 ![The Connection page with a site code and a provider](images/options-connection.png)
 
@@ -69,7 +69,7 @@ None. The settings are on [Options dialog](core/options.md).
 
 | Message or symptom | Cause | Fix |
 |---|---|---|
-| The log shows `Open Options to configure site code and SMS provider`. | The site code or the provider is empty. | Set the connection. |
+| The log shows `Open Options to set the site code and the SMS Provider`. | The site code or the provider is empty. | Set the connection. |
 | The log shows `ConfigurationManager module not found`. | The console is not installed on this computer, or `SMS_ADMIN_UI_PATH` does not point to the bin\i386 folder of the console. | Install the console. If it is installed, set `SMS_ADMIN_UI_PATH` to its bin\i386 folder and start the tool again. |
 
 ## Links
