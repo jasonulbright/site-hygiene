@@ -4,8 +4,7 @@
 # (remove it here). Run Show-ContrastViolations.ps1 to print the current list.
 #
 # Text must reach 4.5:1 and a control border 3:1, enabled and disabled, in both
-# themes. The causes are shared by every suite tool: the SuiteCommon palette
-# (sidebar button border #555555 on #1E1E1E is 2.06:1), the MahApps disabled
+# themes. The causes are shared by every suite tool: the MahApps disabled
 # style, the light text box border and the unselected tab header. The fix
 # belongs in app-packager-suite, then a sync of the vendored copy, not here.
 
@@ -18,21 +17,10 @@ function Get-KnownContrastDefect {
     switch ($key) {
         'Main|dark' {
             @(
-                'btnCopySummary:DisabledText', 'btnPauseResume:DisabledText', 'btnRefreshAll:DisabledText',
-                'btnExportCsv:DisabledText', 'btnExportHtml:DisabledText', 'btnOptions:DisabledBorder',
-                'btnOptions:EnabledBorder', 'btnRunFix:DisabledText', 'btnScan:DisabledText',
-                'btnSuppress:DisabledText', 'btnUnsuppress:DisabledText', 'btnViewClients:DisabledBorder',
-                'btnViewClients:DisabledText', 'btnViewClients:EnabledBorder', 'btnViewContent:DisabledBorder',
-                'btnViewContent:DisabledText', 'btnViewContent:EnabledBorder', 'btnViewDeployments:DisabledBorder',
-                'btnViewDeployments:DisabledText', 'btnViewDeployments:EnabledBorder', 'btnViewDPs:DisabledBorder',
-                'btnViewDPs:DisabledText', 'btnViewDPs:EnabledBorder', 'btnViewFindings:DisabledBorder',
-                'btnViewFindings:DisabledText', 'btnViewFindings:EnabledBorder', 'btnViewInactive:DisabledBorder',
-                'btnViewInactive:DisabledText', 'btnViewInactive:EnabledBorder', 'btnViewRelationships:DisabledBorder',
-                'btnViewRelationships:DisabledText', 'btnViewRelationships:EnabledBorder', 'btnViewSite:DisabledBorder',
-                'btnViewSite:DisabledText', 'btnViewSite:EnabledBorder', 'btnViewSummary:DisabledBorder',
-                'btnViewSummary:DisabledText', 'btnViewSummary:EnabledBorder', 'btnViewTrends:DisabledBorder',
-                'btnViewTrends:DisabledText', 'btnViewTrends:EnabledBorder', 'chkShowSuppressed:DisabledText',
-                'text:Run Fix',
+                'btnViewClients:DisabledText', 'btnViewContent:DisabledText', 'btnViewDeployments:DisabledText',
+                'btnViewDPs:DisabledText', 'btnViewFindings:DisabledText', 'btnViewInactive:DisabledText',
+                'btnViewRelationships:DisabledText', 'btnViewSite:DisabledText', 'btnViewSummary:DisabledText',
+                'btnViewTrends:DisabledText', 'chkShowSuppressed:DisabledText',
                 'titlebar:inactive'
             )
         }
@@ -58,10 +46,7 @@ function Get-KnownContrastDefect {
         }
         'Dialog|dark' {
             @(
-                'btnCancel:DisabledText', 'btnCatAbout:DisabledText', 'btnCatAlerts:DisabledText',
-                'btnCatConnection:DisabledText', 'btnCatLive:DisabledText', 'btnCatScope:DisabledText',
-                'btnOk:DisabledText', 'chkAlertsEnabled:DisabledText', 'chkSqlTrustCert:DisabledText',
-                'titlebar:inactive'
+                'btnOk:DisabledText', 'chkAlertsEnabled:DisabledText', 'chkSqlTrustCert:DisabledText', 'titlebar:inactive'
             )
         }
         'Dialog|light' {
