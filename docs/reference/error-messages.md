@@ -24,6 +24,7 @@ None.
 | `Scan failed: Failed to connect to site <code> (SMS Provider <name>).` | Log | The tool could not connect. The module is missing, the provider is wrong or not reachable, or the account has no access. | Check the console, the provider name, the network and the role. |
 | `Refresh failed: Failed to connect to site <code> (SMS Provider <name>).` | Log | The same, on a refresh. | The same. |
 | `Scan failed: An error occurred. The log file has the details.` and the same text for a refresh or a fix | Log | A query raised an error. The window shows no error text. The log file has the full text. | Read the log file in the `Logs` folder. |
+| `<Area> failed. The log file has the details.`, for example `Client health SQL query failed. The log file has the details.` | Log | One read or one check failed. The scan or the refresh goes on. | Read the log file in the `Logs` folder. The file has the full error text. |
 | `Scan failed.` and `Refresh failed.` | Status bar | See the log line before. | Read the log. |
 | `Select at least one scan area.` | Message box `Scan Scope` | Every area is cleared. | Select an area. |
 | `The pause must be a whole number of milliseconds from 0 to 60000.` | Message box `Scan` | The pause is not a number in range. | Type a whole number from 0 to 60000. |

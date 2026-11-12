@@ -10,8 +10,7 @@
     C:\guide\<app> and in the task GuideShots-<app>. The script never changes the
     folder C:\guide itself, a file of another app or another task.
 
-    The lab computer needs a Configuration Manager console
-, a reachable SMS
+    The lab computer needs a Configuration Manager console, a reachable SMS
     Provider and PowerShell remoting for the account in the credential script.
     The scan and the Live views only read. The Run Fix dialog is opened and
     cancelled. The capture never confirms a fix.

@@ -42,10 +42,10 @@ function Get-SetterValue {
 # Every XAML document of the repository: the XAML files and the XAML here-strings of the scripts.
 function Get-XamlDocument {
     $docs = @()
-    foreach ($f in @(Get-ChildItem -LiteralPath $script:RepoRoot -Filter '*.xaml' -File -Recurse | Where-Object { $_.FullName -notmatch '\\(\.claude|\.git)\\' })) {
+    foreach ($f in @(Get-ChildItem -LiteralPath $script:RepoRoot -Filter '*.xaml' -File -Recurse | Where-Object { $_.FullName.Substring($script:RepoRoot.Length + 1) -notmatch '^(\.claude|\.git)\\' })) {
         $docs += [PSCustomObject]@{ Source = $f.Name; Text = (Get-Content -LiteralPath $f.FullName -Raw) }
     }
-    foreach ($f in @(Get-ChildItem -LiteralPath $script:RepoRoot -File -Recurse | Where-Object { $_.Extension -in '.ps1', '.psm1' -and $_.FullName -notmatch '\\(\.claude|\.git|Tests|tools)\\' })) {
+    foreach ($f in @(Get-ChildItem -LiteralPath $script:RepoRoot -File -Recurse | Where-Object { $_.Extension -in '.ps1', '.psm1' -and $_.FullName.Substring($script:RepoRoot.Length + 1) -notmatch '^(\.claude|\.git|Tests|tools)\\' })) {
         $raw = Get-Content -LiteralPath $f.FullName -Raw
         $i = 0
         foreach ($m in [regex]::Matches($raw, "(?s)@'\r?\n(\s*<[^\r\n]*Window.*?)\r?\n'@")) {
@@ -137,19 +137,44 @@ function Get-AccentButtonWithoutWhite {
     return $found.ToArray()
 }
 
-# Returns one text per button problem in a XAML document: a Button with no Style, a Button style or template
-# that is not based on a MahApps style or another style of the document, and a literal color in a button.
+# Returns the text of a script without comment lines and block comments, so that a match cannot come from a comment.
+function Remove-ScriptComment {
+    param([string]$Text)
+    $t = [regex]::Replace($Text, '(?s)<#.*?#>', '')
+    return (($t -split "\r?\n" | Where-Object { $_ -notmatch '^\s*#' }) -join "`n")
+}
+
+# Returns one text per button problem in a XAML document. Every Button has a Style whose chain of BasedOn
+# styles ends at ThemedButtonStyle. ThemedButtonStyle is the only button style that is based on MahApps directly.
+# No button, button style or button template has a literal color.
 function Get-ButtonThemeViolation {
     param([string]$Text, [string]$Source)
     [xml]$x = $Text
+    $xns = 'http://schemas.microsoft.com/winfx/2006/xaml'
     $found = New-Object System.Collections.Generic.List[string]
     $colorProperty = '^(Background|Foreground|BorderBrush|Fill|Stroke|Color|Value)$'
     $isLiteralColor = { param($v) ($v -match '^\s*#[0-9A-Fa-f]{3,8}\s*$') -or ($v -match '^\s*(White|Black|Red|Green|Blue|Gray|Grey|Transparent|Navy|Steel\w*|\w*Blue|Dark\w+|Light\w+)\s*$') }
-    $keys = @($x.SelectNodes("//*[local-name()='Style']") | ForEach-Object { $_.GetAttribute('Key', 'http://schemas.microsoft.com/winfx/2006/xaml') })
+    $styles = @{}
+    foreach ($s in @($x.SelectNodes("//*[local-name()='Style'][@TargetType='Button']"))) { $styles[$s.GetAttribute('Key', $xns)] = $s.GetAttribute('BasedOn') }
+    $resolve = {
+        param($key)
+        $seen = @{}
+        while ($key -and -not $seen.ContainsKey($key)) {
+            if ($key -eq 'ThemedButtonStyle') { return $true }
+            $seen[$key] = $true
+            if (-not $styles.ContainsKey($key)) { return $false }
+            $key = if ($styles[$key] -match '^\{StaticResource ([^}\s]+)\}$') { $Matches[1] } else { '' }
+        }
+        return $false
+    }
+    foreach ($k in @($styles.Keys)) {
+        if ($k -ne 'ThemedButtonStyle' -and $styles[$k] -match 'MahApps\.') { [void]$found.Add(('{0}: Button style {1} is based on MahApps and not on ThemedButtonStyle' -f $Source, $k)) }
+    }
     foreach ($b in @($x.SelectNodes("//*[local-name()='Button']"))) {
-        $name = $b.GetAttribute('Name', 'http://schemas.microsoft.com/winfx/2006/xaml')
-        if (-not $b.HasAttribute('Style') -or $b.GetAttribute('Style') -notmatch '^\{(Static|Dynamic)Resource ') {
-            [void]$found.Add(('{0}: Button {1} has no shared Style' -f $Source, $name))
+        $name = $b.GetAttribute('Name', $xns)
+        $style = $b.GetAttribute('Style')
+        if ($style -notmatch '^\{StaticResource ([^}\s]+)\}$' -or -not (& $resolve $Matches[1])) {
+            [void]$found.Add(('{0}: Button {1} does not take ThemedButtonStyle' -f $Source, $name))
         }
         foreach ($a in @($b.Attributes)) {
             if ($a.LocalName -match '^(Background|Foreground|BorderBrush)$' -and (& $isLiteralColor $a.Value)) { [void]$found.Add(('{0}: Button {1} sets {2} to the literal {3}' -f $Source, $name, $a.LocalName, $a.Value)) }
@@ -157,12 +182,7 @@ function Get-ButtonThemeViolation {
     }
     $scopes = @($x.SelectNodes("//*[local-name()='Style'][@TargetType='Button']")) + @($x.SelectNodes("//*[local-name()='ControlTemplate'][@TargetType='Button']"))
     foreach ($s in $scopes) {
-        $key = $s.GetAttribute('Key', 'http://schemas.microsoft.com/winfx/2006/xaml')
-        if ($s.LocalName -eq 'Style') {
-            $based = $s.GetAttribute('BasedOn')
-            $ok = ($based -match 'MahApps\.Styles\.Button') -or ($based -match '\{StaticResource ([^}\s]+)\}' -and $keys -contains $Matches[1])
-            if (-not $ok) { [void]$found.Add(('{0}: Button style {1} is not based on a MahApps style or a shared style' -f $Source, $key)) }
-        }
+        $key = $s.GetAttribute('Key', $xns)
         foreach ($n in @($s.SelectNodes('descendant-or-self::*'))) {
             foreach ($a in @($n.Attributes)) {
                 if ($a.LocalName -notmatch $colorProperty) { continue }

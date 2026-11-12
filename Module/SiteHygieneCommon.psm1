@@ -830,7 +830,8 @@ function Get-HygieneData {
             $result[$key] = @()
             $failed.Add($key)
             $notes.Add("$($collector.Label) unavailable${hint}: $($_.Exception.Message)")
-            Write-Log "$($collector.Label) unavailable after $([int]$sw.Elapsed.TotalSeconds)s: $($_.Exception.Message)" -Level WARN
+            Write-Log "$($collector.Label) unavailable after $([int]$sw.Elapsed.TotalSeconds)s: $($_.Exception.Message)" -Level WARN -Quiet
+            Write-Log "$($collector.Label) is unavailable. The log file has the details." -Level WARN
         }
     }
 
@@ -1801,7 +1802,8 @@ function Get-HygieneRelationshipData {
         }
     }
     catch {
-        Write-Log ("Relationship data unavailable: {0}" -f $_.Exception.Message) -Level WARN
+        Write-Log ("Relationship data unavailable: {0}" -f $_.Exception.Message) -Level WARN -Quiet
+        Write-Log 'Relationship data is unavailable. The log file has the details.' -Level WARN
         return $null
     }
 }
@@ -2690,7 +2692,8 @@ function Invoke-HygieneScan {
             }
         }
         catch {
-            Write-Log ("Check {0} failed: {1}" -f $check.Id, $_.Exception.Message) -Level WARN
+            Write-Log ("Check {0} failed: {1}" -f $check.Id, $_.Exception.Message) -Level WARN -Quiet
+            Write-Log ('Check {0} failed. The log file has the details.' -f $check.Id) -Level WARN
             $findings.Add((New-HygieneFinding -CheckId $check.Id -Severity Warning -Category 'Scan' `
                 -ObjectType 'Check' -ObjectName ("Check {0} did not run" -f $check.Id) `
                 -Evidence ("The check itself failed: {0}" -f $_.Exception.Message) `
@@ -2949,7 +2952,7 @@ function Invoke-HygieneFix {
         return [pscustomobject]@{ Success = $true; Output = $text; ErrorMessage = '' }
     }
     catch {
-        Write-Log ("Fix FAILED [{0}] {1}: {2}" -f $Finding.CheckId, $Finding.ObjectName, $_.Exception.Message) -Level ERROR
+        Write-Log ("Fix FAILED [{0}] {1}: {2}" -f $Finding.CheckId, $Finding.ObjectName, $_.Exception.Message) -Level ERROR -Quiet
         return [pscustomobject]@{ Success = $false; Output = ''; ErrorMessage = $_.Exception.Message }
     }
 }
@@ -3004,7 +3007,8 @@ function Read-HygieneScanResult {
         return $doc
     }
     catch {
-        Write-Log "Previous scan results unreadable ($Path): $($_.Exception.Message)" -Level WARN
+        Write-Log "Previous scan results unreadable ($Path): $($_.Exception.Message)" -Level WARN -Quiet
+        Write-Log 'The previous scan results are unreadable. The log file has the details.' -Level WARN
         return $null
     }
 }

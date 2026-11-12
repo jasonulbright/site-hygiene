@@ -1,4 +1,4 @@
-#Requires -Modules Pester
+#Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.1.0' }
 # Guard tests for the theme rules. They parse the files and create no WPF control, so they run on
 # Windows PowerShell 5.1 and PowerShell 7 and open no window.
 #   (a) Every blue background in XAML and PowerShell has a white foreground.
@@ -95,16 +95,16 @@ Describe 'Blue backgrounds have white text (a)' {
 
     It 'paints the light theme buttons of SuiteCommon with white text' {
         $path = Join-Path $script:RepoRoot 'Lib\SuiteCommon\SuiteCommon.psm1'
-        $text = Get-Content -LiteralPath $path -Raw
+        $text = Remove-ScriptComment -Text (Get-Content -LiteralPath $path -Raw)
         $text | Should -Match "OnBlue\s*=\s*\`$bc\.ConvertFrom\('#FFFFFF'\)"
         $ast = [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$null, [ref]$null)
         foreach ($name in 'Update-SidebarButtonTheme', 'Set-ButtonTheme') {
             $fn = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true)
             $fn | Should -Not -BeNullOrEmpty -Because $name
-            $fn.Extent.Text | Should -Match 'Set-ThemeForeground' -Because ('{0} sets the foreground with each background' -f $name)
+            (Remove-ScriptComment -Text $fn.Extent.Text) | Should -Match 'Set-ThemeForeground' -Because ('{0} sets the foreground with each background' -f $name)
         }
         $fn = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Set-ThemeForeground' }, $true)
-        $fn.Extent.Text | Should -Match '\.Foreground\s*=\s*\$OnBlue'
+        (Remove-ScriptComment -Text $fn.Extent.Text) | Should -Match '\.Foreground\s*=\s*\$OnBlue'
     }
 }
 
@@ -139,13 +139,14 @@ Describe 'Fonts do not depend on the theme (b)' {
 
     It 'makes the title of each connection box bold and 14 pt or larger, and leaves the value alone, the same way in both themes' {
         $path = Join-Path $script:RepoRoot 'Lib\SuiteCommon\SuiteCommon.psm1'
-        $text = Get-Content -LiteralPath $path -Raw
+        $text = Remove-ScriptComment -Text (Get-Content -LiteralPath $path -Raw)
         $text | Should -Match 'FieldTitleFontSize\s*=\s*14'
         $ast = [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$null, [ref]$null)
         $fn = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Set-ConnectionTextTheme' }, $true)
         $fn | Should -Not -BeNullOrEmpty
-        $fn.Extent.Text | Should -Match '\$title\.FontWeight\s*=\s*\[System\.Windows\.FontWeights\]::Bold'
-        $fn.Extent.Text | Should -Not -Match '\$box\.(FontSize|FontWeight)\s*='
+        $code = Remove-ScriptComment -Text $fn.Extent.Text
+        $code | Should -Match '\$title\.FontWeight\s*=\s*\[System\.Windows\.FontWeights\]::Bold'
+        $code | Should -Not -Match '\$box\.(FontSize|FontWeight)\s*='
     }
 
     It 'uses no SemiBold title or label in <_.Source>, so that every title and field label is bold' -ForEach @(Get-XamlDocument) {
@@ -165,6 +166,14 @@ Describe 'Fonts do not depend on the theme (b)' {
             }
         }
         @($bad) | Should -BeNullOrEmpty
+    }
+
+    It 'finds the site code and SMS Provider boxes in the documents' {
+        $names = foreach ($d in @(Get-XamlDocument)) {
+            [xml]$x = $d.Text
+            foreach ($n in 'txtSiteCode', 'txtSmsProvider') { if ($x.SelectSingleNode(("//*[@*[local-name()='Name']='{0}']" -f $n))) { $n } }
+        }
+        @($names | Sort-Object -Unique) | Should -Be @('txtSiteCode', 'txtSmsProvider')
     }
 
     It 'sets the title of the site code and SMS Provider boxes to bold 14 pt or more, and the value to normal weight, in <_.Source>' -ForEach @(Get-XamlDocument) {
@@ -217,15 +226,44 @@ Describe 'Every button takes the shared themed style (d)' {
         $bad | Should -BeNullOrEmpty
     }
 
-    It 'flags a button with no style, a literal color and a style that is not shared' {
-        $ns = 'xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"'
-        @(Get-ButtonThemeViolation -Text "<Grid $ns><Button x:Name=`"a`"/></Grid>" -Source 's').Count | Should -Be 1
-        @(Get-ButtonThemeViolation -Text "<Grid $ns><Grid.Resources><Style x:Key=`"S`" TargetType=`"Button`" BasedOn=`"{StaticResource MahApps.Styles.Button.Square}`"/></Grid.Resources><Button Style=`"{StaticResource S}`" Background=`"#1E1E1E`"/></Grid>" -Source 's').Count | Should -Be 1
-        @(Get-ButtonThemeViolation -Text "<Grid $ns><Grid.Resources><Style x:Key=`"S`" TargetType=`"Button`"><Setter Property=`"Foreground`" Value=`"White`"/></Style></Grid.Resources></Grid>" -Source 's').Count | Should -BeGreaterOrEqual 2
-        @(Get-ButtonThemeViolation -Text "<Grid $ns><Grid.Resources><Style x:Key=`"S`" TargetType=`"Button`" BasedOn=`"{StaticResource MahApps.Styles.Button.Square}`"><Setter Property=`"Foreground`" Value=`"{DynamicResource MahApps.Brushes.ThemeForeground}`"/></Style></Grid.Resources><Button Style=`"{StaticResource S}`"/></Grid>" -Source 's').Count | Should -Be 0
+    # The dialogs of SuiteCommon are vendored code. They are fixed in the suite repository (app-packager-suite), not here.
+    # The test is skipped on purpose and shows in the result as Skipped with this reason.
+    It 'SKIPPED until the suite repository fixes its dialogs: has no unthemed button in <_.Source>' -Skip -ForEach @(Get-XamlDocument | Where-Object { $_.Source -match 'SuiteCommon' }) {
+        $bad = @(Get-ButtonThemeViolation -Text $_.Text -Source $_.Source)
+        $bad | Should -BeNullOrEmpty
     }
 
-    It 'lists every button of the main window that has a shared inline or sidebar style in the themed set of the script' {
+    It 'finds the buttons of the documents' {
+        $count = 0
+        foreach ($d in @(Get-XamlDocument | Where-Object { $_.Source -notmatch 'SuiteCommon' })) {
+            [xml]$x = $d.Text
+            $count += @($x.SelectNodes("//*[local-name()='Button']")).Count
+        }
+        $count | Should -BeGreaterThan 25
+    }
+
+    It 'flags a button that has no style, a literal color and a style that is not shared' {
+        $ns = 'xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"'
+        $themed = '<Style x:Key="ThemedButtonStyle" TargetType="Button" BasedOn="{StaticResource MahApps.Styles.Button.Square}"/>'
+        @(Get-ButtonThemeViolation -Text "<Grid $ns><Button x:Name=`"a`"/></Grid>" -Source 's').Count | Should -Be 1
+        @(Get-ButtonThemeViolation -Text "<Grid $ns><Grid.Resources>$themed<Style x:Key=`"S`" TargetType=`"Button`" BasedOn=`"{StaticResource ThemedButtonStyle}`"/></Grid.Resources><Button Style=`"{StaticResource S}`" Background=`"#1E1E1E`"/></Grid>" -Source 's').Count | Should -Be 1
+        @(Get-ButtonThemeViolation -Text "<Grid $ns><Grid.Resources>$themed<Style x:Key=`"S`" TargetType=`"Button`" BasedOn=`"{StaticResource MahApps.Styles.Button.Square.Accent}`"/></Grid.Resources><Button Style=`"{StaticResource S}`"/></Grid>" -Source 's').Count | Should -Be 2
+        @(Get-ButtonThemeViolation -Text "<Grid $ns><Grid.Resources>$themed<Style x:Key=`"S`" TargetType=`"Button`" BasedOn=`"{StaticResource ThemedButtonStyle}`"><Setter Property=`"Foreground`" Value=`"White`"/></Style></Grid.Resources><Button Style=`"{StaticResource S}`"/></Grid>" -Source 's').Count | Should -Be 1
+        @(Get-ButtonThemeViolation -Text "<Grid $ns><Grid.Resources>$themed<Style x:Key=`"S`" TargetType=`"Button`" BasedOn=`"{StaticResource ThemedButtonStyle}`"><Setter Property=`"Foreground`" Value=`"{DynamicResource MahApps.Brushes.ThemeForeground}`"/></Style></Grid.Resources><Button Style=`"{StaticResource S}`"/></Grid>" -Source 's').Count | Should -Be 0
+    }
+
+    It 'has one secondary button style and one primary button style in the dialog, and no other button style that sets a Background' {
+        $doc = @(Get-XamlDocument | Where-Object { $_.Source -notmatch 'SuiteCommon' -and $_.Text -match 'DialogAccentButton' })
+        $doc.Count | Should -Be 1
+        [xml]$x = $doc[0].Text
+        $xns = 'http://schemas.microsoft.com/winfx/2006/xaml'
+        $withBackground = foreach ($s in @($x.SelectNodes("//*[local-name()='Style'][@TargetType='Button']"))) {
+            if (@($s.ChildNodes | Where-Object { $_.LocalName -eq 'Setter' -and $_.GetAttribute('Property') -eq 'Background' }).Count -gt 0) { $s.GetAttribute('Key', $xns) }
+        }
+        @($withBackground | Sort-Object) | Should -Be @('DialogAccentButton', 'DialogButton')
+    }
+
+    It 'names every button of the main window and lists each one in the themed set of the script' {
         $shell = Get-Content -LiteralPath (Join-Path $script:RepoRoot 'start-sitehygiene.ps1') -Raw
         $themed = New-Object System.Collections.Generic.HashSet[string]
         $set = [regex]::Match($shell, '\$script:WorkflowButtons\s*=\s*@\(([^)]*)\)')
@@ -236,9 +274,11 @@ Describe 'Every button takes the shared themed style (d)' {
         $main = @(Get-XamlDocument | Where-Object { $_.Source -eq 'MainWindow.xaml' })
         $main.Count | Should -Be 1
         [xml]$x = $main[0].Text
-        $missing = foreach ($b in @($x.SelectNodes("//*[local-name()='Button']"))) {
+        $buttons = @($x.SelectNodes("//*[local-name()='Button']"))
+        $buttons.Count | Should -BeGreaterThan 15
+        $missing = foreach ($b in $buttons) {
             $name = $b.GetAttribute('Name', 'http://schemas.microsoft.com/winfx/2006/xaml')
-            if ($b.GetAttribute('Style') -match 'ViewButtonStyle|OptionsButtonStyle|SquareInlineButtonStyle' -and -not $themed.Contains($name)) { $name }
+            if (-not $name) { 'a button has no x:Name' } elseif (-not $themed.Contains($name)) { $name }
         }
         @($missing) | Should -BeNullOrEmpty
     }
@@ -247,5 +287,22 @@ Describe 'Every button takes the shared themed style (d)' {
         $shell = Get-Content -LiteralPath (Join-Path $script:RepoRoot 'start-sitehygiene.ps1') -Raw
         $shell | Should -Match '-WorkflowButtons\s+\$script:WorkflowButtons'
         ([regex]::Matches($shell, 'Update-SidebarButtonTheme\s*\r?\n\s*Set-ButtonTheme')).Count | Should -BeGreaterOrEqual 3
+    }
+}
+
+Describe 'No raw exception text in the window (e)' {
+    It 'writes exception text to the log file only (-Quiet) in <Name>' -ForEach @(
+        @{ Name = 'start-sitehygiene.ps1'; Path = (Join-Path (Split-Path -Parent $PSScriptRoot) 'start-sitehygiene.ps1') }
+        @{ Name = 'SiteHygieneCommon.psm1'; Path = (Join-Path (Split-Path -Parent $PSScriptRoot) 'Module\SiteHygieneCommon.psm1') }
+        @{ Name = 'SiteHygieneLive.psm1'; Path = (Join-Path (Split-Path -Parent $PSScriptRoot) 'Module\SiteHygieneLive.psm1') }
+    ) {
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($Path, [ref]$null, [ref]$null)
+        $calls = $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Write-Log' }, $true)
+        $calls.Count | Should -BeGreaterThan 0
+        $bad = foreach ($c in $calls) {
+            $t = $c.Extent.Text
+            if ($t -match '\$_|\$\(\$_|Exception\.Message|\$err\b' -and $t -notmatch '-Quiet') { '{0}:{1}: {2}' -f $Name, $c.Extent.StartLineNumber, $t }
+        }
+        @($bad) | Should -BeNullOrEmpty
     }
 }

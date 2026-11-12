@@ -262,7 +262,7 @@ $script:ScanViews = @('Findings', 'Relationships', 'Summary')
 $script:LiveViews = @('Deployments', 'Content', 'DPs', 'Clients', 'Inactive', 'Site', 'Trends')
 $script:ActiveView = 'Findings'
 
-# Every button of the window except the Cancel buttons of dialogs takes the same themed style. SuiteCommon paints them: blue with white text in the light theme, dark in the dark theme.
+# Every button of the main window takes the same themed style. SuiteCommon paints them: blue with white text in the light theme, dark in the dark theme.
 $script:WorkflowButtons = @($btnScan, $btnRefreshAll, $btnPauseResume, $btnSuppress, $btnUnsuppress, $btnRunFix, $btnExportCsv, $btnExportHtml, $btnCopySummary, $btnCancelScan)
 
 Initialize-SuiteTheme -Window $window `
@@ -1602,7 +1602,7 @@ function Invoke-RefreshAll {
             try {
                 $dpData = @(Get-DPHealth)
                 $dpCounts = Get-DPHealthCounts -DPData $dpData
-            } catch { $dpData = @(); Write-Log ('Distribution point status unavailable: {0}' -f $_.Exception.Message) -Level WARN }
+            } catch { $dpData = @(); Write-Log ('Distribution point status unavailable: {0}' -f $_.Exception.Message) -Level WARN -Quiet; Add-LogLine 'Distribution point status unavailable. The log file has the details.' -Level WARN }
 
             $clientData = @(); $clientCounts = $null
             $inactiveData = @(); $inactiveCounts = $null
@@ -1927,14 +1927,20 @@ function Show-OptionsDialog {
                 <Setter Property="Controls:ControlsHelper.ContentCharacterCasing" Value="Normal"/>
                 <Setter Property="Margin" Value="0"/>
             </Style>
+            <!-- The one secondary style: a gray fill, the theme text color and a visible border. Cancel uses it. The primary style is DialogAccentButton. -->
             <Style x:Key="DialogButton" TargetType="Button" BasedOn="{StaticResource ThemedButtonStyle}">
+                <Setter Property="Background" Value="{DynamicResource MahApps.Brushes.Gray10}"/>
+                <Setter Property="Foreground" Value="{DynamicResource MahApps.Brushes.ThemeForeground}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource MahApps.Brushes.ThemeForeground}"/>
                 <Setter Property="MinWidth" Value="90"/><Setter Property="Height" Value="32"/>
                 <Setter Property="Margin" Value="0,0,8,0"/>
                 <Setter Property="Controls:ControlsHelper.ContentCharacterCasing" Value="Normal"/>
             </Style>
-            <Style x:Key="DialogAccentButton" TargetType="Button" BasedOn="{StaticResource MahApps.Styles.Button.Square.Accent}">
+            <Style x:Key="DialogAccentButton" TargetType="Button" BasedOn="{StaticResource ThemedButtonStyle}">
                 <Setter Property="MinWidth" Value="90"/><Setter Property="Height" Value="32"/>
+                <Setter Property="Background" Value="{DynamicResource MahApps.Brushes.Accent}"/>
                 <Setter Property="Foreground" Value="{DynamicResource MahApps.Brushes.IdealForeground}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource MahApps.Brushes.Accent}"/>
                 <Setter Property="Margin" Value="0,0,8,0"/>
                 <Setter Property="Controls:ControlsHelper.ContentCharacterCasing" Value="Normal"/>
             </Style>
