@@ -28,8 +28,8 @@ Select **Options** in the sidebar. The dialog opens on the **Connection** page. 
 |---|---|
 | **Site Code** | The three-character site code, for example `MCM`. |
 | **SMS Provider FQDN** | The server that has the SMS Provider role. The tool uses it for the provider connection of the console module. |
-| **SQL Server (optional)** | The instance that hosts `CM_<site>`: `FQDN` or `FQDN\Instance`. Blank skips Client Health and Inactive Devices. |
-| **Trust the SQL Server certificate** | On by default. The connection stays encrypted, but the server certificate is not validated. Clear it when this computer trusts the certificate. |
+| **SQL Server (Optional)** | The instance that hosts `CM_<site>`: `FQDN` or `FQDN\Instance`. Blank skips Client Health and Inactive Devices. |
+| **Trust the SQL Server Certificate** | On by default. The connection stays encrypted, but the server certificate is not validated. Clear it when this computer trusts the certificate. |
 
 ![The Connection page with values](../images/options-connection.png)
 
@@ -54,7 +54,7 @@ A scan with every area selected records the rescan delta. A scan of some areas l
 ### Alerts
 
 1. Select the **Alerts** page.
-2. Select or clear **Enable threshold alerts**.
+2. Select or clear **Enable Threshold Alerts**.
 3. Select the deployment compliance floor in percent.
 
 ![The Alerts page](../images/options-alerts.png)

@@ -20,7 +20,11 @@
                 <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Themes/Dark.Steel.xaml" />
             </ResourceDictionary.MergedDictionaries>
 
-            <ControlTemplate x:Key="SidebarButtonTemplate" TargetType="Button">
+            <!-- One template and one style for every button of the window. The colors come from
+                 SuiteCommon (Update-SidebarButtonTheme and Set-ButtonTheme) and from MahApps
+                 resources, never from a literal here. Hover, pressed and disabled change only
+                 the opacity, so they work in both themes. -->
+            <ControlTemplate x:Key="ThemedButtonTemplate" TargetType="Button">
                 <Border x:Name="Bd"
                         Background="{TemplateBinding Background}"
                         BorderBrush="{TemplateBinding BorderBrush}"
@@ -33,12 +37,14 @@
                                       SnapsToDevicePixels="True"/>
                 </Border>
                 <ControlTemplate.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter TargetName="Bd" Property="Opacity" Value="0.85"/>
+                    </Trigger>
+                    <Trigger Property="IsKeyboardFocused" Value="True">
+                        <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource MahApps.Brushes.ThemeForeground}"/>
+                    </Trigger>
                     <Trigger Property="IsPressed" Value="True">
-                        <Setter TargetName="Bd" Property="Background">
-                            <Setter.Value>
-                                <SolidColorBrush Color="#3A3A3A"/>
-                            </Setter.Value>
-                        </Setter>
+                        <Setter TargetName="Bd" Property="Opacity" Value="0.7"/>
                     </Trigger>
                     <Trigger Property="IsEnabled" Value="False">
                         <Setter TargetName="Bd" Property="Opacity" Value="0.5"/>
@@ -46,39 +52,35 @@
                 </ControlTemplate.Triggers>
             </ControlTemplate>
 
-            <Style x:Key="ViewButtonStyle" TargetType="Button" BasedOn="{StaticResource MahApps.Styles.Button.Square}">
-                <Setter Property="Template" Value="{StaticResource SidebarButtonTemplate}"/>
+            <Style x:Key="ThemedButtonStyle" TargetType="Button" BasedOn="{StaticResource MahApps.Styles.Button.Square}">
+                <Setter Property="Template" Value="{StaticResource ThemedButtonTemplate}"/>
+                <Setter Property="Foreground" Value="{DynamicResource MahApps.Brushes.ThemeForeground}"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="Controls:ControlsHelper.ContentCharacterCasing" Value="Normal"/>
+            </Style>
+
+            <Style x:Key="ViewButtonStyle" TargetType="Button" BasedOn="{StaticResource ThemedButtonStyle}">
                 <Setter Property="Height" Value="38"/>
                 <Setter Property="Margin" Value="8,2,8,2"/>
                 <Setter Property="Padding" Value="12,0,12,0"/>
                 <Setter Property="HorizontalContentAlignment" Value="Left"/>
                 <Setter Property="FontSize" Value="13"/>
                 <Setter Property="FontWeight" Value="Bold"/>
-                <Setter Property="Controls:ControlsHelper.ContentCharacterCasing" Value="Normal"/>
-                <Setter Property="Foreground" Value="White"/>
-                <Setter Property="Background">
-                    <Setter.Value><SolidColorBrush Color="#1E1E1E"/></Setter.Value>
-                </Setter>
-                <Setter Property="BorderBrush">
-                    <Setter.Value><SolidColorBrush Color="#555555"/></Setter.Value>
-                </Setter>
-                <Setter Property="BorderThickness" Value="1"/>
             </Style>
 
             <Style x:Key="OptionsButtonStyle" TargetType="Button" BasedOn="{StaticResource ViewButtonStyle}"/>
 
             <Style x:Key="SidebarGroupLabel" TargetType="TextBlock">
                 <Setter Property="FontSize" Value="10"/>
-                <Setter Property="FontWeight" Value="SemiBold"/>
+                <Setter Property="FontWeight" Value="Bold"/>
                 <Setter Property="Margin" Value="16,12,8,4"/>
                 <Setter Property="Foreground" Value="{DynamicResource MahApps.Brushes.Gray1}"/>
             </Style>
 
-            <Style x:Key="SquareInlineButtonStyle" TargetType="Button" BasedOn="{StaticResource MahApps.Styles.Button.Square}">
+            <Style x:Key="SquareInlineButtonStyle" TargetType="Button" BasedOn="{StaticResource ThemedButtonStyle}">
                 <Setter Property="Height" Value="28"/>
                 <Setter Property="MinWidth" Value="100"/>
                 <Setter Property="Margin" Value="0,0,8,0"/>
-                <Setter Property="Controls:ControlsHelper.ContentCharacterCasing" Value="Normal"/>
                 <Setter Property="FontSize" Value="12"/>
             </Style>
 
@@ -122,6 +124,12 @@
 
             <Style x:Key="GridCellStyle" TargetType="DataGridCell" BasedOn="{StaticResource MahApps.Styles.DataGridCell}">
                 <Setter Property="Padding" Value="6,0,6,0"/>
+                <Style.Triggers>
+                    <Trigger Property="IsSelected" Value="True">
+                        <Setter Property="Background" Value="{DynamicResource MahApps.Brushes.Accent}"/>
+                        <Setter Property="Foreground" Value="{DynamicResource MahApps.Brushes.IdealForeground}"/>
+                    </Trigger>
+                </Style.Triggers>
             </Style>
 
             <Style x:Key="GridHeaderStyle" TargetType="DataGridColumnHeader" BasedOn="{StaticResource MahApps.Styles.DataGridColumnHeader}">
@@ -140,6 +148,12 @@
                 <Setter Property="VerticalContentAlignment" Value="Center"/>
                 <Setter Property="FontFamily" Value="Segoe UI Symbol"/>
                 <Setter Property="FontSize" Value="14"/>
+                <Style.Triggers>
+                    <Trigger Property="IsSelected" Value="True">
+                        <Setter Property="Background" Value="{DynamicResource MahApps.Brushes.Accent}"/>
+                        <Setter Property="Foreground" Value="{DynamicResource MahApps.Brushes.IdealForeground}"/>
+                    </Trigger>
+                </Style.Triggers>
             </Style>
 
             <Style x:Key="DetailTextStyle" TargetType="TextBox">
@@ -188,40 +202,40 @@
                                                IsOn="True"
                                                OnContent="" OffContent=""
                                                MinWidth="0"
-                                               ToolTip="Toggle dark / light theme"/>
+                                               ToolTip="Switch between the dark theme and the light theme."/>
                     </DockPanel>
                 </StackPanel>
 
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel>
-                        <TextBlock Text="SCAN" Style="{StaticResource SidebarGroupLabel}" Margin="16,4,8,4"/>
+                        <TextBlock Text="Scan" Style="{StaticResource SidebarGroupLabel}" Margin="16,4,8,4"/>
                         <Button x:Name="btnViewFindings" Content="Findings" Style="{StaticResource ViewButtonStyle}"
-                                ToolTip="Every hygiene finding from the last scan, filterable by category and severity"/>
+                                ToolTip="Show each finding from the last scan, filtered by category and severity."/>
                         <Button x:Name="btnViewRelationships" Content="Relationships" Style="{StaticResource ViewButtonStyle}"
-                                ToolTip="Every supersedence and dependency relationship from the last scan, as a list and as trees"/>
+                                ToolTip="Show each supersedence and dependency relationship from the last scan, as a list and as trees."/>
                         <Button x:Name="btnViewSummary"  Content="Summary"  Style="{StaticResource ViewButtonStyle}"
-                                ToolTip="Per-check counts for the last scan, plus dataset notes"/>
+                                ToolTip="Show the finding count of each check from the last scan."/>
 
-                        <TextBlock Text="LIVE" Style="{StaticResource SidebarGroupLabel}"/>
+                        <TextBlock Text="Live" Style="{StaticResource SidebarGroupLabel}"/>
                         <Button x:Name="btnViewDeployments" Content="Deployments" Style="{StaticResource ViewButtonStyle}"
-                                ToolTip="Application, package, software-update, and task-sequence deployments with success / error / in-progress counts"/>
+                                ToolTip="Show application, package, software update and task sequence deployments with their status counts."/>
                         <Button x:Name="btnViewContent" Content="Content" Style="{StaticResource ViewButtonStyle}"
-                                ToolTip="Content distribution status: only items with failed or in-progress DP-content pairs"/>
+                                ToolTip="Show content that failed or is still in progress on a distribution point."/>
                         <Button x:Name="btnViewDPs" Content="Distribution Points" Style="{StaticResource ViewButtonStyle}"
-                                ToolTip="DP roster with site, status, and pull-DP flag"/>
+                                ToolTip="Show each distribution point with its site, status and pull distribution point setting."/>
                         <Button x:Name="btnViewClients" Content="Client Health" Style="{StaticResource ViewButtonStyle}"
-                                ToolTip="Per-device CCM health: HealthState, ActiveStatus, last-online / DDR / policy / HW inventory (SQL)"/>
+                                ToolTip="Show the client health state and the last activity of each device. This view reads the site database."/>
                         <Button x:Name="btnViewInactive" Content="Inactive Devices" Style="{StaticResource ViewButtonStyle}"
-                                ToolTip="Devices exceeding the inactivity threshold (SQL, configurable in Options)"/>
+                                ToolTip="Show the devices that exceed the inactivity threshold. This view reads the site database."/>
                         <Button x:Name="btnViewSite" Content="Site Health" Style="{StaticResource ViewButtonStyle}"
-                                ToolTip="Site components and site-system roles via SMS_ComponentSummarizer / SMS_SiteSystemSummarizer"/>
+                                ToolTip="Show the status of the site components and the site system roles."/>
                         <Button x:Name="btnViewTrends" Content="Trends" Style="{StaticResource ViewButtonStyle}"
-                                ToolTip="Rolling 7 / 30 / 90 day history for each live metric, captured at every refresh"/>
+                                ToolTip="Show the history of each live metric over 7, 30 or 90 days."/>
 
                         <Button x:Name="btnOptions" Content="Options"
                                 Style="{StaticResource OptionsButtonStyle}"
                                 Margin="8,20,8,3"
-                                ToolTip="Site code, SMS provider, SQL server, scan scope, refresh, alerts, about"/>
+                                ToolTip="Set the site code, the SMS Provider, the SQL Server, the scan areas, the refresh and the alerts."/>
                     </StackPanel>
                 </ScrollViewer>
             </DockPanel>
@@ -241,9 +255,9 @@
 
             <Border Grid.Row="0" Background="{DynamicResource MahApps.Brushes.Gray10}" Padding="16,12,16,10">
                 <StackPanel>
-                    <TextBlock x:Name="txtModuleTitle" Text="Findings" FontSize="18" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="txtModuleTitle" Text="Findings" FontSize="18" FontWeight="Bold"/>
                     <TextBlock x:Name="txtModuleSubtitle"
-                               Text="Configure Site / Provider in Options, then click Scan."
+                               Text="Set the site code and the SMS Provider in Options, then click Scan."
                                FontSize="11"
                                TextWrapping="Wrap"
                                Foreground="{DynamicResource MahApps.Brushes.Gray1}"
@@ -274,7 +288,7 @@
                             Content="Scan"
                             Style="{StaticResource SquareInlineButtonStyle}"
                             MinWidth="120"
-                            ToolTip="Run a read-only hygiene scan against the connected site"/>
+                            ToolTip="Run a read-only hygiene scan on the connected site."/>
 
                     <Button x:Name="btnRefreshAll"
                             Grid.Column="0"
@@ -282,7 +296,7 @@
                             Style="{StaticResource SquareInlineButtonStyle}"
                             MinWidth="90"
                             Visibility="Collapsed"
-                            ToolTip="Refresh every live area (deployments, content, DPs, clients, inactive devices, site components)"/>
+                            ToolTip="Refresh every live view."/>
 
                     <Button x:Name="btnPauseResume"
                             Grid.Column="1"
@@ -290,7 +304,7 @@
                             Style="{StaticResource SquareInlineButtonStyle}"
                             MinWidth="140"
                             Visibility="Collapsed"
-                            ToolTip="Pause / resume the auto-refresh timer"/>
+                            ToolTip="Pause or resume the automatic refresh."/>
 
                     <TextBox x:Name="txtFilter"
                              Grid.Column="2"
@@ -304,7 +318,7 @@
                               Width="150"
                               Margin="0,0,8,0"
                               FontSize="12"
-                              ToolTip="Limit findings to one category">
+                              ToolTip="Limit the findings to one category.">
                         <ComboBoxItem Content="All" IsSelected="True"/>
                         <ComboBoxItem Content="Applications"/>
                         <ComboBoxItem Content="Content"/>
@@ -329,7 +343,7 @@
                               Width="120"
                               Margin="0,0,8,0"
                               FontSize="12"
-                              ToolTip="Limit findings by severity">
+                              ToolTip="Limit the findings by severity.">
                         <ComboBoxItem Content="All" IsSelected="True"/>
                         <ComboBoxItem Content="Error"/>
                         <ComboBoxItem Content="Warning"/>
@@ -342,7 +356,7 @@
                               Margin="0,0,8,0"
                               FontSize="12"
                               Visibility="Collapsed"
-                              ToolTip="Limit the relationship list to one kind">
+                              ToolTip="Limit the relationships to one kind.">
                         <ComboBoxItem Content="All kinds" IsSelected="True"/>
                         <ComboBoxItem Content="Supersedence"/>
                         <ComboBoxItem Content="Dependency"/>
@@ -354,7 +368,7 @@
                               Margin="0,0,8,0"
                               FontSize="12"
                               Visibility="Collapsed"
-                              ToolTip="Limit the relationship list by status">
+                              ToolTip="Limit the relationships by status.">
                         <ComboBoxItem Content="All statuses" IsSelected="True"/>
                         <ComboBoxItem Content="Healthy"/>
                         <ComboBoxItem Content="Broken"/>
@@ -366,7 +380,7 @@
                               Margin="0,0,8,0"
                               FontSize="12"
                               Visibility="Collapsed"
-                              ToolTip="Limit rows by status">
+                              ToolTip="Limit the rows by status.">
                         <ComboBoxItem Content="All" IsSelected="True"/>
                         <ComboBoxItem Content="OK / Healthy"/>
                         <ComboBoxItem Content="Warning / In Progress"/>
@@ -374,12 +388,12 @@
                     </ComboBox>
 
                     <Button x:Name="btnExportCsv"  Grid.Column="8" Content="Export CSV"  Style="{StaticResource SquareInlineButtonStyle}"
-                            ToolTip="Export the active view's filtered rows to CSV"/>
+                            ToolTip="Export the filtered rows of the current view to a CSV file."/>
                     <Button x:Name="btnExportHtml" Grid.Column="9" Content="Export HTML" Style="{StaticResource SquareInlineButtonStyle}"
-                            ToolTip="Export the active view's filtered rows to a styled HTML report"/>
+                            ToolTip="Export the filtered rows of the current view to an HTML report."/>
                     <Button x:Name="btnCopySummary" Grid.Column="10" Content="Copy Summary" Style="{StaticResource SquareInlineButtonStyle}"
                             Visibility="Collapsed"
-                            ToolTip="Copy a plain-text live health summary to the clipboard"/>
+                            ToolTip="Copy the live health summary to the clipboard."/>
                 </Grid>
             </Border>
 
@@ -399,14 +413,14 @@
                     <Border Grid.Row="0" Padding="0,8,0,8">
                         <StackPanel Orientation="Horizontal">
                             <Button x:Name="btnSuppress"   Content="Suppress"   Style="{StaticResource SquareInlineButtonStyle}" MinWidth="110"
-                                    ToolTip="Hide the selected finding(s) from future scans until unsuppressed"/>
+                                    ToolTip="Hide the selected findings from future scans."/>
                             <Button x:Name="btnUnsuppress" Content="Unsuppress" Style="{StaticResource SquareInlineButtonStyle}" MinWidth="110"
-                                    ToolTip="Remove the selected finding(s) from the suppression list"/>
+                                    ToolTip="Remove the selected findings from the suppression list."/>
                             <Button x:Name="btnRunFix" Content="Run Fix" Style="{StaticResource SquareInlineButtonStyle}" MinWidth="110" IsEnabled="False"
-                                    ToolTip="Run the selected finding's fix script against the site after confirmation"/>
-                            <CheckBox x:Name="chkShowSuppressed" Content="Show suppressed" FontSize="12" VerticalAlignment="Center" Margin="8,0,0,0"
+                                    ToolTip="Run the fix script of the selected finding after you confirm."/>
+                            <CheckBox x:Name="chkShowSuppressed" Content="Show Suppressed" FontSize="12" VerticalAlignment="Center" Margin="8,0,0,0"
                                       Controls:ControlsHelper.ContentCharacterCasing="Normal"
-                                      ToolTip="Include suppressed findings in the grid"/>
+                                      ToolTip="Include the suppressed findings in the list."/>
                             <TextBlock x:Name="txtSuppressCount" FontSize="11" VerticalAlignment="Center" Margin="12,0,0,0"
                                        Foreground="{DynamicResource MahApps.Brushes.Gray1}"/>
                         </StackPanel>
@@ -465,7 +479,7 @@
                                     <DataGridTextColumn Header="Loop"        Width="50"  Binding="{Binding LoopFlag}"/>
                                     <DataGridTextColumn Header="Source"      Width="2*"  Binding="{Binding SourceName}"/>
                                     <DataGridTextColumn Header="Version"     Width="90"  Binding="{Binding SourceVersion}"/>
-                                    <DataGridTextColumn Header="Deployment type" Width="1.5*" Binding="{Binding SourceDeploymentType}"/>
+                                    <DataGridTextColumn Header="Deployment Type" Width="1.5*" Binding="{Binding SourceDeploymentType}"/>
                                     <DataGridTextColumn Header="Target"      Width="2*"  Binding="{Binding TargetName}"/>
                                     <DataGridTextColumn Header="Version"     Width="90"  Binding="{Binding TargetVersion}"/>
                                     <DataGridTextColumn Header="Dependency"  Width="100" Binding="{Binding DependencyState}"/>
@@ -600,7 +614,7 @@
                                   ResizeDirection="Rows"/>
 
                     <TextBox x:Name="txtContentDetail" Grid.Row="2" Style="{StaticResource DetailTextStyle}"
-                             Text="Select a content item to see DP breakdown."/>
+                             Text="Select a content item to see its status on each distribution point."/>
                 </Grid>
 
                 <!-- ============================================================ -->
@@ -766,9 +780,9 @@
                     </Grid.RowDefinitions>
 
                     <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,4,0,10">
-                        <TextBlock Text="Metric:" VerticalAlignment="Center" FontSize="12" Margin="0,0,6,0"/>
+                        <TextBlock Text="Metric:" VerticalAlignment="Center" FontSize="12" FontWeight="Bold" Margin="0,0,6,0"/>
                         <ComboBox x:Name="cboTrendMetric" Width="240" FontSize="12" Margin="0,0,16,0"/>
-                        <TextBlock Text="Range:" VerticalAlignment="Center" FontSize="12" Margin="0,0,6,0"/>
+                        <TextBlock Text="Range:" VerticalAlignment="Center" FontSize="12" FontWeight="Bold" Margin="0,0,6,0"/>
                         <ComboBox x:Name="cboTrendRange" Width="110" FontSize="12">
                             <ComboBoxItem Content="7 days"/>
                             <ComboBoxItem Content="30 days" IsSelected="True"/>
@@ -807,7 +821,7 @@
                                                Foreground="{DynamicResource MahApps.Brushes.Accent}"/>
                         <TextBlock x:Name="txtProgressTitle"
                                    Text="Scanning..."
-                                   FontSize="18" FontWeight="SemiBold"
+                                   FontSize="18" FontWeight="Bold"
                                    HorizontalAlignment="Center"
                                    Margin="0,14,0,0"/>
                         <TextBlock x:Name="txtProgressStep"
@@ -822,7 +836,7 @@
                                 MinWidth="120"
                                 HorizontalAlignment="Center"
                                 Margin="0,16,0,0"
-                                ToolTip="Stop the running scan or refresh; no further queries are sent to the site"/>
+                                ToolTip="Stop the running scan or refresh."/>
                     </StackPanel>
                 </Border>
             </Grid>
@@ -833,8 +847,8 @@
 
             <Border Grid.Row="4">
                 <DockPanel>
-                    <TextBlock x:Name="lblLogOutput" DockPanel.Dock="Top" Text="LOG OUTPUT"
-                               FontSize="10" FontWeight="SemiBold"
+                    <TextBlock x:Name="lblLogOutput" DockPanel.Dock="Top" Text="Log Output"
+                               FontSize="10" FontWeight="Bold"
                                Margin="8,6,0,4"/>
                     <TextBox x:Name="txtLog"
                              IsReadOnly="True"
@@ -850,7 +864,15 @@
 
             <Border Grid.Row="5" Padding="8,4,8,4"
                     Background="{DynamicResource MahApps.Brushes.Gray10}">
-                <TextBlock x:Name="txtStatus" Text="Ready." FontSize="11"/>
+                <DockPanel LastChildFill="True">
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
+                        <TextBlock Text="SMS Provider:" FontSize="14" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <TextBlock x:Name="txtSmsProvider" Text="" FontSize="11" VerticalAlignment="Center" Margin="0,0,16,0"/>
+                        <TextBlock Text="Site Code:" FontSize="14" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <TextBlock x:Name="txtSiteCode" Text="" FontSize="11" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <TextBlock x:Name="txtStatus" Text="Ready." FontSize="11" VerticalAlignment="Center"/>
+                </DockPanel>
             </Border>
         </Grid>
     </Grid>

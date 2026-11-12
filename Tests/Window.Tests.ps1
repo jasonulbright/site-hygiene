@@ -201,8 +201,8 @@ Describe 'Dialog text' {
 
 
     It 'builds the Run Fix confirmation title from the check id, not from the app title' {
-        $script:ShellText | Should -Match "Run fix for \{0\}\?"
-        $script:ShellText | Should -Match "Run \{0\} fixes\?"
+        $script:ShellText | Should -Match "Run Fix for \{0\}\?"
+        $script:ShellText | Should -Match "Run \{0\} Fixes\?"
     }
 
 

@@ -40,8 +40,8 @@ The timer starts after the first refresh of a session. It also starts at launch 
 
 ### Get an alert
 
-1. Select **Options > Alerts** and keep **Enable threshold alerts** on.
-2. Set the **Deployment compliance floor**.
+1. Select **Options > Alerts** and keep **Enable Threshold Alerts** on.
+2. Set the **Deployment Compliance Floor**.
 3. Refresh. When a metric breaches, the tool shows a Windows toast, writes a line to `Logs\SiteHygiene-alerts.log` and writes a line to the log pane.
 
 An alert fires for a critical site component or site system, a critical distribution point, a failed DP-content pair, and a deployment compliance below the floor. An alert repeats only after the metric recovers and breaches again.

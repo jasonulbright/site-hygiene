@@ -75,7 +75,8 @@ function Start-App([string]$Script, [string]$Title) {
     $w = Find-Top $Title 60; Start-Sleep -Seconds 3; Find-Top $Title 10
 }
 function Stop-App([string]$Script) {
-    Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.CommandLine -like "*$Script*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    # Only a process that runs from the app folder of this capture stops.
+    Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.CommandLine -like "*$appDir*$Script*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 }
 function Section([string]$Name, [scriptblock]$Body) { Log ('== ' + $Name); try { & $Body } catch { Log ('ERROR in ' + $Name + ': ' + $_.Exception.Message + ' @ ' + $_.InvocationInfo.ScriptLineNumber) } }
 function Find-All([string]$Name) {

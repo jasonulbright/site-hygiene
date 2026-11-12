@@ -59,15 +59,18 @@ $script:HarnessBootstrap = {
     # Applies the theme the way the shell does at start-up and on a toggle:
     # SuiteCommon palette, sidebar buttons, options button, log label, title bar.
     function Initialize-ShellTheme {
-        param($Window, [bool]$Dark, [object[]]$Views, [string]$OptionsButtonName, [string]$LogLabelName, [string]$ActiveView)
+        param($Window, [bool]$Dark, [object[]]$Views, [string]$OptionsButtonName, [string]$LogLabelName, [string]$ActiveView, [string[]]$WorkflowButtonName = @())
         $global:HarnessDark = $Dark
         $global:HarnessActiveView = $ActiveView
         # Each view definition has a Name (the active view name) and a Button (the x:Name of its sidebar button).
         $viewButtons = @(foreach ($v in $Views) { @{ Name = $v.Name; Button = $Window.FindName($v.Button) } })
         Initialize-SuiteTheme -Window $Window -IsDarkGetter { [bool]$global:HarnessDark } -ActiveViewGetter { $global:HarnessActiveView } `
             -ViewButtons $viewButtons -OptionsButton $(if ($OptionsButtonName) { $Window.FindName($OptionsButtonName) }) `
+            -WorkflowButtons @(foreach ($n in $WorkflowButtonName) { $Window.FindName($n) }) `
+            -OptionsButtons @($(if ($OptionsButtonName) { $Window.FindName($OptionsButtonName) })) `
             -LogLabel $(if ($LogLabelName) { $Window.FindName($LogLabelName) })
         Update-SidebarButtonTheme
+        Set-ButtonTheme
         Update-TitleBarBrushes
         Wait-Layout $Window
     }

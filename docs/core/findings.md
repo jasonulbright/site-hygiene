@@ -52,9 +52,9 @@ The **New** column marks a finding that the previous scan did not have. The log 
 
 ![A suppressed finding](../images/finding-suppressed.png)
 
-3. To see the suppressed findings, select **Show suppressed**.
+3. To see the suppressed findings, select **Show Suppressed**.
 
-![Show suppressed](../images/show-suppressed.png)
+![Show Suppressed](../images/show-suppressed.png)
 
 4. To bring a finding back, select it and select **Unsuppress**.
 
@@ -63,7 +63,7 @@ The **New** column marks a finding that the previous scan did not have. The log 
 ### Run a fix
 
 1. Select a row whose fix script is shown. **Run Fix** becomes enabled. A selection of several rows runs as one bulk fix.
-2. Select **Run Fix**. A dialog shows the exact script and the site code. The title is `Run fix for <check ID>?` for one row or `Run <n> fixes?` for several rows.
+2. Select **Run Fix**. A dialog shows the exact script and the site code. The title is `Run Fix for <check ID>?` for one row or `Run <n> Fixes?` for several rows.
 3. Read the script. Select **Yes** to run it or **No** to cancel.
 
 ![The Run Fix confirmation dialog](../images/run-fix-confirm.png)
@@ -93,7 +93,7 @@ The CSV and the HTML files carry the evidence, the recommendation and the fix sc
 | **Export CSV**, **Export HTML** | Write the shown rows to a file. |
 | **Suppress**, **Unsuppress** | Hide or show the selected findings in later scans. |
 | **Run Fix** | Runs the fix script of the selected rows after a confirmation. |
-| **Show suppressed** | Shows the suppressed findings in the grid. |
+| **Show Suppressed** | Shows the suppressed findings in the grid. |
 
 ## Limits
 
@@ -106,7 +106,7 @@ The CSV and the HTML files carry the evidence, the recommendation and the fix sc
 | Message or symptom | Cause | Fix |
 |---|---|---|
 | **Run Fix** is disabled. | No row is selected, or the finding has guidance only. | Select a row with a fix script. |
-| The grid is empty after a scan. | A filter hides the rows, or the scan found nothing. | Clear the filters. Select **Show suppressed**. |
+| The grid is empty after a scan. | A filter hides the rows, or the scan found nothing. | Clear the filters. Select **Show Suppressed**. |
 | The status bar shows `Fix failed - see log.` | The fix script failed on the site. | Read the log line `Fix failed [<check>]`. |
 
 ## Links
