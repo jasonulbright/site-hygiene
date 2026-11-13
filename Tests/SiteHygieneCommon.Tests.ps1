@@ -1077,7 +1077,7 @@ Describe 'Version metadata single-sourcing' {
     It 'keeps the manifest, changelog headline, script header, and check catalog in agreement' {
         $root = Split-Path $PSScriptRoot -Parent
         $manifestVersion = [string](Import-PowerShellDataFile (Join-Path $root 'Module\SiteHygieneCommon.psd1')).ModuleVersion
-        $clTop = (Get-Content (Join-Path $root 'CHANGELOG.md') -TotalCount 10 | Where-Object { $_ -match '^## \[?([0-9][0-9\.]*[0-9])' } | Select-Object -First 1)
+        $clTop = (Get-Content (Join-Path $root 'CHANGELOG.md') -TotalCount 60 | Where-Object { $_ -match '^## \[?([0-9][0-9\.]*[0-9])' } | Select-Object -First 1)
         $clTop -match '([0-9][0-9\.]*[0-9])' | Out-Null
         $Matches[1] | Should -Be $manifestVersion -Because 'the changelog headline must match the manifest'
         $header = (Select-String (Join-Path $root 'start-sitehygiene.ps1') -Pattern 'Version    : ([0-9\.]+)' | Select-Object -First 1).Matches[0].Groups[1].Value

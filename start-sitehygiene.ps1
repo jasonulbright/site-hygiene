@@ -215,8 +215,6 @@ $btnCancelScan    = $window.FindName('btnCancelScan')
 $lblLogOutput = $window.FindName('lblLogOutput')
 $txtLog       = $window.FindName('txtLog')
 $txtStatus    = $window.FindName('txtStatus')
-$txtStatusSiteCode = $window.FindName('txtSiteCode')
-$txtStatusProvider = $window.FindName('txtSmsProvider')
 
 if ($txtVersion) { $txtVersion.Text = "v$script:AppVersion" }
 $null = $txtAppTitle
@@ -238,6 +236,13 @@ function Set-StatusText {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification='Updates an in-window TextBlock only.')]
     param([Parameter(Mandatory)][string]$Text)
     $txtStatus.Text = $Text
+}
+
+function Sync-FooterSite {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification='Updates an in-window TextBlock only.')]
+    param()
+    try { Update-SuiteFooter -Window $window -SiteCode ([string]$global:Prefs.SiteCode) -SiteServer ([string]$global:Prefs.SMSProvider) }
+    catch { Write-Log ('Footer: {0}' -f $_.Exception.Message) -Level ERROR -Quiet; Add-LogLine 'The footer failed. The log file has the details.' }
 }
 
 # === Title-bar drag fallback (PS51-WPF-033): SuiteCommon owns the hook ===
@@ -1007,6 +1012,7 @@ function Invoke-Scan {
 
             Update-Filter
             Update-StatusBarSummary
+            Sync-FooterSite
             $progressOverlay.Visibility = [System.Windows.Visibility]::Collapsed
             $btnScan.IsEnabled = $true
             Add-LogLine ('Scan complete: {0} finding(s), {1} relationship(s).' -f @($script:AllFindings).Count, @($script:RelationshipRows).Count)
@@ -1311,9 +1317,6 @@ function Update-StatusBarSummary {
         if ($script:LastScanTime) { $parts += ('last scan {0}' -f $script:LastScanTime.ToString('HH:mm:ss')) }
     }
     Set-StatusText ($parts -join '   |   ')
-    # The site code and the SMS Provider show in their own boxes. The titles next to the boxes are bold 14 pt; the values keep the body style.
-    if ($txtStatusSiteCode) { $txtStatusSiteCode.Text = [string]$global:Prefs.SiteCode }
-    if ($txtStatusProvider) { $txtStatusProvider.Text = [string]$global:Prefs.SMSProvider }
 }
 
 # =============================================================================
@@ -1704,6 +1707,7 @@ function Invoke-RefreshAll {
 
             Update-Filter
             Update-StatusBarSummary
+            Sync-FooterSite
             $progressOverlay.Visibility = [System.Windows.Visibility]::Collapsed
             $btnRefreshAll.IsEnabled = $true
 
@@ -2173,6 +2177,7 @@ function Show-OptionsDialog {
         $global:Prefs.AlertsEnabled         = [bool]$chkAlertsEnabled.IsChecked
         $global:Prefs.AlertCompliancePct    = $(if ($cboAlertCompliance.SelectedItem) { [int]([string]$cboAlertCompliance.SelectedItem.Content) } else { 80 })
         Save-ShPreferences -Prefs $global:Prefs
+        Sync-FooterSite
         Add-LogLine ('Options saved: site={0} provider={1} sql={2} pacing={3}ms interval={4}m threshold={5}d' -f $newSite, $newProvider, $(if ($newSql) { $newSql } else { '(none)' }), $pacing, $global:Prefs.AutoRefreshMinutes, $global:Prefs.InactiveThresholdDays)
         # The background runspace caches the prior connection; a changed
         # site, provider, or SQL server needs a fresh one.
@@ -2210,6 +2215,9 @@ $window.Add_Loaded({
     if (-not $isDark) { [void][ControlzEx.Theming.ThemeManager]::Current.ChangeTheme($window, 'Light.Blue') }
     Update-TitleBarBrushes
     Set-ActiveView -View $script:ActiveView
+    try { [void](Initialize-SuiteFooter -Window $window -StatusName 'txtStatus' -OnOpenOptions { Show-OptionsDialog }) }
+    catch { Write-Log ('Footer: {0}' -f $_.Exception.Message) -Level ERROR -Quiet; Add-LogLine 'The footer failed. The log file has the details.' }
+    Sync-FooterSite
     Update-SuppressCount
     $gridSummary.ItemsSource = @(Get-HygieneScanSummary -Findings @())
     Add-LogLine 'Site Hygiene ready. Set the site code and the SMS Provider in Options, then click Scan or Refresh All.'
