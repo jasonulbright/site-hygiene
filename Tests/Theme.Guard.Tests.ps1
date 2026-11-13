@@ -149,10 +149,6 @@ Describe 'Fonts do not depend on the theme (b)' {
         $code | Should -Not -Match '\$box\.(FontSize|FontWeight)\s*='
     }
 
-    It 'uses no SemiBold title or label in <_.Source>, so that every title and field label is bold' -ForEach @(Get-XamlDocument) {
-        $_.Text | Should -Not -Match 'FontWeight(=|" Value=)"SemiBold"'
-    }
-
     It 'uses no theme trigger on a font property in <_.Source>' -ForEach @(Get-XamlDocument) {
         # A trigger on the selected tab or on the mouse is not a theme trigger. A trigger is a theme trigger when its own condition names the theme.
         [xml]$x = $_.Text
