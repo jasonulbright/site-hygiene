@@ -59,6 +59,9 @@ The [user guide](docs/index.md) walks every view, dialog and setting with images
    ```
 3. Click **Options** on the sidebar and set Site Code and SMS Provider.
    Set SQL Server too if you want the two SQL-backed Live views.
+   The footer then shows the site at the right end, for example
+   `Site MCM · cm01.contoso.com`. The footer is read-only. Click the
+   site text to open Options.
 4. Optional: under **Options > Scan**, clear the areas you do not need.
    On a large site, leave the three areas marked slow for a separate
    run. A pause between provider calls, in milliseconds, spaces the scan
