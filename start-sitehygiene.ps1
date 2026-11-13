@@ -1980,7 +1980,7 @@ function Show-OptionsDialog {
         <Border Grid.Column="1" Grid.Row="0" Background="{DynamicResource MahApps.Brushes.Gray8}"/>
         <Grid Grid.Column="2" Grid.Row="0" Margin="20,16,20,16">
             <StackPanel x:Name="paneConnection" Visibility="Visible">
-                <TextBlock Text="Configuration Manager Connection" FontSize="13" FontWeight="Bold" Margin="0,0,0,10"/>
+                <TextBlock Text="Configuration Manager Connection" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,10"/>
                 <TextBlock Style="{StaticResource OptLabel}" FontSize="14" FontWeight="Bold" Text="Site Code"/>
                 <TextBox x:Name="txtSiteCode" FontSize="12" Padding="6,4,6,4" MaxLength="3"
                          Controls:TextBoxHelper.Watermark="e.g. MCM" Width="120" HorizontalAlignment="Left"/>
@@ -1996,7 +1996,7 @@ function Show-OptionsDialog {
                 <TextBlock Style="{StaticResource OptHint}" Text="The connection stays encrypted, but the app does not validate the server certificate. Clear this box when this computer trusts the SQL Server certificate."/>
             </StackPanel>
             <StackPanel x:Name="paneScope" Visibility="Collapsed">
-                <TextBlock Text="Scan" FontSize="13" FontWeight="Bold" Margin="0,0,0,10"/>
+                <TextBlock Text="Scan" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,10"/>
                 <TextBlock Text="A scan reads only the data that the selected areas need. An area marked slow reads one object at a time from the SMS Provider, so it takes longer on a large site."
                            FontSize="11" TextWrapping="Wrap" Margin="0,0,0,10"
                            Foreground="{DynamicResource MahApps.Brushes.Gray1}"/>
@@ -2011,7 +2011,7 @@ function Show-OptionsDialog {
                 <TextBlock Style="{StaticResource OptHint}" Text="The scan runs its queries one after another. A pause spaces them out on a busy SMS Provider. Enter 0 for no pause."/>
             </StackPanel>
             <StackPanel x:Name="paneLive" Visibility="Collapsed">
-                <TextBlock Text="Live" FontSize="13" FontWeight="Bold" Margin="0,0,0,10"/>
+                <TextBlock Text="Live" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,10"/>
                 <TextBlock Style="{StaticResource OptLabel}" Text="Auto-Refresh Interval (Minutes)"/>
                 <ComboBox x:Name="cboRefreshInterval" Width="160" HorizontalAlignment="Left" FontSize="12">
                     <ComboBoxItem Content="0"/>
@@ -2033,7 +2033,7 @@ function Show-OptionsDialog {
                 <TextBlock Style="{StaticResource OptHint}" Text="A device with no discovery data record (DDR) contact in this many days shows in the Inactive Devices view."/>
             </StackPanel>
             <StackPanel x:Name="paneAlerts" Visibility="Collapsed">
-                <TextBlock Text="Alerts" FontSize="13" FontWeight="Bold" Margin="0,0,0,10"/>
+                <TextBlock Text="Alerts" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,10"/>
                 <CheckBox x:Name="chkAlertsEnabled" Content="Enable Threshold Alerts" FontSize="12" Margin="0,4,0,0"/>
                 <TextBlock Style="{StaticResource OptHint}"
                            Text="After each live refresh, an alert shows when a metric crosses its limit. The metrics are a critical site component or site system, a critical distribution point, a failed content distribution, and deployment compliance below the floor. An alert shows again only after the metric recovers and crosses its limit again."/>
@@ -2048,8 +2048,8 @@ function Show-OptionsDialog {
                            Text="An alert shows as a Windows toast notification. The app also writes a line to Logs\SiteHygiene-alerts.log and to the log pane."/>
             </StackPanel>
             <StackPanel x:Name="paneAbout" Visibility="Collapsed">
-                <TextBlock Text="About" FontSize="13" FontWeight="Bold" Margin="0,0,0,10"/>
-                <TextBlock x:Name="txtAboutVersion" Text="Site Hygiene" FontSize="13" FontWeight="Bold"/>
+                <TextBlock Text="About" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                <TextBlock x:Name="txtAboutVersion" Text="Site Hygiene" FontSize="13" FontWeight="SemiBold"/>
                 <TextBlock Text="Scans a ConfigMgr site for unused applications and packages, empty collections, stale and failing deployments, and application relationships. Each finding shows its evidence and the PowerShell that a fix runs. A scan changes nothing. Run Fix runs a script only after you confirm."
                            FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0"/>
                 <TextBlock Text="The Live views show the current status of deployments, content, distribution points, clients and the site. They refresh on demand and on a timer, and they keep a history and raise threshold alerts. They create no findings and change nothing."

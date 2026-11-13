@@ -72,7 +72,7 @@
 
             <Style x:Key="SidebarGroupLabel" TargetType="TextBlock">
                 <Setter Property="FontSize" Value="10"/>
-                <Setter Property="FontWeight" Value="Bold"/>
+                <Setter Property="FontWeight" Value="SemiBold"/>
                 <Setter Property="Margin" Value="16,12,8,4"/>
                 <Setter Property="Foreground" Value="{DynamicResource MahApps.Brushes.Gray1}"/>
             </Style>
@@ -255,7 +255,7 @@
 
             <Border Grid.Row="0" Background="{DynamicResource MahApps.Brushes.Gray10}" Padding="16,12,16,10">
                 <StackPanel>
-                    <TextBlock x:Name="txtModuleTitle" Text="Findings" FontSize="18" FontWeight="Bold"/>
+                    <TextBlock x:Name="txtModuleTitle" Text="Findings" FontSize="18" FontWeight="SemiBold"/>
                     <TextBlock x:Name="txtModuleSubtitle"
                                Text="Set the site code and the SMS Provider in Options, then click Scan."
                                FontSize="11"
@@ -821,7 +821,7 @@
                                                Foreground="{DynamicResource MahApps.Brushes.Accent}"/>
                         <TextBlock x:Name="txtProgressTitle"
                                    Text="Scanning..."
-                                   FontSize="18" FontWeight="Bold"
+                                   FontSize="18" FontWeight="SemiBold"
                                    HorizontalAlignment="Center"
                                    Margin="0,14,0,0"/>
                         <TextBlock x:Name="txtProgressStep"
@@ -848,7 +848,7 @@
             <Border Grid.Row="4">
                 <DockPanel>
                     <TextBlock x:Name="lblLogOutput" DockPanel.Dock="Top" Text="Log Output"
-                               FontSize="10" FontWeight="Bold"
+                               FontSize="10" FontWeight="SemiBold"
                                Margin="8,6,0,4"/>
                     <TextBox x:Name="txtLog"
                              IsReadOnly="True"
