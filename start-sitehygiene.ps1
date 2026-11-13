@@ -241,7 +241,8 @@ function Set-StatusText {
 function Sync-FooterSite {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification='Updates an in-window TextBlock only.')]
     param()
-    Update-SuiteFooter -Window $window -SiteCode ([string]$global:Prefs.SiteCode) -SiteServer ([string]$global:Prefs.SMSProvider)
+    try { Update-SuiteFooter -Window $window -SiteCode ([string]$global:Prefs.SiteCode) -SiteServer ([string]$global:Prefs.SMSProvider) }
+    catch { Add-LogLine ('Footer: {0}' -f $_.Exception.Message) }
 }
 
 # === Title-bar drag fallback (PS51-WPF-033): SuiteCommon owns the hook ===
@@ -2214,7 +2215,8 @@ $window.Add_Loaded({
     if (-not $isDark) { [void][ControlzEx.Theming.ThemeManager]::Current.ChangeTheme($window, 'Light.Blue') }
     Update-TitleBarBrushes
     Set-ActiveView -View $script:ActiveView
-    [void](Initialize-SuiteFooter -Window $window -StatusName 'txtStatus' -OnOpenOptions { Show-OptionsDialog })
+    try { [void](Initialize-SuiteFooter -Window $window -StatusName 'txtStatus' -OnOpenOptions { Show-OptionsDialog }) }
+    catch { Add-LogLine ('Footer: {0}' -f $_.Exception.Message) }
     Sync-FooterSite
     Update-SuppressCount
     $gridSummary.ItemsSource = @(Get-HygieneScanSummary -Findings @())
