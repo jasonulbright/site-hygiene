@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Main window of Site Hygiene, a scanner, repair tool, and live monitor for Configuration Manager sites.
 

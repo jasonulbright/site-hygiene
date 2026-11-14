@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Live monitoring functions for Site Hygiene, nested under
     SiteHygieneCommon.
@@ -962,7 +962,7 @@ function Export-HygieneTableHtml {
         '</style>'
     ) -join "`r`n"
 
-    # Glyphs: ✓ U+2713, ⚠ U+26A0, ✗ U+2717, ⋯ U+22EF.
+    # Glyphs: U+2713 U+2713, U+26A0 U+26A0, U+2717 U+2717, U+22EF U+22EF.
     $glyphOK    = [char]0x2713
     $glyphWarn  = [char]0x26A0
     $glyphErr   = [char]0x2717

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Make the PowerShell sources and the files they read plain ASCII, and add the encoding guard.
+
 ## [2026.11.14.0035] - 2026-11-14
 
 ## 4.5:1 or more contrast on the inactive title bar in both themes
@@ -19,7 +23,7 @@
 
 ### Added
 
-- Show the site code and the SMS Provider in the footer as one text, for example `Site MCM · cm01.contoso.com`. The footer shows `Site not set` while a value is empty. Select the text to open Options.
+- Show the site code and the SMS Provider in the footer as one text, for example `Site MCM`, a middle dot, and `cm01.contoso.com`. The footer shows `Site not set` while a value is empty. Select the text to open Options.
 - Add a guard test for the footer: one status element, no font setting on it, the footer calls, and no editable site field outside Options.
 
 ### Changed
@@ -363,16 +367,16 @@ All notable changes to Site Hygiene are documented in this file.
 - **Collection evaluation deep-dive** (five new checks, per the Learn
   collection best-practices and collection-evaluation docs):
   - `COL-05` incremental collection with a sub-daily full evaluation
-    schedule — the full update is only a backup; executable fix drops
+    schedule - the full update is only a backup; executable fix drops
     the collection to incremental-only (`-RefreshType Continuous`).
   - `COL-06` direct-rule-only collection with a scheduled evaluation
-    and a non-incremental limiting collection — the schedule re-computes
+    and a non-incremental limiting collection - the schedule re-computes
     an identical result; executable fix sets `-RefreshType Manual`.
   - `COL-07` include/exclude reference chain deeper than the threshold
     (default 3), with the measured depth as evidence and the WQL
     subselect rewrite as guidance.
   - `COL-08` circular collection reference across limiting, include,
-    and exclude edges (Error) — evaluation loops that hammer the site
+    and exclude edges (Error) - evaluation loops that hammer the site
     database.
   - `COL-09` full-update start-hour hot spots (default 10 collections
     sharing a start hour).
@@ -442,8 +446,8 @@ All notable changes to Site Hygiene are documented in this file.
   evidence instead of inflating the percentage. `TSQ-01` learns OS images
   and OS upgrade packages, so `ImagePackageID`/`InstallPackageID`
   references stop reading as deleted content. `DEP-05` claims what
-  `HasContent` actually means — the dependency target carries no
-  content — at Warning, instead of asserting distribution state it never
+  `HasContent` actually means - the dependency target carries no
+  content - at Warning, instead of asserting distribution state it never
   queried.
 - **`UPD-02` is removed** (23 core-register checks; 33 total including
   the ten relationship checks). It joined update packages
@@ -452,7 +456,7 @@ All notable changes to Site Hygiene are documented in this file.
   modern update packages as unused and offered a deletion script.
 - **A failed dataset now skips its checks instead of feeding them.**
   Every collection failure lands in `FailedDatasets`, and the scan
-  replaces each dependent check with a visible skip finding — a lost
+  replaces each dependent check with a visible skip finding - a lost
   deployment query can no longer make applications, packages, and
   collections read as unreferenced with deletion scripts attached.
 - **`APP-04` probes with a real timeout and an Unknown verdict.** A
@@ -510,8 +514,8 @@ All notable changes to Site Hygiene are documented in this file.
 
 - **Relationship checks, absorbed from the supersedence-auditor tool.**
   A second bulk application pass parses each app's `SDMPackageXML`
-  in-memory — one provider call for the whole site, no per-app
-  round-trips — and eleven new checks run over the result: `SUP-01..04`
+  in-memory - one provider call for the whole site, no per-app
+  round-trips - and eleven new checks run over the result: `SUP-01..04`
   (orphaned, circular, disabled-source, retired-target supersedence),
   `DEP-01..05` (orphaned, circular, disabled, retired, and
   content-less dependency targets), `REL-01` (relationship participants
@@ -558,7 +562,7 @@ First release: a read-only Configuration Manager hygiene scanner.
   affects instead of killing the scan.
 - **Evidence-first findings.** Every finding carries severity, the
   object, the evidence sentence that produced it, a recommendation, and
-  the exact PowerShell a fix would take — displayed, never executed.
+  the exact PowerShell a fix would take - displayed, never executed.
 - **Findings and Summary views** with text / category / severity
   filtering, severity glyphs, and a detail pane.
 - **CSV and HTML export** of the filtered findings; the HTML report

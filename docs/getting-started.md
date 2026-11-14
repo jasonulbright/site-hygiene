@@ -42,7 +42,7 @@ If you select **Scan** before you set the connection, the log asks you to open O
 2. Type the **Site Code**, for example `MCM`.
 3. Type the **SMS Provider FQDN**, for example `cm01.contoso.com`.
 4. Optional: type the **SQL Server** that hosts the `CM_<site>` database. Leave it blank to skip the Client Health and Inactive Devices views.
-5. Select **OK**. The right end of the footer shows the site, for example `Site MCM · cm01.contoso.com`. The footer is read-only. Select the site text to open Options.
+5. Select **OK**. The right end of the footer shows the site, for example `Site MCM`, a middle dot, and `cm01.contoso.com`. The footer is read-only. Select the site text to open Options.
 
 ![The Connection page with a site code and a provider](images/options-connection.png)
 

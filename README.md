@@ -60,7 +60,7 @@ The [user guide](docs/index.md) walks every view, dialog and setting with images
 3. Click **Options** on the sidebar and set Site Code and SMS Provider.
    Set SQL Server too if you want the two SQL-backed Live views.
    The footer then shows the site at the right end, for example
-   `Site MCM · cm01.contoso.com`. The footer is read-only. Click the
+   `Site MCM`, a middle dot, and `cm01.contoso.com`. The footer is read-only. Click the
    site text to open Options.
 4. Optional: under **Options > Scan**, clear the areas you do not need.
    On a large site, leave the three areas marked slow for a separate
@@ -168,7 +168,7 @@ unchanged.
 
 ## Views
 
-- **Findings** — every finding from the last scan with severity glyphs,
+- **Findings** - every finding from the last scan with severity glyphs,
   filterable by text, category, and severity. Selecting a row shows the
   full evidence, the recommendation, and the fix script; Run Fix
   executes that script against the site after confirmation, and a
@@ -179,7 +179,7 @@ unchanged.
   Unsuppress (multi-select) hide accepted findings from future scans;
   keys persist in `SiteHygiene.suppressions.json` and a toggle shows the
   suppressed set.
-- **Relationships** — every supersedence and dependency relationship
+- **Relationships** - every supersedence and dependency relationship
   from the last scan. The **Inventory** tab lists each one, healthy rows
   included, with kind, status, a loop flag, source and target
   application and version, deployment type, dependency state, and
@@ -188,7 +188,7 @@ unchanged.
   because a circular edge can also have an expired or disabled end. The **Tree** tab shows
   supersedence chains and dependency trees with per-node health glyphs.
   Selecting a row or a node shows the application's standing.
-- **Summary** — per-check counts plus dataset notes.
+- **Summary** - per-check counts plus dataset notes.
 
 ## Live views
 

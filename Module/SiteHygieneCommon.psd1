@@ -1,4 +1,4 @@
-﻿@{
+@{
     RootModule        = 'SiteHygieneCommon.psm1'
     NestedModules     = @('SiteHygieneLive.psm1')
     ModuleVersion     = '2026.11.14.0035'
