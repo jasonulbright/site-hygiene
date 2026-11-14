@@ -20,48 +20,38 @@ function Get-KnownContrastDefect {
                 'btnViewClients:DisabledText', 'btnViewContent:DisabledText', 'btnViewDeployments:DisabledText',
                 'btnViewDPs:DisabledText', 'btnViewFindings:DisabledText', 'btnViewInactive:DisabledText',
                 'btnViewRelationships:DisabledText', 'btnViewSite:DisabledText', 'btnViewSummary:DisabledText',
-                'btnViewTrends:DisabledText', 'chkShowSuppressed:DisabledText',
-                'titlebar:inactive'
+                'btnViewTrends:DisabledText', 'chkShowSuppressed:DisabledText'
             )
         }
         'Main|light' {
             @(
                 'btnCopySummary:DisabledText', 'btnPauseResume:DisabledText', 'btnRefreshAll:DisabledText',
-                'cboRelKind:DisabledBorder', 'cboRelKind:DisabledText', 'cboRelKind:EnabledBorder', 'cboRelKind:EnabledText', 'cboRelStatus:DisabledBorder', 'cboRelStatus:DisabledText', 'cboRelStatus:EnabledBorder', 'cboRelStatus:EnabledText', 'cboStatus:DisabledBorder', 'cboStatus:DisabledText', 'cboStatus:EnabledBorder', 'cboStatus:EnabledText',
+                'cboRelKind:DisabledText', 'cboRelKind:EnabledText', 'cboRelStatus:DisabledText',
+                'cboRelStatus:EnabledText', 'cboStatus:DisabledText', 'cboStatus:EnabledText',
                 'btnExportCsv:DisabledText', 'btnExportHtml:DisabledText', 'btnOptions:DisabledText',
                 'btnRunFix:DisabledText', 'btnScan:DisabledText', 'btnSuppress:DisabledText',
                 'btnUnsuppress:DisabledText', 'btnViewClients:DisabledText', 'btnViewContent:DisabledText',
                 'btnViewDeployments:DisabledText', 'btnViewDPs:DisabledText', 'btnViewFindings:DisabledText',
                 'btnViewInactive:DisabledText', 'btnViewRelationships:DisabledText', 'btnViewSite:DisabledText',
-                'btnViewSummary:DisabledText', 'btnViewTrends:DisabledText', 'cboCategory:DisabledBorder',
-                'cboCategory:DisabledText', 'cboCategory:EnabledBorder', 'cboCategory:EnabledText',
-                'cboSeverity:DisabledBorder', 'cboSeverity:DisabledText', 'cboSeverity:EnabledBorder',
-                'cboSeverity:EnabledText', 'cboTrendMetric:DisabledBorder', 'cboTrendMetric:DisabledText',
-                'cboTrendMetric:EnabledBorder', 'cboTrendMetric:EnabledText', 'cboTrendRange:DisabledBorder',
-                'cboTrendRange:DisabledText', 'cboTrendRange:EnabledBorder', 'cboTrendRange:EnabledText',
-                'chkShowSuppressed:DisabledText', 'text:Run Fix',
-                'titlebar:inactive', 'txtFilter:DisabledBorder',
-                'txtFilter:EnabledBorder'
+                'btnViewSummary:DisabledText', 'btnViewTrends:DisabledText', 'cboCategory:DisabledText',
+                'cboCategory:EnabledText', 'cboSeverity:DisabledText', 'cboSeverity:EnabledText',
+                'cboTrendMetric:DisabledText', 'cboTrendMetric:EnabledText', 'cboTrendRange:DisabledText',
+                'cboTrendRange:EnabledText', 'chkShowSuppressed:DisabledText', 'text:Run Fix'
             )
         }
         'Dialog|dark' {
             @(
-                'btnOk:DisabledText', 'chkAlertsEnabled:DisabledText', 'chkSqlTrustCert:DisabledText', 'titlebar:inactive'
+                'btnOk:DisabledText', 'chkAlertsEnabled:DisabledText', 'chkSqlTrustCert:DisabledText'
             )
         }
         'Dialog|light' {
             @(
                 'btnCancel:DisabledText', 'btnCatAbout:DisabledText', 'btnCatAlerts:DisabledText',
                 'btnCatConnection:DisabledText', 'btnCatLive:DisabledText', 'btnCatScope:DisabledText',
-                'btnOk:DisabledText', 'btnOk:EnabledText', 'cboAlertCompliance:DisabledBorder',
-                'cboAlertCompliance:DisabledText', 'cboAlertCompliance:EnabledBorder', 'cboAlertCompliance:EnabledText',
-                'cboInactiveDays:DisabledBorder', 'cboInactiveDays:DisabledText', 'cboInactiveDays:EnabledBorder',
-                'cboInactiveDays:EnabledText', 'cboRefreshInterval:DisabledBorder', 'cboRefreshInterval:DisabledText',
-                'cboRefreshInterval:EnabledBorder', 'cboRefreshInterval:EnabledText', 'chkAlertsEnabled:DisabledText',
-                'chkSqlTrustCert:DisabledText', 'text:OK', 'titlebar:inactive',
-                'txtPacing:DisabledBorder', 'txtPacing:EnabledBorder', 'txtSiteCode:DisabledBorder',
-                'txtSiteCode:EnabledBorder', 'txtSmsProvider:DisabledBorder', 'txtSmsProvider:EnabledBorder',
-                'txtSqlServer:DisabledBorder', 'txtSqlServer:EnabledBorder'
+                'btnOk:DisabledText', 'btnOk:EnabledText', 'cboAlertCompliance:DisabledText',
+                'cboAlertCompliance:EnabledText', 'cboInactiveDays:DisabledText', 'cboInactiveDays:EnabledText',
+                'cboRefreshInterval:DisabledText', 'cboRefreshInterval:EnabledText', 'chkAlertsEnabled:DisabledText',
+                'chkSqlTrustCert:DisabledText', 'text:OK'
             )
         }
     }
@@ -94,6 +84,6 @@ function Get-ContrastViolationKey {
         }
     }
     $inactive = @($Views)[0].TitleBar.Inactive
-    if ($null -ne $inactive -and $inactive -lt 4.5) { [void]$keys.Add('titlebar:inactive') }
+    if ($null -ne $inactive -and $inactive -lt 4.5) { [void]$keys.Add() }
     return @($keys | Sort-Object -Unique)
 }

@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- Show the title bar of an inactive window with white text at 4.5:1 or more in both themes.
+- Show text boxes, combo boxes and grid headers with the shared border and disabled-text styles in both themes.
+
 ## [2026.11.13.0034] - 2026-11-13
 
 ## 1 footer style for the status text and the site text
