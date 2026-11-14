@@ -2,11 +2,16 @@
 
 ## [Unreleased]
 
+## [2026.11.14.0036] - 2026-11-14
+
+## 1 px gray borders on every button in both themes
+
 ### Fixed
 
-- Show button borders at 1 px in gray, with no heavy border in the text color.
+- Show button borders at 1 px in gray, not in the text color.
 - Add guards for button styles, muted text brushes and the dialog theme call.
-- Make the PowerShell sources and the files they read plain ASCII, and add the encoding guard.
+- Make the PowerShell sources and the files they read plain ASCII.
+- Add the encoding guard.
 
 ## [2026.11.14.0035] - 2026-11-14
 
