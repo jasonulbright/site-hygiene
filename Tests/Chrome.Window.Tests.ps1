@@ -47,61 +47,73 @@ BeforeAll {
         $key = if ($dark) { 'dark' } else { 'light' }
         $script:Measured[$key] = Invoke-WpfSta -Arguments @{ Dark = $dark; Config = $script:AppConfig; Dialogs = $script:ShellDialogXaml; SuiteDialogs = $script:SuiteDialogCalled } -Script {
             $cfg = $Arguments.Config
-            $main = Open-TestWindow -XamlPath (Join-Path $Root $cfg.Xaml) -Dark $Arguments.Dark
-            Initialize-ShellTheme -Window $main -Dark $Arguments.Dark -Views $cfg.Views -WorkflowButtonName $cfg.WorkflowButtons `
-                -OptionsButtonName $cfg.OptionsButton -LogLabelName $cfg.LogLabel -ActiveView $cfg.Views[0].Name
-            $mainChrome = Get-SuiteWindowChrome -Window $main -Label 'main'
-            $out = [pscustomobject]@{
-                ThemeText = $mainChrome.ThemeText
-                MainTitle = $mainChrome.Active; MainTitleInactive = $mainChrome.Inactive
-                Main = @($mainChrome.Buttons); Dialogs = @()
+            $main = $null
+            try {
+                $main = Open-TestWindow -XamlPath (Join-Path $Root $cfg.Xaml) -Dark $Arguments.Dark
+                Initialize-ShellTheme -Window $main -Dark $Arguments.Dark -Views $cfg.Views -WorkflowButtonName $cfg.WorkflowButtons `
+                    -OptionsButtonName $cfg.OptionsButton -LogLabelName $cfg.LogLabel -ActiveView $cfg.Views[0].Name
+                $mainChrome = Get-SuiteWindowChrome -Window $main -Label 'main'
+                $mainBody = Get-SuiteWindowBody -Window $main -Label 'main'
+                $out = [pscustomobject]@{
+                    ThemeText = $mainChrome.ThemeText
+                    MainChrome = $mainChrome; MainTitle = $mainChrome.Active; MainTitleInactive = $mainChrome.Inactive
+                    Main = @($mainChrome.Buttons); MainBody = $mainBody; Dialogs = @()
+                }
+                $i = 0
+                foreach ($xaml in $Arguments.Dialogs) {
+                    $i++
+                    [xml]$x = $xaml
+                    $d = $null
+                    try {
+                        $d = [System.Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $x))
+                        $d.WindowStartupLocation = 'Manual'
+                        $d.Left = $(if ($env:SUITE_VISIBLE_WINDOWS -eq '1') { 120 } else { -32000 }); $d.Top = $(if ($env:SUITE_VISIBLE_WINDOWS -eq '1') { 120 } else { -32000 })
+                        $d.ShowInTaskbar = $false
+                        # The way the script gives the theme: no -IsDark, the theme context of the app answers.
+                        Set-DialogTheme -Dialog $d
+                        $d.Show(); Wait-Layout $d; Start-Sleep -Milliseconds 400; Wait-Layout $d
+                        if ($i -eq 1) { $out | Add-Member -NotePropertyName MainInactive -NotePropertyValue (Get-SuiteWindowChrome -Window $main -Label 'main behind a dialog') }
+                        $c = Get-SuiteWindowChrome -Window $d -Label ([string]$d.Title)
+                        $body = Get-SuiteWindowBody -Window $d -Label ([string]$d.Title)
+                        $out.Dialogs += [pscustomobject]@{ Body = $body; Title = $c.Title; Source = 'XAML'; Index = $i; Active = $c.Active; Inactive = $c.Inactive; TitleRatio = $c.TitleRatio; Buttons = @($c.Buttons) }
+                    }
+                    finally { if ($d) { $d.Close() } }
+                }
+                # The SuiteCommon dialogs run through their real function. ShowDialog blocks, so a timer measures the owned
+                # dialog and closes it. The timer ticks until the dialog is there.
+                foreach ($fn in $Arguments.SuiteDialogs) {
+                    if ($fn -ne 'Show-ConfirmDialog') { throw ('The test cannot open the dialog function {0}. Add it to Chrome.Window.Tests.ps1.' -f $fn) }
+                    $global:ChromeProbe = @{ Main = $main; Result = $null; Ticks = 0 }
+                    $timer = New-Object System.Windows.Threading.DispatcherTimer
+                    $timer.Interval = [TimeSpan]::FromMilliseconds(300)
+                    $timer.Add_Tick({
+                            $p = $global:ChromeProbe
+                            $p.Ticks++
+                            # The owner also owns its glow windows, so take the owned MetroWindow only.
+                            $d = @($p.Main.OwnedWindows | Where-Object { $_ -is [MahApps.Metro.Controls.MetroWindow] })[0]
+                            if (-not $d -and $p.Ticks -lt 40) { return }
+                            $global:ChromeTimer.Stop()
+                            if ($d) {
+                                try {
+                                    Wait-Layout $d
+                                    $c = Get-SuiteWindowChrome -Window $d -Label ([string]$d.Title)
+                                    $body = Get-SuiteWindowBody -Window $d -Label ([string]$d.Title)
+                                    $p.Result = [pscustomobject]@{ Body = $body; Title = $c.Title; Source = $global:ChromeFunction; Index = 0; Active = $c.Active; Inactive = $c.Inactive; TitleRatio = $c.TitleRatio; Buttons = @($c.Buttons) }
+                                }
+                                finally { $d.Close() }
+                            }
+                            else { [System.Windows.Threading.Dispatcher]::CurrentDispatcher.InvokeShutdown() }
+                        })
+                    $global:ChromeTimer = $timer
+                    $global:ChromeFunction = $fn
+                    $timer.Start()
+                    try { [void](Show-ConfirmDialog -Title 'Run Fix for APP-01?' -Message ("This runs the following against site ABC:`r`n`r`n[APP-01] Remove-CMApplication -Name 'Sample'") -Owner $main) }
+                    finally { $timer.Stop() }
+                    if ($global:ChromeProbe.Result) { $out.Dialogs += $global:ChromeProbe.Result }
+                }
+                $out
             }
-            $i = 0
-            foreach ($xaml in $Arguments.Dialogs) {
-                $i++
-                [xml]$x = $xaml
-                $d = [System.Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $x))
-                $d.WindowStartupLocation = 'Manual'
-                $d.Left = $(if ($env:SUITE_VISIBLE_WINDOWS -eq '1') { 120 } else { -32000 }); $d.Top = $(if ($env:SUITE_VISIBLE_WINDOWS -eq '1') { 120 } else { -32000 })
-                $d.ShowInTaskbar = $false
-                Set-DialogTheme -Dialog $d -IsDark $Arguments.Dark
-                $d.Show(); Wait-Layout $d
-                $c = Get-SuiteWindowChrome -Window $d -Label ([string]$d.Title)
-                $out.Dialogs += [pscustomobject]@{ Title = $c.Title; Source = 'XAML'; Index = $i; Active = $c.Active; Inactive = $c.Inactive; TitleRatio = $c.TitleRatio; Buttons = @($c.Buttons) }
-                $d.Close()
-            }
-            # The SuiteCommon dialogs run through their real function. ShowDialog blocks, so a timer measures the owned
-            # dialog and closes it. The timer ticks until the dialog is there.
-            foreach ($fn in $Arguments.SuiteDialogs) {
-                if ($fn -ne 'Show-ConfirmDialog') { throw ('The test cannot open the dialog function {0}. Add it to Chrome.Window.Tests.ps1.' -f $fn) }
-                $global:ChromeProbe = @{ Main = $main; Result = $null; Ticks = 0 }
-                $timer = New-Object System.Windows.Threading.DispatcherTimer
-                $timer.Interval = [TimeSpan]::FromMilliseconds(300)
-                $timer.Add_Tick({
-                        $p = $global:ChromeProbe
-                        $p.Ticks++
-                        # The owner also owns its glow windows, so take the owned MetroWindow only.
-                        $d = @($p.Main.OwnedWindows | Where-Object { $_ -is [MahApps.Metro.Controls.MetroWindow] })[0]
-                        if (-not $d -and $p.Ticks -lt 40) { return }
-                        $global:ChromeTimer.Stop()
-                        if ($d) {
-                            Wait-Layout $d
-                            $c = Get-SuiteWindowChrome -Window $d -Label ([string]$d.Title)
-                            $p.Result = [pscustomobject]@{ Title = $c.Title; Source = $global:ChromeFunction; Index = 0; Active = $c.Active; Inactive = $c.Inactive; TitleRatio = $c.TitleRatio; Buttons = @($c.Buttons) }
-                            $d.Close()
-                        }
-                        else { [System.Windows.Threading.Dispatcher]::CurrentDispatcher.InvokeShutdown() }
-                    })
-                $global:ChromeTimer = $timer
-                $global:ChromeFunction = $fn
-                $timer.Start()
-                [void](Show-ConfirmDialog -Title 'Run Fix for APP-01?' -Message ("This runs the following against site ABC:`r`n`r`n[APP-01] Remove-CMApplication -Name 'Sample'") -Owner $main)
-                $timer.Stop()
-                if ($global:ChromeProbe.Result) { $out.Dialogs += $global:ChromeProbe.Result }
-            }
-            $main.Close()
-            $out
-        }
+            finally { if ($main) { $main.Close() } }        }
     }
 }
 
@@ -144,6 +156,63 @@ Describe 'Chrome <Theme>' -ForEach $script:ThemeCases -Skip:(-not $script:Window
         $all = @($script:M.Main) + @($script:M.Dialogs | ForEach-Object { $_.Buttons })
         $bad = @($all | Where-Object { $_.BorderThickness -gt 1 -or ($_.BorderThickness -gt 0 -and $_.BorderColor -eq $script:M.ThemeText) } |
                 ForEach-Object { '{0} "{1}" border {2}px {3}' -f $_.Window, $_.Text, $_.BorderThickness, $_.BorderColor })
+        $bad | Should -BeNullOrEmpty
+    }
+
+    It 'lists the body colors of the main window and of every dialog' {
+        Write-Host ('{0} main: surface {1} text {2}' -f $Theme, $script:M.MainBody.BackLuminance, $script:M.MainBody.TextRatio)
+        foreach ($d in $script:M.Dialogs) {
+            Write-Host ('{0} {1}: surface {2} text {3}; inputs: {4}' -f $Theme, $d.Title, $d.Body.BackLuminance, $d.Body.TextRatio, ((@($d.Body.Inputs) | ForEach-Object { '{0} {1} lum {2} text {3} border {4}' -f $_.Kind, $_.Name, $_.BackLuminance, $_.TextRatio, $_.BorderRatio }) -join ' | '))
+        }
+        @($script:M.Dialogs).Count | Should -BeGreaterThan 0
+    }
+
+    It 'gives the body of every dialog the surface of the theme (light in light, dark in dark)' {
+        $light = ($Theme -eq 'light')
+        $bad = @($script:M.Dialogs | Where-Object { $null -ne $_.Body.BackLuminance -and ((($light -and $_.Body.BackLuminance -lt 0.5) -or (-not $light -and $_.Body.BackLuminance -gt 0.25))) } |
+                ForEach-Object { '{0}: surface luminance {1} in the {2} theme' -f $_.Title, $_.Body.BackLuminance, $Theme })
+        $bad | Should -BeNullOrEmpty
+    }
+
+    It 'gives the body of every dialog the same surface as the main window' {
+        $bad = @($script:M.Dialogs | Where-Object { $null -ne $_.Body.BackLuminance -and $null -ne $script:M.MainBody.BackLuminance -and [math]::Abs($_.Body.BackLuminance - $script:M.MainBody.BackLuminance) -gt 0.1 } |
+                ForEach-Object { '{0}: surface {1}, main {2}' -f $_.Title, $_.Body.BackLuminance, $script:M.MainBody.BackLuminance })
+        $bad | Should -BeNullOrEmpty
+    }
+
+    It 'keeps 4.5:1 for the text of every dialog body and every input' {
+        $bad = @()
+        foreach ($d in $script:M.Dialogs) {
+            if ($null -ne $d.Body.TextRatio -and $d.Body.TextRatio -lt 4.5) { $bad += ('{0}: window text {1}' -f $d.Title, $d.Body.TextRatio) }
+            foreach ($i in @($d.Body.Inputs)) { if ($null -ne $i.TextRatio -and $i.TextRatio -lt 4.5) { $bad += ('{0}: {1} {2} text {3}' -f $d.Title, $i.Kind, $i.Name, $i.TextRatio) } }
+        }
+        $bad | Should -BeNullOrEmpty
+    }
+
+    It 'gives every input of every dialog the surface side of the theme' {
+        $light = ($Theme -eq 'light')
+        $bad = @()
+        foreach ($d in $script:M.Dialogs) { foreach ($i in @($d.Body.Inputs)) { if ($null -ne $i.BackLuminance -and ((($light -and $i.BackLuminance -lt 0.4) -or (-not $light -and $i.BackLuminance -gt 0.3)))) { $bad += ('{0}: {1} {2} luminance {3}' -f $d.Title, $i.Kind, $i.Name, $i.BackLuminance) } } }
+        $bad | Should -BeNullOrEmpty
+    }
+
+    It 'shows the caption of the main window readable (4.5:1) on the bar of its state, active and behind a dialog' {
+        $script:M.MainChrome.TitleRatio | Should -BeGreaterOrEqual 4.5
+        $script:M.MainInactive.IsActive | Should -BeFalse -Because 'the dialog took the focus'
+        $script:M.MainInactive.TitleRatio | Should -BeGreaterOrEqual 4.5
+    }
+
+    It 'gives the inactive light title bar blue with dark caption text, and the dark one white text' {
+        if ($Theme -eq 'light') {
+            $script:M.MainInactive.TitleBrushNow | Should -Be '#FF4BA3E0'
+            $script:M.MainInactive.TitleText | Should -Be '#FF333333'
+        }
+        else { $script:M.MainInactive.TitleText | Should -Not -Be '#FF333333' }
+        $script:M.MainChrome.TitleText | Should -Not -Be '#FF333333' -Because 'the active caption is white'
+    }
+
+    It 'gives every dialog the caption text of its state (4.5:1)' {
+        $bad = @($script:M.Dialogs | Where-Object { $_.TitleRatio -lt 4.5 } | ForEach-Object { '{0}: {1}' -f $_.Title, $_.TitleRatio })
         $bad | Should -BeNullOrEmpty
     }
 }

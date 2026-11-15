@@ -75,9 +75,12 @@ AfterAll { Close-WpfSession }
 Describe 'Main window XAML' -Skip:(-not $script:WindowGuard.Allowed) {
     It 'loads as a MetroWindow with the app title and a minimum size that fits 1024x720' {
         $r = Invoke-WpfSta -Arguments @{ Xaml = $script:AppConfig.Xaml } -Script {
-            $w = Open-TestWindow -XamlPath (Join-Path $Root $Arguments.Xaml)
-            $o = [PSCustomObject]@{ Type = $w.GetType().FullName; Title = $w.Title; MinW = $w.MinWidth; MinH = $w.MinHeight }
-            $w.Close(); $o
+            $w = $null
+            try {
+                $w = Open-TestWindow -XamlPath (Join-Path $Root $Arguments.Xaml)
+                [PSCustomObject]@{ Type = $w.GetType().FullName; Title = $w.Title; MinW = $w.MinWidth; MinH = $w.MinHeight }
+            }
+            finally { if ($w) { $w.Close() } }
         }
         $r.Type | Should -Be 'MahApps.Metro.Controls.MetroWindow'
         $r.Title | Should -Be $script:AppConfig.Title
@@ -87,9 +90,13 @@ Describe 'Main window XAML' -Skip:(-not $script:WindowGuard.Allowed) {
 
     It 'shows the first view and keeps the others hidden' {
         $r = Invoke-WpfSta -Arguments @{ Config = $script:AppConfig } -Script {
-            $w = Open-TestWindow -XamlPath (Join-Path $Root $Arguments.Config.Xaml)
-            $o = foreach ($v in $Arguments.Config.Views) { [PSCustomObject]@{ Name = $v.Name; Vis = [string]$w.FindName($v.Container).Visibility } }
-            $w.Close(); , @($o)
+            $w = $null
+            try {
+                $w = Open-TestWindow -XamlPath (Join-Path $Root $Arguments.Config.Xaml)
+                $o = foreach ($v in $Arguments.Config.Views) { [PSCustomObject]@{ Name = $v.Name; Vis = [string]$w.FindName($v.Container).Visibility } }
+                , @($o)
+            }
+            finally { if ($w) { $w.Close() } }
         }
         $first = $script:AppConfig.Views[0].Name
         ($r | Where-Object Name -eq $first).Vis | Should -Be 'Visible'
@@ -100,9 +107,12 @@ Describe 'Main window XAML' -Skip:(-not $script:WindowGuard.Allowed) {
         # The real window size depends on the screen of the machine (a CI runner screen is about 1044 pixels wide),
         # so the test reads the declared minimum size, which does not.
         $r = Invoke-WpfSta -Arguments @{ Xaml = $script:AppConfig.Xaml } -Script {
-            $w = Open-TestWindow -XamlPath (Join-Path $Root $Arguments.Xaml)
-            $o = [PSCustomObject]@{ MinW = $w.MinWidth; MinH = $w.MinHeight }
-            $w.Close(); $o
+            $w = $null
+            try {
+                $w = Open-TestWindow -XamlPath (Join-Path $Root $Arguments.Xaml)
+                [PSCustomObject]@{ MinW = $w.MinWidth; MinH = $w.MinHeight }
+            }
+            finally { if ($w) { $w.Close() } }
         }
         $r.MinW | Should -BeLessOrEqual $W
         $r.MinH | Should -BeLessOrEqual $H
@@ -171,8 +181,8 @@ Describe 'Dialog windows' -Skip:(-not $script:WindowGuard.Allowed) {
         $found = @(Get-ContrastViolationKey -Views @($script:DialogMeasured[$Theme] | Where-Object { $_.Size -eq ($script:DialogMeasured[$Theme] | Select-Object -First 1).Size }))
         $new = @($found | Where-Object { $known -notcontains $_ })
         $fixed = @($known | Where-Object { $found -notcontains $_ })
-        $new | Should -BeNullOrEmpty -Because 'a new contrast violation appeared in the Options dialog'
-        $fixed | Should -BeNullOrEmpty -Because 'a known defect is fixed: remove it from Get-KnownContrastDefect'
+        $new | Should -BeNullOrEmpty -Because ("a new contrast violation appeared in the Options dialog: {0}" -f ($new -join ', '))
+        $fixed | Should -BeNullOrEmpty -Because ("a known defect is fixed, remove it from Get-KnownContrastDefect: {0}" -f ($fixed -join ', '))
     }
 }
 
@@ -243,7 +253,7 @@ Describe 'Contrast <Theme>' -ForEach @(@{ Theme = 'dark' }, @{ Theme = 'light' }
         $found = @(Get-ContrastViolationKey -Views @($script:Measured['{0}|1440x900' -f $Theme]))
         $new = @($found | Where-Object { $known -notcontains $_ })
         $fixed = @($known | Where-Object { $found -notcontains $_ })
-        $new | Should -BeNullOrEmpty -Because 'a new contrast violation appeared'
-        $fixed | Should -BeNullOrEmpty -Because 'a known defect is fixed: remove it from Get-KnownContrastDefect'
+        $new | Should -BeNullOrEmpty -Because ("a new contrast violation appeared: {0}" -f ($new -join ', '))
+        $fixed | Should -BeNullOrEmpty -Because ("a known defect is fixed, remove it from Get-KnownContrastDefect: {0}" -f ($fixed -join ', '))
     }
 }

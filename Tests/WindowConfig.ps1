@@ -37,33 +37,36 @@ $script:SampleFindings = @(
 # Arguments: Config, Dark, W, H, Findings.
 $script:MainMeasureScript = {
     $cfg = $Arguments.Config
-    $w = Open-TestWindow -XamlPath (Join-Path $Root $cfg.Xaml) -Dark $Arguments.Dark -Width $Arguments.W -Height $Arguments.H
-    $w.FindName('gridFindings').ItemsSource = @($Arguments.Findings)
-    # Contrast is read only at 1440x900. Clipped text and off-screen controls are read at both sizes.
-    $full = $Arguments.W -ge 1440
-    $out = @()
-    foreach ($view in $cfg.Views) {
-        foreach ($v in $cfg.Views) { $w.FindName($v.Container).Visibility = if ($v.Name -eq $view.Name) { 'Visible' } else { 'Collapsed' } }
-        # The action bar follows the view the way Set-ActiveView of the start script sets it.
-        $live = $view.Name -in 'Deployments', 'Content', 'DPs', 'Clients', 'Inactive', 'Site', 'Trends'
-        $bar = @{
-            btnScan = -not $live; btnRefreshAll = $live; btnPauseResume = $live; btnCopySummary = $live
-            cboStatus = ($live -and $view.Name -ne 'Trends'); cboCategory = ($view.Name -eq 'Findings'); cboSeverity = ($view.Name -eq 'Findings')
-            cboRelKind = ($view.Name -eq 'Relationships'); cboRelStatus = ($view.Name -eq 'Relationships'); txtFilter = ($view.Name -notin 'Summary', 'Trends')
+    $w = $null
+    try {
+        $w = Open-TestWindow -XamlPath (Join-Path $Root $cfg.Xaml) -Dark $Arguments.Dark -Width $Arguments.W -Height $Arguments.H
+        $w.FindName('gridFindings').ItemsSource = @($Arguments.Findings)
+        # Contrast is read only at 1440x900. Clipped text and off-screen controls are read at both sizes.
+        $full = $Arguments.W -ge 1440
+        $out = @()
+        foreach ($view in $cfg.Views) {
+            foreach ($v in $cfg.Views) { $w.FindName($v.Container).Visibility = if ($v.Name -eq $view.Name) { 'Visible' } else { 'Collapsed' } }
+            # The action bar follows the view the way Set-ActiveView of the start script sets it.
+            $live = $view.Name -in 'Deployments', 'Content', 'DPs', 'Clients', 'Inactive', 'Site', 'Trends'
+            $bar = @{
+                btnScan = -not $live; btnRefreshAll = $live; btnPauseResume = $live; btnCopySummary = $live
+                cboStatus = ($live -and $view.Name -ne 'Trends'); cboCategory = ($view.Name -eq 'Findings'); cboSeverity = ($view.Name -eq 'Findings')
+                cboRelKind = ($view.Name -eq 'Relationships'); cboRelStatus = ($view.Name -eq 'Relationships'); txtFilter = ($view.Name -notin 'Summary', 'Trends')
+            }
+            foreach ($name in $bar.Keys) { $w.FindName($name).Visibility = if ($bar[$name]) { 'Visible' } else { 'Collapsed' } }        Initialize-ShellTheme -Window $w -Dark $Arguments.Dark -Views $cfg.Views -WorkflowButtonName $cfg.WorkflowButtons `
+                -OptionsButtonName $cfg.OptionsButton -LogLabelName $cfg.LogLabel -ActiveView $view.Name
+            $out += [PSCustomObject]@{
+                View        = $view.Name
+                Text        = if ($full) { @(Get-TextContrast $w) } else { @() }
+                Clipped     = @(Get-ClippedText $w)
+                Offscreen   = @(Get-OffscreenControls $w)
+                Interactive = if ($full) { @(Get-InteractiveContrast $w) } else { @() }
+                TitleBar    = if ($full) { Get-TitleBarContrast $w } else { $null }
+            }
         }
-        foreach ($name in $bar.Keys) { $w.FindName($name).Visibility = if ($bar[$name]) { 'Visible' } else { 'Collapsed' } }        Initialize-ShellTheme -Window $w -Dark $Arguments.Dark -Views $cfg.Views -WorkflowButtonName $cfg.WorkflowButtons `
-            -OptionsButtonName $cfg.OptionsButton -LogLabelName $cfg.LogLabel -ActiveView $view.Name
-        $out += [PSCustomObject]@{
-            View        = $view.Name
-            Text        = if ($full) { @(Get-TextContrast $w) } else { @() }
-            Clipped     = @(Get-ClippedText $w)
-            Offscreen   = @(Get-OffscreenControls $w)
-            Interactive = if ($full) { @(Get-InteractiveContrast $w) } else { @() }
-            TitleBar    = if ($full) { Get-TitleBarContrast $w } else { $null }
-        }
+        , $out
     }
-    $w.Close()
-    , $out
+    finally { if ($w) { $w.Close() } }
 }
 
 # Runs in the STA runspace. Opens the Options dialog from its XAML text at its declared and minimum size and
@@ -76,31 +79,35 @@ $script:DialogMeasureScript = {
     $probe = $null
     $panes = 'paneConnection', 'paneScope', 'paneLive', 'paneAlerts', 'paneAbout'
     $rows = foreach ($s in $sizes) {
-        $w = Open-TestWindow -XamlText $Arguments.Xaml -Dark $Arguments.Dark -Width $s[0] -Height $s[1]
-        # The shell fills the scope pane with one check box per scan area.
-        $panel = $w.FindName('panelScopes')
-        foreach ($t in $Arguments.Scopes) {
-            $cb = New-Object System.Windows.Controls.CheckBox
-            $cb.Content = $t; $cb.FontSize = 12; $cb.IsChecked = $true
-            [void]$panel.Children.Add($cb)
-        }
-        # Entered text, so the contrast of the input text is measured too.
-        $w.FindName('txtSiteCode').Text = 'ABC'
-        $w.FindName('txtSmsProvider').Text = 'cm01.contoso.com'
-        $w.FindName('txtSqlServer').Text = 'sql01.contoso.com'
-        $w.FindName('txtPacing').Text = '0'
+        $w = $null
+        try {
+            $w = Open-TestWindow -XamlText $Arguments.Xaml -Dark $Arguments.Dark -Width $s[0] -Height $s[1]
+            # The shell fills the scope pane with one check box per scan area.
+            $panel = $w.FindName('panelScopes')
+            foreach ($t in $Arguments.Scopes) {
+                $cb = New-Object System.Windows.Controls.CheckBox
+                $cb.Content = $t; $cb.FontSize = 12; $cb.IsChecked = $true
+                [void]$panel.Children.Add($cb)
+            }
+            # Entered text, so the contrast of the input text is measured too.
+            $w.FindName('txtSiteCode').Text = 'ABC'
+            $w.FindName('txtSmsProvider').Text = 'cm01.contoso.com'
+            $w.FindName('txtSqlServer').Text = 'sql01.contoso.com'
+            $w.FindName('txtPacing').Text = '0'
+                    $global:HarnessDark = $Arguments.Dark
         Set-DialogTheme -Dialog $w -IsDark $Arguments.Dark
-        foreach ($pane in $panes) {
-            foreach ($p in $panes) { $w.FindName($p).Visibility = if ($p -eq $pane) { 'Visible' } else { 'Collapsed' } }
-            Wait-Layout $w
-            [PSCustomObject]@{
-                Pane = $pane; Size = ('{0}x{1}' -f $s[0], $s[1])
-                Text = @(Get-TextContrast $w); Interactive = @(Get-InteractiveContrast $w)
-                Clipped = @(Get-ClippedText $w); Offscreen = @(Get-OffscreenControls $w)
-                TitleBar = Get-TitleBarContrast $w
+            foreach ($pane in $panes) {
+                foreach ($p in $panes) { $w.FindName($p).Visibility = if ($p -eq $pane) { 'Visible' } else { 'Collapsed' } }
+                Wait-Layout $w
+                [PSCustomObject]@{
+                    Pane = $pane; Size = ('{0}x{1}' -f $s[0], $s[1])
+                    Text = @(Get-TextContrast $w); Interactive = @(Get-InteractiveContrast $w)
+                    Clipped = @(Get-ClippedText $w); Offscreen = @(Get-OffscreenControls $w)
+                    TitleBar = Get-TitleBarContrast $w
+                }
             }
         }
-        $w.Close()
+        finally { if ($w) { $w.Close() } }
     }
     , @($rows)
 }
