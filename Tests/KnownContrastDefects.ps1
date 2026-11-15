@@ -3,10 +3,12 @@
 # violation is not listed (a new defect) and when a listed one no longer happens
 # (remove it here). Run Show-ContrastViolations.ps1 to print the current list.
 #
-# Text must reach 4.5:1 and a control border 3:1, enabled and disabled, in both
-# themes. The causes are shared by every suite tool: the MahApps disabled
-# style, the light text box border and the unselected tab header. The fix
-# belongs in app-packager-suite, then a sync of the vendored copy, not here.
+# Text must reach 4.5:1 and a control border 3:1 while the control is enabled, in both
+# themes. A disabled control is exempt (WCAG 1.4.3 exempts inactive components), so the
+# probe counts no DisabledText and no DisabledBorder. The window test requires instead that a
+# disabled control looks clearly dimmed. The causes of the listed defects are shared by every
+# suite tool: the light text box border and the unselected tab header. The fix belongs in
+# app-packager-suite, then a sync of the vendored copy, not here.
 
 function Get-KnownContrastDefect {
     param(
@@ -16,42 +18,22 @@ function Get-KnownContrastDefect {
     $key = '{0}|{1}' -f $Scope, $Theme
     switch ($key) {
         'Main|dark' {
-            @(
-                'btnViewClients:DisabledText', 'btnViewContent:DisabledText', 'btnViewDeployments:DisabledText',
-                'btnViewDPs:DisabledText', 'btnViewFindings:DisabledText', 'btnViewInactive:DisabledText',
-                'btnViewRelationships:DisabledText', 'btnViewSite:DisabledText', 'btnViewSummary:DisabledText',
-                'btnViewTrends:DisabledText', 'chkShowSuppressed:DisabledText'
-            )
+            @()
         }
         'Main|light' {
             @(
-                'btnCopySummary:DisabledText', 'btnPauseResume:DisabledText', 'btnRefreshAll:DisabledText',
-                'cboRelKind:DisabledText', 'cboRelKind:EnabledText', 'cboRelStatus:DisabledText',
-                'cboRelStatus:EnabledText', 'cboStatus:DisabledText', 'cboStatus:EnabledText',
-                'btnExportCsv:DisabledText', 'btnExportHtml:DisabledText', 'btnOptions:DisabledText',
-                'btnRunFix:DisabledText', 'btnScan:DisabledText', 'btnSuppress:DisabledText',
-                'btnUnsuppress:DisabledText', 'btnViewClients:DisabledText', 'btnViewContent:DisabledText',
-                'btnViewDeployments:DisabledText', 'btnViewDPs:DisabledText', 'btnViewFindings:DisabledText',
-                'btnViewInactive:DisabledText', 'btnViewRelationships:DisabledText', 'btnViewSite:DisabledText',
-                'btnViewSummary:DisabledText', 'btnViewTrends:DisabledText', 'cboCategory:DisabledText',
-                'cboCategory:EnabledText', 'cboSeverity:DisabledText', 'cboSeverity:EnabledText',
-                'cboTrendMetric:DisabledText', 'cboTrendMetric:EnabledText', 'cboTrendRange:DisabledText',
-                'cboTrendRange:EnabledText', 'chkShowSuppressed:DisabledText', 'text:Run Fix'
+                'cboRelKind:EnabledText', 'cboRelStatus:EnabledText', 'cboStatus:EnabledText',
+                'cboCategory:EnabledText', 'cboSeverity:EnabledText',
+                'cboTrendMetric:EnabledText', 'cboTrendRange:EnabledText', 'text:Run Fix'
             )
         }
         'Dialog|dark' {
-            @(
-                'btnOk:DisabledText', 'chkAlertsEnabled:DisabledText', 'chkSqlTrustCert:DisabledText'
-            )
+            @()
         }
         'Dialog|light' {
             @(
-                'btnCancel:DisabledText', 'btnCatAbout:DisabledText', 'btnCatAlerts:DisabledText',
-                'btnCatConnection:DisabledText', 'btnCatLive:DisabledText', 'btnCatScope:DisabledText',
-                'btnOk:DisabledText', 'cboAlertCompliance:DisabledText',
-                'cboAlertCompliance:EnabledText', 'cboInactiveDays:DisabledText', 'cboInactiveDays:EnabledText',
-                'cboRefreshInterval:DisabledText', 'cboRefreshInterval:EnabledText', 'chkAlertsEnabled:DisabledText',
-                'chkSqlTrustCert:DisabledText'
+                'cboAlertCompliance:EnabledText', 'cboInactiveDays:EnabledText',
+                'cboRefreshInterval:EnabledText'
             )
         }
     }
@@ -75,7 +57,8 @@ function Get-ContrastViolationKey {
             if ($r.Ratio -lt $min) { [void]$keys.Add(('text:{0}' -f $r.Text)) }
         }
         foreach ($c in $v.Interactive) {
-            foreach ($metric in 'EnabledText', 'DisabledText', 'EnabledBorder', 'DisabledBorder') {
+            # A disabled control is exempt from the text and border rules (WCAG 1.4.3 exempts inactive components).
+            foreach ($metric in 'EnabledText', 'EnabledBorder') {
                 $value = $c.$metric
                 if ($null -eq $value) { continue }
                 $min = if ($metric -like '*Text') { 4.5 } else { 3.0 }
@@ -84,6 +67,21 @@ function Get-ContrastViolationKey {
         }
     }
     $inactive = @($Views)[0].TitleBar.Inactive
-    if ($null -ne $inactive -and $inactive -lt 4.5) { [void]$keys.Add() }
+    if ($null -ne $inactive -and $inactive -lt 4.5) { [void]$keys.Add('titlebar:inactive') }
     return @($keys | Sort-Object -Unique)
+}
+
+function Get-NotDimmedControl {
+    # A disabled control is exempt from the 4.5:1 rule (WCAG 1.4.3 exempts inactive components), but it must look
+    # clearly dimmed: the enabled text contrast divided by the disabled text contrast is at least 1.25, and the
+    # disabled text stays readable (1.5:1 at least), or the label vanishes. Returns one line per offender.
+    param([Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Views)
+    foreach ($v in $Views) {
+        foreach ($c in $v.Interactive) {
+            if ($null -eq $c.EnabledText -or $null -eq $c.DisabledText) { continue }
+            $dim = if ($c.DisabledText -gt 0) { $c.EnabledText / $c.DisabledText } else { [double]::PositiveInfinity }
+            if ($dim -lt 1.25) { '{0}: enabled {1}, disabled {2}, not dimmed (needs a ratio of 1.25)' -f $c.Name, $c.EnabledText, $c.DisabledText }
+            elseif ($c.DisabledText -lt 1.5) { '{0}: enabled {1}, disabled {2}, unreadable (needs 1.5)' -f $c.Name, $c.EnabledText, $c.DisabledText }
+        }
+    }
 }

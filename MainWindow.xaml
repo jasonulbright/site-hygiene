@@ -20,6 +20,20 @@
                 <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Themes/Dark.Steel.xaml" />
             </ResourceDictionary.MergedDictionaries>
 
+            <!-- A disabled text box or combo box is dimmed by opacity: WCAG 1.4.3 exempts inactive components from 4.5:1,
+                 and the contrast probe requires that they look clearly dimmed. The border is the one of the SuiteCommon implicit style. -->
+            <Style TargetType="TextBox" BasedOn="{StaticResource MahApps.Styles.TextBox}">
+                <Setter Property="BorderBrush" Value="{DynamicResource MahApps.Brushes.Gray2}"/>
+                <Style.Triggers>
+                    <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.5"/></Trigger>
+                </Style.Triggers>
+            </Style>
+            <Style TargetType="ComboBox" BasedOn="{StaticResource MahApps.Styles.ComboBox}">
+                <Setter Property="BorderBrush" Value="{DynamicResource MahApps.Brushes.Gray2}"/>
+                <Style.Triggers>
+                    <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.5"/></Trigger>
+                </Style.Triggers>
+            </Style>
             <!-- One template and one style for every button of the window. The colors come from
                  SuiteCommon (Update-SidebarButtonTheme and Set-ButtonTheme) and from MahApps
                  resources, never from a literal here. Hover, pressed and disabled change only
@@ -166,6 +180,9 @@
                 <Setter Property="FontSize" Value="11"/>
                 <Setter Property="BorderThickness" Value="0"/>
                 <Setter Property="Padding" Value="8"/>
+                <Style.Triggers>
+                    <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.5"/></Trigger>
+                </Style.Triggers>
             </Style>
             <Style x:Key="TabHeaderText" TargetType="TextBlock">
                 <Style.Triggers>

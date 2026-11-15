@@ -184,6 +184,11 @@ Describe 'Dialog windows' -Skip:(-not $script:WindowGuard.Allowed) {
         $new | Should -BeNullOrEmpty -Because ("a new contrast violation appeared in the Options dialog: {0}" -f ($new -join ', '))
         $fixed | Should -BeNullOrEmpty -Because ("a known defect is fixed, remove it from Get-KnownContrastDefect: {0}" -f ($fixed -join ', '))
     }
+
+    It 'shows every disabled control of the Options dialog clearly dimmed but readable in the <Theme> theme' -ForEach @(@{ Theme = 'dark' }, @{ Theme = 'light' }) {
+        $bad = @(Get-NotDimmedControl -Views @($script:DialogMeasured[$Theme] | Where-Object { $_.Size -eq ($script:DialogMeasured[$Theme] | Select-Object -First 1).Size }))
+        $bad | Should -BeNullOrEmpty -Because ("a disabled control must look dimmed: {0}" -f ($bad -join '; '))
+    }
 }
 
 Describe 'Dialog text' {
@@ -255,5 +260,10 @@ Describe 'Contrast <Theme>' -ForEach @(@{ Theme = 'dark' }, @{ Theme = 'light' }
         $fixed = @($known | Where-Object { $found -notcontains $_ })
         $new | Should -BeNullOrEmpty -Because ("a new contrast violation appeared: {0}" -f ($new -join ', '))
         $fixed | Should -BeNullOrEmpty -Because ("a known defect is fixed, remove it from Get-KnownContrastDefect: {0}" -f ($fixed -join ', '))
+    }
+
+    It 'shows every disabled control clearly dimmed but readable (disabled controls are exempt from 4.5:1)' {
+        $bad = @(Get-NotDimmedControl -Views @($script:Measured['{0}|1440x900' -f $Theme]))
+        $bad | Should -BeNullOrEmpty -Because ("a disabled control must look dimmed: {0}" -f ($bad -join '; '))
     }
 }
