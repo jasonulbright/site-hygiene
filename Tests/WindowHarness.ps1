@@ -165,5 +165,14 @@ function Invoke-WpfSta {
     }
     finally {
         $ps.Dispose()
+        # Close every window the call left open (a failed It must not leave a window on the desktop of the lab computer).
+        $cleanup = [powershell]::Create()
+        try {
+            $cleanup.Runspace = $rs
+            [void]$cleanup.AddScript('if (Get-Command Close-SuiteOpenWindow -ErrorAction SilentlyContinue) { [void](Close-SuiteOpenWindow) }', $false)
+            [void]$cleanup.Invoke()
+        }
+        catch { $null = $_ }
+        finally { $cleanup.Dispose() }
     }
 }

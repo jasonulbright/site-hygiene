@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added
+
+- Close stray windows after every window test, with a guard that checks the cleanup.
+- Check the body, inputs and title bar of every dialog against the theme.
+- Measure blue and neutral dialog buttons in every state, and judge pressed and hover.
+- Take the exclusive lab lock in the guide capture, with a guard test.
+
+### Changed
+
+- Refresh the vendored SuiteCommon library with the light blue inactive title bar and button templates.
+- Give the Options dialog buttons the shared templates, so pressed buttons stay blue.
+- Measure the title bar contrast with the caption text of each state.
+
 ## [2026.11.14.0037] - 2026-11-14
 
 ## 49 guide images retaken with 1 px button borders

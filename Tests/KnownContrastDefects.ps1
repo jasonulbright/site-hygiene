@@ -48,10 +48,10 @@ function Get-KnownContrastDefect {
             @(
                 'btnCancel:DisabledText', 'btnCatAbout:DisabledText', 'btnCatAlerts:DisabledText',
                 'btnCatConnection:DisabledText', 'btnCatLive:DisabledText', 'btnCatScope:DisabledText',
-                'btnOk:DisabledText', 'btnOk:EnabledText', 'cboAlertCompliance:DisabledText',
+                'btnOk:DisabledText', 'cboAlertCompliance:DisabledText',
                 'cboAlertCompliance:EnabledText', 'cboInactiveDays:DisabledText', 'cboInactiveDays:EnabledText',
                 'cboRefreshInterval:DisabledText', 'cboRefreshInterval:EnabledText', 'chkAlertsEnabled:DisabledText',
-                'chkSqlTrustCert:DisabledText', 'text:OK'
+                'chkSqlTrustCert:DisabledText'
             )
         }
     }

@@ -10,6 +10,12 @@
     C:\guide\<app> and in the task GuideShots-<app>. The script never changes the
     folder C:\guide itself, a file of another app or another task.
 
+    One capture runs at a time on a lab computer. The command takes the lock file
+    C:\guide\capture.lock (text owner|pid|start) before it registers the first scheduled task and
+    waits while another capture holds it. The poll loop refreshes the lock. A lock that nobody
+    refreshed for 30 minutes is stale and is replaced. The command removes the lock at the end
+    only when this capture took it.
+
     The lab computer needs a Configuration Manager console, a reachable SMS
     Provider and PowerShell remoting for the account in the credential script.
     The scan and the Live views only read. The Run Fix dialog is opened and
@@ -20,6 +26,9 @@
 
 .PARAMETER Target
     The lab computer name or address.
+
+.PARAMETER LockWaitMinutes
+    How long to wait for the capture lock of another capture before the command stops.
 
 .PARAMETER AddNew
     Also copy images that are not in docsimages yet. Use it for the first capture of a new page.
@@ -38,6 +47,7 @@ param(
     [string]$SiteCode = 'MCM',
     [Parameter(Mandatory)][string]$SmsProvider,
     [int]$Minutes = 15,
+    [int]$LockWaitMinutes = 90,
     [switch]$AddNew
 )
 $ErrorActionPreference = 'Stop'
@@ -53,8 +63,28 @@ $captureJson = @{ SiteCode = $SiteCode; SmsProvider = $SmsProvider } | ConvertTo
 $failed = New-Object System.Collections.Generic.List[string]
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ('guide-capture-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory $tmp | Out-Null
+$lockPath = 'C:\guide\capture.lock'
+$lockText = '{0}|{1}|{2}' -f $app, $PID, (Get-Date).ToString('o')
+$haveLock = $false
 $session = New-PSSession -ComputerName $Target -Credential $LabCredential
 try {
+    # The lock: New-Item with -ErrorAction Stop fails with an IOException when the file exists, which means busy.
+    # The text goes in with the file in one call. A lock that nobody refreshed for 30 minutes is stale.
+    $haveLock = Invoke-Command $session {
+        param($path, $text, $staleMinutes, $waitMinutes)
+        New-Item -ItemType Directory -Path (Split-Path -Path $path -Parent) -Force | Out-Null
+        $deadline = (Get-Date).AddMinutes($waitMinutes)
+        while ($true) {
+            try { $null = New-Item -ItemType File -Path $path -Value $text -ErrorAction Stop; return $true }
+            catch [System.IO.IOException] {
+                $held = Get-Item -LiteralPath $path -ErrorAction SilentlyContinue
+                if ($held -and ((Get-Date) - $held.LastWriteTime).TotalMinutes -gt $staleMinutes) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue; continue }
+                if ((Get-Date) -gt $deadline) { return $false }
+                Start-Sleep -Seconds 15
+            }
+        }
+    } -ArgumentList $lockPath, $lockText, 30, $LockWaitMinutes
+    if (-not $haveLock) { throw "Another capture holds $lockPath. The wait of $LockWaitMinutes minutes is over." }
     foreach ($run in @(@{ Steps = 'steps-guide.ps1'; Prefs = $false }, @{ Steps = 'steps-console-missing.ps1'; Prefs = $true })) {
         $dest = "$base\$app"
         Invoke-Command $session { param($b) Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.CommandLine -like "*$b\*" -and $_.ProcessId -ne $PID } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; Start-Sleep -Seconds 2; if (Test-Path $b) { Remove-Item $b -Recurse -Force }; New-Item -ItemType Directory "$b\$($using:app)", "$b\ui" -Force | Out-Null } -ArgumentList $base
@@ -75,7 +105,8 @@ try {
             Start-ScheduledTask $task
         } -ArgumentList $app, $base, $LogonUser, $(if ($run.Prefs) { $prefs } else { $null }), $taskName
         $end = (Get-Date).AddMinutes($Minutes)
-        do { Start-Sleep 5; $done = Invoke-Command $session { param($b) Test-Path "$b\ui\out\finished.flag" } -ArgumentList $base } while (-not $done -and (Get-Date) -lt $end)
+        # The poll refreshes the lock, so that a long capture never looks stale.
+        do { Start-Sleep 5; $done = Invoke-Command $session { param($b) (Get-Item -LiteralPath 'C:\guide\capture.lock' -ErrorAction SilentlyContinue).LastWriteTime = Get-Date; Test-Path "$b\ui\out\finished.flag" } -ArgumentList $base } while (-not $done -and (Get-Date) -lt $end)
         if (-not $done) { throw "The capture did not finish: $($run.Steps)" }
         $out = Join-Path $tmp ([IO.Path]::GetFileNameWithoutExtension($run.Steps))
         New-Item -ItemType Directory $out | Out-Null
@@ -94,6 +125,12 @@ try {
 }
 finally {
     Invoke-Command $session { param($b, $task) Unregister-ScheduledTask $task -Confirm:$false -ErrorAction SilentlyContinue; Remove-Item $b -Recurse -Force -ErrorAction SilentlyContinue } -ArgumentList $base, $taskName
+    # Release the lock last, and only when this capture took it.
+    try {
+        if ($haveLock) {
+            Invoke-Command $session { param($path, $text) if ((Test-Path -LiteralPath $path) -and (([string](Get-Content -LiteralPath $path -Raw -ErrorAction SilentlyContinue)).Trim() -eq $text)) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue } } -ArgumentList $lockPath, $lockText
+        }
+    } catch { Write-Warning "Release of the capture lock failed: $($_.Exception.Message)" }
     Remove-PSSession $session
     Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
 }
