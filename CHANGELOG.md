@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [2026.11.14.0037] - 2026-11-14
+
+## 49 guide images retaken with 1 px button borders
+
 ### Added
 
 - Add the window test for the hover, focus and pressed states of the buttons in both themes.
