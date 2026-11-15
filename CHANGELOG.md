@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [2026.11.15.0038] - 2026-11-15
+
+## 52 images retaken: 49 guide images and 3 README images
+
 ### Added
 
 - Close stray windows after every window test, with a guard that checks the cleanup.
