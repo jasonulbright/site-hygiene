@@ -412,7 +412,7 @@ Describe 'Status text and log' {
     }
 
     It 'reads the trend range from the combo and falls back to 30 days' -ForEach @(
-        @{ Content = '7 days'; Expected = 7 }, @{ Content = '90 days'; Expected = 90 }, @{ Content = 'all'; Expected = 30 }, @{ Content = $null; Expected = 30 }
+        @{ Content = '7 Days'; Expected = 7 }, @{ Content = '90 Days'; Expected = 90 }, @{ Content = 'all'; Expected = 30 }, @{ Content = $null; Expected = 30 }
     ) {
         $item = if ($null -ne $Content) { [PSCustomObject]@{ Content = $Content } } else { $null }
         $cboTrendRange = [PSCustomObject]@{ SelectedItem = $item }

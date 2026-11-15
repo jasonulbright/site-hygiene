@@ -193,3 +193,42 @@ function Get-ButtonThemeViolation {
     }
     return $found.ToArray()
 }
+
+# True when a UI title is in Title Case: each word starts with a capital letter or a digit, except the small words in the
+# middle. A word of capitals (JSON), a word with a dot (cm01.contoso.com), a placeholder ({0}) and a word with no letter
+# (/) pass. The text may end with dots.
+function Test-TitleCase {
+    param([string]$Text)
+    $clean = ($Text -replace '\.\.\.$', '').Trim()
+    if ([string]::IsNullOrWhiteSpace($clean)) { return $true }
+    $small = @('a', 'an', 'the', 'and', 'or', 'of', 'to', 'in', 'on', 'for', 'per', 'by', 'at', 'as', 'but', 'nor', 'with', 'from')
+    $words = @($clean -split '\s+')
+    for ($i = 0; $i -lt $words.Count; $i++) {
+        $word = $words[$i].Trim(',', ':', '(', ')')
+        if (-not $word -or $word -notmatch '[A-Za-z]') { continue }
+        $edge = ($i -eq 0 -or $i -eq $words.Count - 1)
+        if (-not $edge -and ($small -contains $word)) { continue }
+        if ($word -cnotmatch '^[A-Z0-9#<\[\(\{]') { return $false }
+    }
+    return $true
+}
+
+# The titles of a XAML document that must be in Title Case: button content, tab, group and column headers, field labels,
+# window titles, check box and radio button text, list entries and heading text blocks. A binding stays out.
+function Get-XamlTitle {
+    param([string]$Text)
+    [xml]$xml = $Text
+    foreach ($element in @($xml.SelectNodes('//*'))) {
+        $name = $element.LocalName
+        $value = ''
+        if ($name -in 'Button', 'CheckBox', 'RadioButton', 'ToggleButton', 'ComboBoxItem', 'ListBoxItem', 'Label') { $value = $element.GetAttribute('Content') }
+        elseif ($name -in 'DataGridTextColumn', 'DataGridCheckBoxColumn', 'DataGridTemplateColumn', 'GroupBox', 'TabItem', 'Expander', 'TreeViewItem', 'MenuItem', 'ToggleSwitch') { $value = $element.GetAttribute('Header') }
+        elseif ($name -eq 'MetroWindow' -or $name -eq 'Window') { $value = $element.GetAttribute('Title') }
+        elseif ($name -eq 'TextBlock') {
+            $text = $element.GetAttribute('Text')
+            $heading = ($element.GetAttribute('FontWeight') -in 'SemiBold', 'Bold') -and $text -notmatch '[.?]$' -and @($text -split '\s+').Count -le 6
+            if ($element.GetAttribute('Style') -match 'OptLabel|SidebarGroupLabel|TabHeaderText|FieldLabelStyle' -or $element.ParentNode.LocalName -eq 'TabItem.Header' -or $heading) { $value = $text }
+        }
+        if ($value -and $value -notmatch '^\{' -and $value -notmatch '^(On|Off)$') { $value }
+    }
+}

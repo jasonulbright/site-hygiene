@@ -20,7 +20,7 @@ At least one refresh of a Live view. Each refresh adds one point.
 
 1. Select **Trends** in the sidebar.
 2. Select a metric in the **Metric** list: **Deployment Compliance %**, **Deployments With Errors**, **Content Items With Issues**, **Failed DP-Content Pairs**, **DPs Critical**, **DPs Degraded**, **Unhealthy Clients**, **Inactive Devices** or **Site Items Critical**.
-3. Select a range in the **Range** list: **7 days**, **30 days** or **90 days**.
+3. Select a range in the **Range** list: **7 Days**, **30 Days** or **90 Days**.
 4. Read the line below the chart: the number of samples, the latest, the minimum, the maximum and the average value.
 
 ![The Trends view](../images/trends.png)

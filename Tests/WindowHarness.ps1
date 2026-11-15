@@ -5,7 +5,7 @@
 # object cannot cross to the Pester thread. The windows are shown off screen at
 # -32000 so layout, templates and triggers run for real.
 #
-# One STA runspace serves a whole test file. A runspace per call hangs: the
+# One STA runspace serves a whole Pester run (every window test file shares it). A runspace per call hangs: the
 # theme manager keeps handlers of closed windows from earlier threads, and the
 # next theme change waits on their dead dispatchers. Call Close-WpfSession in
 # AfterAll.
@@ -13,7 +13,7 @@
 $script:HarnessRoot = Split-Path -Parent $PSScriptRoot
 . "$PSScriptRoot\WindowMeasure.ps1"
 
-$script:HarnessSession = $null
+if (-not (Test-Path variable:global:HarnessSession)) { $global:HarnessSession = $null }
 
 # Window tests open real windows, so they run only with the opt-in SUITE_ALLOW_WINDOW_TESTS=1
 # (CI sets it; for a lab run the operator sets it before running Invoke-Checks.ps1, and the
@@ -116,7 +116,7 @@ $script:HarnessBootstrap = {
 }
 
 function Get-WpfSession {
-    if ($script:HarnessSession -and $script:HarnessSession.RunspaceStateInfo.State -eq 'Opened') { return $script:HarnessSession }
+    if ($global:HarnessSession -and $global:HarnessSession.RunspaceStateInfo.State -eq 'Opened') { return $global:HarnessSession }
     $rs = [runspacefactory]::CreateRunspace()
     $rs.ApartmentState = 'STA'
     $rs.ThreadOptions = 'ReuseThread'
@@ -136,12 +136,14 @@ function Get-WpfSession {
         throw
     }
     $ps.Dispose()
-    $script:HarnessSession = $rs
+    $global:HarnessSession = $rs
     return $rs
 }
 
+# The session is shared by every window test file of one Pester run (a new session after a closed one hangs on the theme manager handlers of the closed windows), so a plain call keeps it open. -Force closes it.
 function Close-WpfSession {
-    if ($script:HarnessSession) { $script:HarnessSession.Dispose(); $script:HarnessSession = $null }
+    param([switch]$Force)
+    if ($Force -and $global:HarnessSession) { $global:HarnessSession.Dispose(); $global:HarnessSession = $null }
 }
 
 function Invoke-WpfSta {

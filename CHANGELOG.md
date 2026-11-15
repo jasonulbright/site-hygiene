@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added
+
+- Add the window test for the hover, focus and pressed states of the buttons in both themes.
+- Add the window test for the title bar, the title text and the buttons of every dialog in both themes.
+- Add the Title Case guard for the titles, headers and labels of the window and the dialogs.
+- Refresh the vendored SuiteCommon library to release 2026.11.14.0086.
+
+### Changed
+
+- Show the Run Fix confirmation buttons with 1 px borders, not 2 px borders in the text color.
+- Share one window test session across the window test files.
+- Show the list entries All Kinds, All Statuses, 7 Days, 30 Days and 90 Days in Title Case.
+
 ## [2026.11.14.0036] - 2026-11-14
 
 ## 1 px gray borders on every button in both themes

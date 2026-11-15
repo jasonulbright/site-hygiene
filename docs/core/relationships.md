@@ -28,8 +28,8 @@ Use it to find supersedence and dependency problems: a target that was deleted, 
 ### Filter the inventory
 
 1. Type text in the filter box. The grid matches the source, the target and the deployment type.
-2. Select a kind in the first list: **All kinds**, **Supersedence** or **Dependency**.
-3. Select a status in the second list: **All statuses**, **Healthy** or **Broken**.
+2. Select a kind in the first list: **All Kinds**, **Supersedence** or **Dependency**.
+3. Select a status in the second list: **All Statuses**, **Healthy** or **Broken**.
 
 ![The Dependency kind](../images/relationships-filter-kind.png)
 

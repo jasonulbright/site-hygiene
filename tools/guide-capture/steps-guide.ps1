@@ -41,7 +41,7 @@ Section 'relationships' {
   $r = Rows 'gridRelationships'; if ($r.Count) { Select-El $r[0]; Start-Sleep -Milliseconds 800; Shot $win 'relationships-detail' }
   Select-El (Find-Role $win 'TabItem' 'Tree'); Start-Sleep -Seconds 1; Shot $win 'relationships-tree'
   Select-El (Find-Role $win 'TabItem' 'Inventory'); Start-Sleep -Milliseconds 600
-  Pick 'cboRelKind' 'Dependency'; Shot $win 'relationships-filter-kind'; Pick 'cboRelKind' 'All kinds'
+  Pick 'cboRelKind' 'Dependency'; Shot $win 'relationships-filter-kind'; Pick 'cboRelKind' 'All Kinds'
 }
 Section 'summary' { Invoke-El (Get-El $win 'btnViewSummary'); Start-Sleep -Seconds 2; Shot $win 'summary'; Log ('dataset notes: ' + (Get-ElText (Get-El $win 'txtDatasetNotes'))) }
 Section 'exports' {
