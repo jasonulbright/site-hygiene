@@ -35,7 +35,8 @@ Describe 'README images' {
     }
 
     It 'maps every mapped image that the README shows' {
-        $shown = @($script:Images | ForEach-Object { $_.Image })
+        $readme = Get-Content -LiteralPath (Join-Path $script:Root 'README.md') -Raw
+        $shown = @([regex]::Matches($readme, '!\[[^\]]*\]\(([^)\s]+)\)') | ForEach-Object { $_.Groups[1].Value })
         @($script:MapNames | Where-Object { $shown -notcontains $_ }) | Should -BeNullOrEmpty -Because 'a mapped image that the README does not show is stale'
     }
 }
