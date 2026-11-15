@@ -8,6 +8,7 @@
 - Check the body, inputs and title bar of every dialog against the theme.
 - Measure blue and neutral dialog buttons in every state, and judge pressed and hover.
 - Take the exclusive lab lock in the guide capture, with a guard test.
+- Map the three README images to guide images, with a sync script and a guard test.
 
 ### Changed
 
