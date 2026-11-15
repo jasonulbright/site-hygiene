@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Treat disabled controls as exempt from 4.5:1 text contrast and require them to look dimmed.
+- Dim disabled text boxes, combo boxes and detail panes, which showed no change.
+
 ## [2026.11.15.0038] - 2026-11-15
 
 ## 52 images retaken: 49 guide images and 3 README images
