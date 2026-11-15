@@ -14,6 +14,7 @@
 - Show the Run Fix confirmation buttons with 1 px borders, not 2 px borders in the text color.
 - Share one window test session across the window test files.
 - Show the list entries All Kinds, All Statuses, 7 Days, 30 Days and 90 Days in Title Case.
+- Retake the 49 guide images; the capture reopens list popups that fail to draw.
 
 ## [2026.11.14.0036] - 2026-11-14
 
