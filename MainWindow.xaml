@@ -359,7 +359,7 @@
                               FontSize="12"
                               Visibility="Collapsed"
                               ToolTip="Limit the relationships to one kind.">
-                        <ComboBoxItem Content="All kinds" IsSelected="True"/>
+                        <ComboBoxItem Content="All Kinds" IsSelected="True"/>
                         <ComboBoxItem Content="Supersedence"/>
                         <ComboBoxItem Content="Dependency"/>
                     </ComboBox>
@@ -371,7 +371,7 @@
                               FontSize="12"
                               Visibility="Collapsed"
                               ToolTip="Limit the relationships by status.">
-                        <ComboBoxItem Content="All statuses" IsSelected="True"/>
+                        <ComboBoxItem Content="All Statuses" IsSelected="True"/>
                         <ComboBoxItem Content="Healthy"/>
                         <ComboBoxItem Content="Broken"/>
                     </ComboBox>
@@ -786,9 +786,9 @@
                         <ComboBox x:Name="cboTrendMetric" Width="240" FontSize="12" Margin="0,0,16,0"/>
                         <TextBlock Text="Range:" VerticalAlignment="Center" FontSize="12" FontWeight="Bold" Margin="0,0,6,0"/>
                         <ComboBox x:Name="cboTrendRange" Width="110" FontSize="12">
-                            <ComboBoxItem Content="7 days"/>
-                            <ComboBoxItem Content="30 days" IsSelected="True"/>
-                            <ComboBoxItem Content="90 days"/>
+                            <ComboBoxItem Content="7 Days"/>
+                            <ComboBoxItem Content="30 Days" IsSelected="True"/>
+                            <ComboBoxItem Content="90 Days"/>
                         </ComboBox>
                     </StackPanel>
 

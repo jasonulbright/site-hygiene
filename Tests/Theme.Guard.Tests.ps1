@@ -4,6 +4,7 @@
 #   (a) Every blue background in XAML and PowerShell has a white foreground.
 #   (b) No font size, weight, style or text decoration depends on the theme.
 #   (c) No banned word is in a tooltip, a UI string, the README or the user guide.
+#   (d) Every button takes the shared themed style. Titles are in Title Case.
 
 BeforeDiscovery {
     . "$PSScriptRoot\ThemeGuardHelpers.ps1"
@@ -283,6 +284,52 @@ Describe 'Every button takes the shared themed style (d)' {
         $shell = Get-Content -LiteralPath (Join-Path $script:RepoRoot 'start-sitehygiene.ps1') -Raw
         $shell | Should -Match '-WorkflowButtons\s+\$script:WorkflowButtons'
         ([regex]::Matches($shell, 'Update-SidebarButtonTheme\s*\r?\n\s*Set-ButtonTheme')).Count | Should -BeGreaterOrEqual 3
+    }
+}
+
+Describe 'Titles are in Title Case (d)' {
+    It 'recognizes Title Case' {
+        Test-TitleCase 'Build Plan' | Should -BeTrue
+        Test-TitleCase 'Pause Between Provider Calls (Milliseconds)' | Should -BeTrue
+        Test-TitleCase 'Run {0} Fixes?' | Should -BeTrue
+        Test-TitleCase 'OK / Healthy' | Should -BeTrue
+        Test-TitleCase 'Add...' | Should -BeTrue
+        Test-TitleCase 'Export JSON' | Should -BeTrue
+        Test-TitleCase 'Build plan' | Should -BeFalse
+        Test-TitleCase 'All kinds' | Should -BeFalse
+        Test-TitleCase 'enable Actions' | Should -BeFalse
+    }
+
+    It 'has Title Case for every button, header, tab, field label, list entry and window title in <_.Source>' -ForEach @(Get-XamlDocument | Where-Object { $_.Source -notmatch 'SuiteCommon' }) {
+        $bad = @(Get-XamlTitle -Text $_.Text | Where-Object { -not (Test-TitleCase $_) })
+        $bad | Should -BeNullOrEmpty
+    }
+
+    It 'finds titles to check in the main window' {
+        $main = @(Get-XamlDocument | Where-Object { $_.Source -eq 'MainWindow.xaml' })[0]
+        @(Get-XamlTitle -Text $main.Text).Count | Should -BeGreaterThan 60
+    }
+
+    It 'has Title Case in the title of every message box, confirmation and busy-action name of the script' {
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $script:RepoRoot 'start-sitehygiene.ps1'), [ref]$null, [ref]$null)
+        $titles = New-Object System.Collections.Generic.List[string]
+        $isString = { param($n) $n -is [System.Management.Automation.Language.StringConstantExpressionAst] }
+        foreach ($call in @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -in 'Show-ThemedMessage', 'Show-ConfirmDialog', 'Show-CollectionPickerDialog', 'Test-BgBusy' }, $true))) {
+            $el = @($call.CommandElements)
+            for ($i = 0; $i -lt $el.Count - 1; $i++) {
+                if ($el[$i] -is [System.Management.Automation.Language.CommandParameterAst] -and $el[$i].ParameterName -in 'Title', 'Action' -and (& $isString $el[$i + 1])) { $titles.Add([string]$el[$i + 1].Value) }
+            }
+        }
+        foreach ($call in @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and $n.Member.Value -eq 'Show' -and $n.Expression.Extent.Text -eq '[System.Windows.MessageBox]' -and $n.Arguments.Count -ge 3 }, $true))) {
+            if (& $isString $call.Arguments[2]) { $titles.Add([string]$call.Arguments[2].Value) }
+        }
+        # The Run Fix confirmation builds its title from the check id with a format string.
+        foreach ($assign in @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -eq '$title' }, $true))) {
+            foreach ($s in @($assign.Right.FindAll($isString, $true))) { if ($s.Value -match '\{0\}') { $titles.Add([string]$s.Value) } }
+        }
+        $titles.Count | Should -BeGreaterThan 6
+        $bad = @($titles | Where-Object { -not (Test-TitleCase $_) })
+        $bad | Should -BeNullOrEmpty
     }
 }
 
