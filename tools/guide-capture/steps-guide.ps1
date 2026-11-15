@@ -5,7 +5,9 @@ Size-Win $win 1440 900
 $win = Find-Top 'Site Hygiene' 10
 function Idle([string]$id = 'btnScan', [int]$sec = 600) { Start-Sleep -Seconds 2; $null = Wait-Until { $b = Get-El $win $id -Quiet; $b -and $b.Current.IsEnabled } $sec; Start-Sleep -Seconds 2 }
 function Rows($grid) { @((Get-El $win $grid).FindAll('Descendants', (New-Object System.Windows.Automation.PropertyCondition($AE::ControlTypeProperty, [System.Windows.Automation.ControlType]::DataItem)))) }
-function Pick($combo, [string]$item) { Expand-El (Get-El $win $combo); Start-Sleep -Milliseconds 500; Click-El (Find-Role $win 'ListItem' $item); Start-Sleep -Milliseconds 700 }
+# Click a list item of an open combo box. A popup that is not drawn yet or that closed again is reopened up to four times.
+function Click-Item($combo, [string]$item) { $li = $null; foreach ($try in 1..4) { $end = (Get-Date).AddSeconds(4); do { $li = Find-Role $win 'ListItem' $item; if ($li -and -not $li.Current.BoundingRectangle.IsEmpty) { break }; $li = $null; Start-Sleep -Milliseconds 400 } while ((Get-Date) -lt $end); if ($li) { break }; try { Collapse-El (Get-El $win $combo) } catch { $null = $_ }; Start-Sleep -Milliseconds 700; Expand-El (Get-El $win $combo); Start-Sleep -Milliseconds 700 }; if (-not $li) { throw "list item not visible: $item" }; Click-El $li; Start-Sleep -Milliseconds 700 }
+function Pick($combo, [string]$item) { Expand-El (Get-El $win $combo); Start-Sleep -Milliseconds 700; Click-Item $combo $item }
 Section 'first run' {
   Shot $win 'start-first-run'
   Invoke-El (Get-El $win 'btnScan'); Start-Sleep -Seconds 2; Shot $win 'scan-without-connection'
@@ -72,7 +74,7 @@ Section 'light' {
 Section 'tab order' { Invoke-El (Get-El $win 'btnViewFindings'); Focus-Win $win; Click-El (Get-El $win 'btnViewFindings'); 1..24 | ForEach-Object { Send-Keys '{TAB}'; $f = [System.Windows.Automation.AutomationElement]::FocusedElement; Log ('tab -> ' + $f.Current.AutomationId + ' / ' + $f.Current.Name) } }
 Section 'filters' {
   Set-Text (Get-El $win 'txtFilter') 'Doc Demo'; Start-Sleep -Seconds 1; Shot $win 'findings-filter-text'; Set-Text (Get-El $win 'txtFilter') ''
-  Expand-El (Get-El $win 'cboCategory'); Start-Sleep -Milliseconds 500; Shot $win 'findings-category-list' -Hover; Click-El (Find-Role $win 'ListItem' 'Packages'); Start-Sleep -Seconds 1; Shot $win 'findings-category-packages'
+  Expand-El (Get-El $win 'cboCategory'); Start-Sleep -Milliseconds 500; Shot $win 'findings-category-list' -Hover; Click-Item 'cboCategory' 'Packages'; Start-Sleep -Seconds 1; Shot $win 'findings-category-packages'
   Pick 'cboSeverity' 'Warning'; Shot $win 'findings-severity-warning'
 }
 Section 'persist' { Invoke-El (Get-El $win 'btnViewSummary'); Start-Sleep -Milliseconds 600; Invoke-El (Get-El $win 'Close'); Start-Sleep -Seconds 4; $win = Start-App 'start-sitehygiene.ps1' 'Site Hygiene'; Shot $win 'start-reopen' }
