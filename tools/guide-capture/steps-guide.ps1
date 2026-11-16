@@ -59,7 +59,7 @@ Section 'exports' {
 foreach ($v in @(@('Deployments', 'deployments'), @('Content', 'content'), @('DPs', 'dps'), @('Clients', 'clients-no-sql'), @('Inactive', 'inactive-no-sql'), @('Site', 'site-health'))) {
   Section ('live ' + $v[0]) {
     Invoke-El (Get-El $win ('btnView' + $v[0])); Start-Sleep -Seconds 2; Shot $win ($v[1] + '-before')
-    Invoke-El (Get-El $win 'btnRefreshAll'); Idle 'btnRefreshAll' 180; Shot $win $v[1]
+    Invoke-El (Get-El $win 'btnRefreshAll'); Idle 'btnRefreshAll' 180; Start-Sleep -Seconds 7; Shot $win $v[1]
     $gid = @{ Deployments = 'gridDeploy'; Content = 'gridContent'; DPs = 'gridDPs'; Clients = 'gridClients'; Inactive = 'gridInactive'; Site = 'gridSite' }[$v[0]]
     $r = Rows $gid; if ($r.Count) { Select-El $r[0]; Start-Sleep -Milliseconds 800; Shot $win ($v[1] + '-detail') }
   }
