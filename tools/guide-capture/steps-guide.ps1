@@ -1,7 +1,7 @@
 Remove-Item (Join-Path $appDir 'SiteHygiene.suppressed.json') -ErrorAction SilentlyContinue
 Remove-Item (Join-Path $appDir 'SiteHygiene.suppressions.json') -ErrorAction SilentlyContinue
 $win = Start-App 'start-sitehygiene.ps1' 'Site Hygiene'
-Size-Win $win 1440 900
+Maximize-Win $win
 $win = Find-Top 'Site Hygiene' 10
 function Idle([string]$id = 'btnScan', [int]$sec = 600) { Start-Sleep -Seconds 2; $null = Wait-Until { $b = Get-El $win $id -Quiet; $b -and $b.Current.IsEnabled } $sec; Start-Sleep -Seconds 2 }
 function Rows($grid) { @((Get-El $win $grid).FindAll('Descendants', (New-Object System.Windows.Automation.PropertyCondition($AE::ControlTypeProperty, [System.Windows.Automation.ControlType]::DataItem)))) }
@@ -19,6 +19,11 @@ Section 'first run' {
 Section 'scan' {
   Invoke-El (Get-El $win 'btnScan'); Start-Sleep -Seconds 4; Shot $win 'scan-running'
   Idle; Invoke-El (Get-El $win 'btnViewFindings'); Start-Sleep -Seconds 1; Shot $win 'findings'
+}
+Extra 'dark contrast samples' {
+  Sample-El (Get-El $win 'btnViewFindings') 'dark sidebar view button'
+  Sample-El (Get-El $win 'btnScan') 'dark inline button'
+  Sample-El (Get-El $win 'btnOptions') 'dark sidebar options'
 }
 Section 'findings detail' {
   $r = Rows 'gridFindings'; Select-El $r[1]; Start-Sleep -Milliseconds 800; Shot $win 'finding-with-fix'
@@ -67,6 +72,11 @@ Section 'trends' {
 Section 'pause' { Invoke-El (Get-El $win 'btnPauseResume'); Start-Sleep -Seconds 1; Shot $win 'auto-refresh-paused'; Invoke-El (Get-El $win 'btnPauseResume') }
 Section 'light' {
   Toggle-El (Get-El $win 'toggleTheme'); Start-Sleep -Seconds 1
+  Extra 'light contrast samples' {
+    Sample-El (Get-El $win 'btnViewFindings') 'light sidebar view button'
+    Sample-El (Get-El $win 'btnScan') 'light inline button'
+    Sample-El (Get-El $win 'btnOptions') 'light sidebar options'
+  }
   foreach ($v in @(@('Findings', 'light-findings'), @('Relationships', 'light-relationships'), @('Summary', 'light-summary'), @('Deployments', 'light-deployments'), @('Trends', 'light-trends'))) { Invoke-El (Get-El $win ('btnView' + $v[0])); Start-Sleep -Seconds 2; Shot $win $v[1] }
   Invoke-El (Get-El $win 'btnOptions'); $d = Find-Last 'Options' 10; Shot $d 'light-options'; Focus-Win $d; Send-Keys '{ESC}'; Start-Sleep -Seconds 1
   Toggle-El (Get-El $win 'toggleTheme')

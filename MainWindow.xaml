@@ -3,7 +3,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:Controls="clr-namespace:MahApps.Metro.Controls;assembly=MahApps.Metro"
     Title="Site Hygiene"
-    Width="1400" Height="860"
+    Width="1920" Height="1032"
     MinWidth="1024" MinHeight="680"
     WindowStartupLocation="CenterScreen"
     TitleCharacterCasing="Normal"
@@ -76,7 +76,7 @@
             </Style>
 
             <Style x:Key="ViewButtonStyle" TargetType="Button" BasedOn="{StaticResource ThemedButtonStyle}">
-                <Setter Property="Height" Value="38"/>
+                <Setter Property="Height" Value="36"/>
                 <Setter Property="Margin" Value="8,2,8,2"/>
                 <Setter Property="Padding" Value="12,0,12,0"/>
                 <Setter Property="HorizontalContentAlignment" Value="Left"/>
@@ -94,7 +94,7 @@
             </Style>
 
             <Style x:Key="SquareInlineButtonStyle" TargetType="Button" BasedOn="{StaticResource ThemedButtonStyle}">
-                <Setter Property="Height" Value="28"/>
+                <Setter Property="Height" Value="26"/>
                 <Setter Property="MinWidth" Value="100"/>
                 <Setter Property="Margin" Value="0,0,8,0"/>
                 <Setter Property="FontSize" Value="12"/>
@@ -129,7 +129,8 @@
                 <Setter Property="GridLinesVisibility" Value="Horizontal"/>
                 <Setter Property="RowHeaderWidth" Value="0"/>
                 <Setter Property="BorderThickness" Value="0"/>
-                <Setter Property="ColumnHeaderHeight" Value="30"/>
+                <Setter Property="ColumnHeaderHeight" Value="26"/>
+                <Setter Property="RowHeight" Value="24"/>
                 <Setter Property="FontSize" Value="11"/>
                 <Setter Property="Background" Value="{DynamicResource MahApps.Brushes.ThemeBackground}"/>
                 <Setter Property="Foreground" Value="{DynamicResource MahApps.Brushes.ThemeForeground}"/>
@@ -424,9 +425,9 @@
                 <Grid x:Name="viewFindings" Visibility="Visible">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="3*" MinHeight="120"/>
                         <RowDefinition Height="5"/>
-                        <RowDefinition Height="220"/>
+                        <RowDefinition Height="2*" MinHeight="100"/>
                     </Grid.RowDefinitions>
 
                     <Border Grid.Row="0" Padding="0,8,0,8">
@@ -476,9 +477,9 @@
                 <!-- ============================================================ -->
                 <Grid x:Name="viewRelationships" Visibility="Collapsed">
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="3*" MinHeight="120"/>
                         <RowDefinition Height="5"/>
-                        <RowDefinition Height="180"/>
+                        <RowDefinition Height="2*" MinHeight="100"/>
                     </Grid.RowDefinitions>
 
                     <TabControl x:Name="tabRelationships" Grid.Row="0" Margin="0,8,0,0"
@@ -528,9 +529,9 @@
                 <!-- ============================================================ -->
                 <Grid x:Name="viewSummary" Visibility="Collapsed">
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="3*" MinHeight="120"/>
                         <RowDefinition Height="5"/>
-                        <RowDefinition Height="160"/>
+                        <RowDefinition Height="2*" MinHeight="100"/>
                     </Grid.RowDefinitions>
 
                     <DataGrid x:Name="gridSummary"
@@ -561,9 +562,9 @@
                 <!-- ============================================================ -->
                 <Grid x:Name="viewDeployments" Visibility="Collapsed">
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="3*" MinHeight="120"/>
                         <RowDefinition Height="5"/>
-                        <RowDefinition Height="220"/>
+                        <RowDefinition Height="2*" MinHeight="100"/>
                     </Grid.RowDefinitions>
 
                     <DataGrid x:Name="gridDeploy"
@@ -602,9 +603,9 @@
                 <!-- ============================================================ -->
                 <Grid x:Name="viewContent" Visibility="Collapsed">
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="3*" MinHeight="120"/>
                         <RowDefinition Height="5"/>
-                        <RowDefinition Height="220"/>
+                        <RowDefinition Height="2*" MinHeight="100"/>
                     </Grid.RowDefinitions>
 
                     <DataGrid x:Name="gridContent"
@@ -641,9 +642,9 @@
                 <!-- ============================================================ -->
                 <Grid x:Name="viewDPs" Visibility="Collapsed">
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="3*" MinHeight="120"/>
                         <RowDefinition Height="5"/>
-                        <RowDefinition Height="220"/>
+                        <RowDefinition Height="2*" MinHeight="100"/>
                     </Grid.RowDefinitions>
 
                     <DataGrid x:Name="gridDPs"
@@ -677,9 +678,9 @@
                 <!-- ============================================================ -->
                 <Grid x:Name="viewClients" Visibility="Collapsed">
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="3*" MinHeight="120"/>
                         <RowDefinition Height="5"/>
-                        <RowDefinition Height="220"/>
+                        <RowDefinition Height="2*" MinHeight="100"/>
                     </Grid.RowDefinitions>
 
                     <DataGrid x:Name="gridClients"
@@ -717,9 +718,9 @@
                 <!-- ============================================================ -->
                 <Grid x:Name="viewInactive" Visibility="Collapsed">
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="3*" MinHeight="120"/>
                         <RowDefinition Height="5"/>
-                        <RowDefinition Height="220"/>
+                        <RowDefinition Height="2*" MinHeight="100"/>
                     </Grid.RowDefinitions>
 
                     <DataGrid x:Name="gridInactive"
@@ -755,9 +756,9 @@
                 <!-- ============================================================ -->
                 <Grid x:Name="viewSite" Visibility="Collapsed">
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="3*" MinHeight="120"/>
                         <RowDefinition Height="5"/>
-                        <RowDefinition Height="220"/>
+                        <RowDefinition Height="2*" MinHeight="100"/>
                     </Grid.RowDefinitions>
 
                     <DataGrid x:Name="gridSite"

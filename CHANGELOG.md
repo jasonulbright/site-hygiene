@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Open at the 1080p work area with compact buttons, grid rows and sidebar buttons.
+- Share free height between each list and its detail pane; no fixed pane heights.
+- Capture the guide maximized, with one verdict for the check and capture.
+- Add layout tests for density and vacant space, and a guard for produced guide images.
+
 ## [2026.11.15.0039] - 2026-11-15
 
 ## 15 disabled controls now dim

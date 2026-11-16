@@ -4,7 +4,9 @@ One command regenerates every image of this guide.
 
 ## What it does
 
-`tools\guide-capture\Invoke-GuideCapture.ps1` copies the tool to a lab computer, starts it in an interactive session of a lab account, walks every view, dialog and setting with Windows UI Automation, takes the screenshots at 1440 by 900 pixels, copies the PNG files back to `docs\images` and removes its files from the lab computer. It replaces only the images that exist already.
+`tools\guide-capture\Invoke-GuideCapture.ps1` copies the tool to a lab computer, starts it in an interactive session of a lab account, walks every view, dialog and setting with Windows UI Automation, maximizes the main window (1920 by 1032 on a 1080p screen) and takes the screenshots, copies the PNG files back to `docs\images` and removes its files from the lab computer. It replaces only the images that exist already.
+
+One pass is the check run and the capture run. The steps sample the contrast of the windows they shoot, so the run gives a verdict and the images together: `Capture verdict: PASS. Images produced N, probe samples M, warnings W, errors 0.` The command writes `tools\guide-capture\produced-images.json`, the list of the images that the run produced.
 
 ## When to use it
 

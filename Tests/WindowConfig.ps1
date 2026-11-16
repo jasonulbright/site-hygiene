@@ -41,8 +41,8 @@ $script:MainMeasureScript = {
     try {
         $w = Open-TestWindow -XamlPath (Join-Path $Root $cfg.Xaml) -Dark $Arguments.Dark -Width $Arguments.W -Height $Arguments.H
         $w.FindName('gridFindings').ItemsSource = @($Arguments.Findings)
-        # Contrast is read only at 1440x900. Clipped text and off-screen controls are read at both sizes.
-        $full = $Arguments.W -ge 1440
+        # Contrast is read only at the design size (the work area). Clipped text and off-screen controls are read at both sizes.
+        $full = -not ($Arguments.W -eq 1024 -and $Arguments.H -eq 720)
         $out = @()
         foreach ($view in $cfg.Views) {
             foreach ($v in $cfg.Views) { $w.FindName($v.Container).Visibility = if ($v.Name -eq $view.Name) { 'Visible' } else { 'Collapsed' } }

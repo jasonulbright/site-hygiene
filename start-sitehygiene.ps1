@@ -2225,6 +2225,8 @@ $window.Add_Closing({
 })
 
 $window.Add_Loaded({
+    # The first start, with no saved window state, opens maximized: the design size is a 1080p work area.
+    if (-not (Test-Path -LiteralPath $global:WindowStatePath)) { $window.WindowState = [System.Windows.WindowState]::Maximized }
     Restore-WindowState -Window $window -Path $global:WindowStatePath -OnStateLoaded {
         param($s)
         if ($s.ActiveView -in ($script:ScanViews + $script:LiveViews)) { Set-ActiveView -View ([string]$s.ActiveView) }

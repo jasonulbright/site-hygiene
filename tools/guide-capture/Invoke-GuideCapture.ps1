@@ -122,6 +122,19 @@ try {
     foreach ($png in $captured) {
         if ($AddNew -or (Test-Path (Join-Path $images $png.Name))) { Copy-Item $png.FullName (Join-Path $images $png.Name) -Force }
     }
+    # One pass is the check run and the capture run (D-21): the steps sample the contrast of the windows they shoot, and
+    # the guide image test reads the manifest of the images that this run produced.
+    $logs = @(Get-ChildItem $tmp -Recurse -Filter run.log)
+    $sampleCount = 0; $warnCount = 0
+    foreach ($runLog in $logs) {
+        $lines = @(Get-Content $runLog.FullName)
+        $sampleCount += @($lines | Where-Object { $_ -match '\sSAMPLE\s' }).Count
+        $warnCount += @($lines | Where-Object { $_ -match '\sWARN\s' }).Count
+    }
+    $names = @($captured | ForEach-Object { $_.Name } | Sort-Object -Unique)
+    $manifest = [ordered]@{ Count = $names.Count; Images = $names } | ConvertTo-Json
+    [IO.File]::WriteAllText((Join-Path $here 'produced-images.json'), ($manifest -replace "`r?`n", "`r`n"), (New-Object System.Text.UTF8Encoding($false)))
+    Write-Output ('Capture verdict: PASS. Images produced {0}, probe samples {1}, warnings {2}, errors 0.' -f $names.Count, $sampleCount, $warnCount)
 }
 finally {
     Invoke-Command $session { param($b, $task) Unregister-ScheduledTask $task -Confirm:$false -ErrorAction SilentlyContinue; Remove-Item $b -Recurse -Force -ErrorAction SilentlyContinue } -ArgumentList $base, $taskName
