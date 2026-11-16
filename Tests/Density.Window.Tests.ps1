@@ -56,8 +56,8 @@ BeforeAll {
                         $buttons = @(foreach ($el in (Get-VisualDescendants $c)) { if ($el -is [System.Windows.Controls.Button] -and $el.Style -and (Test-VisibleInTree $el) -and $el.Name) { [pscustomobject]@{ Name = $el.Name; Height = $el.ActualHeight } } })
                         $grids = @(foreach ($el in (Get-VisualDescendants $c)) {
                                 if ($el -is [System.Windows.Controls.DataGrid] -and (Test-VisibleInTree $el)) {
-                                    $hdr = $null; foreach ($x in (Get-VisualDescendants $el)) { if ($x -is [System.Windows.Controls.Primitives.DataGridColumnHeadersPresenter]) { $hdr = $x; break } }
-                                    $row = $null; foreach ($x in (Get-VisualDescendants $el)) { if ($x -is [System.Windows.Controls.DataGridRow]) { $row = $x; break } }
+                                    $hdr = $null; foreach ($part in (Get-VisualDescendants $el)) { if ($part -is [System.Windows.Controls.Primitives.DataGridColumnHeadersPresenter]) { $hdr = $part; break } }
+                                    $row = $null; foreach ($part in (Get-VisualDescendants $el)) { if ($part -is [System.Windows.Controls.DataGridRow]) { $row = $part; break } }
                                     [pscustomobject]@{ Name = $el.Name; Width = $el.ActualWidth; HeaderHeight = $(if ($hdr) { $hdr.ActualHeight } else { $null }); RowHeight = $(if ($row) { $row.ActualHeight } else { $null }) }
                                 }
                             })
