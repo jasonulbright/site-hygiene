@@ -5,7 +5,7 @@ $t = $t -replace '(?s)(function Resolve-ConfigurationManagerModulePath \{)', '$1
 Set-Content -LiteralPath $f -Value $t -Encoding UTF8
 Remove-Item Env:SMS_ADMIN_UI_PATH -ErrorAction SilentlyContinue
 $win = Start-App 'start-sitehygiene.ps1' 'Site Hygiene'
-Size-Win $win 1440 900
+Maximize-Win $win
 $win = Find-Top 'Site Hygiene' 10
 Invoke-El (Get-El $win 'btnScan'); Start-Sleep -Seconds 6
 Shot $win 'console-missing-scan'

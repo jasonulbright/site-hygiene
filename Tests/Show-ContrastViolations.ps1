@@ -5,7 +5,7 @@
 
 .DESCRIPTION
     Run it when the window test reports a new or a fixed violation, to see the
-    current list. Opens the windows off screen at 1440x900, as Window.Tests.ps1 does.
+    current list. Opens the windows off screen at the design size, as Window.Tests.ps1 does.
 #>
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification='Console tool.')]
 param()
@@ -22,7 +22,7 @@ $scopes = @(Get-HygieneScanScope | ForEach-Object { if ($_.Slow) { '{0} (slow)' 
 try {
     foreach ($dark in $true, $false) {
         $theme = if ($dark) { 'dark' } else { 'light' }
-        $main = Invoke-WpfSta -Arguments @{ Dark = $dark; W = 1440; H = 900; Config = $script:AppConfig; Findings = $script:SampleFindings } -Script $script:MainMeasureScript
+        $main = Invoke-WpfSta -Arguments @{ Dark = $dark; W = (Get-DesignSize).W; H = (Get-DesignSize).H; Config = $script:AppConfig; Findings = $script:SampleFindings } -Script $script:MainMeasureScript
         Write-Host ("== main {0}" -f $theme)
         Write-Host ((Get-ContrastViolationKey -Views @($main) | ForEach-Object { "'" + ($_ -replace "'", "''") + "'" }) -join ', ')
         $dlg = Invoke-WpfSta -Arguments @{ Xaml = $dialogXaml; Dark = $dark; Scopes = $scopes } -Script $script:DialogMeasureScript
