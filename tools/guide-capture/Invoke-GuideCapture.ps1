@@ -131,7 +131,8 @@ try {
         $sampleCount += @($lines | Where-Object { $_ -match '\sSAMPLE\s' }).Count
         $warnCount += @($lines | Where-Object { $_ -match '\sWARN\s' }).Count
     }
-    $names = @($captured | ForEach-Object { $_.Name } | Sort-Object -Unique)
+    # Only the images that the guide holds count as produced (an extra shot of a step stays out of the list).
+    $names = @($captured | ForEach-Object { $_.Name } | Where-Object { Test-Path (Join-Path $images $_) } | Sort-Object -Unique)
     $manifest = [ordered]@{ Count = $names.Count; Images = $names } | ConvertTo-Json
     [IO.File]::WriteAllText((Join-Path $here 'produced-images.json'), ($manifest -replace "`r?`n", "`r`n"), (New-Object System.Text.UTF8Encoding($false)))
     Write-Output ('Capture verdict: PASS. Images produced {0}, probe samples {1}, warnings {2}, errors 0.' -f $names.Count, $sampleCount, $warnCount)
