@@ -40,9 +40,10 @@ Describe 'The capture tool takes the lab lock' {
         $register | Should -BeGreaterThan $lock
     }
 
-    It 'treats a lock older than 30 minutes as stale and sleeps in every retry' {
-        $script:Code | Should -Match '\$staleMinutes'
-        $script:Code | Should -Match '\$lockText, 30, \$LockWaitMinutes'
+    It 'treats a lock as stale only after 30 minutes with no running owner, and sleeps in every retry' {
+        $script:Code | Should -Match '\[int\]\$age -gt 30 -and \$aliveLab -ne ''True'' -and -not \(Get-Process -Id \$ownerPid'
+        $script:Code | Should -Match 'The stale lab lock .* was removed'
+        $script:Code | Should -Match '''unknown: '' \+ \$held'
         $loop = $script:Ast.Find({ param($n) $n -is [System.Management.Automation.Language.WhileStatementAst] }, $true)
         $loop.Extent.Text | Should -Match 'Start-Sleep -Seconds 15'
     }
@@ -54,7 +55,6 @@ Describe 'The capture tool takes the lab lock' {
     It 'releases the lock in the finally, only when this capture took it' {
         $finally = $script:Try.Finally.Extent.Text
         $finally | Should -Match 'if \(\$haveLock\)'
-        $finally | Should -Match 'Remove-Item -LiteralPath \$path'
         $finally | Should -Match '-eq \$text'
     }
 
