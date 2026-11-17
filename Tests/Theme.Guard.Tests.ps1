@@ -223,9 +223,7 @@ Describe 'Every button takes the shared themed style (d)' {
         $bad | Should -BeNullOrEmpty
     }
 
-    # The dialogs of SuiteCommon are vendored code. They are fixed in the suite repository (app-packager-suite), not here.
-    # The test is skipped on purpose and shows in the result as Skipped with this reason.
-    It 'SKIPPED until the suite repository fixes its dialogs: has no unthemed button in <_.Source>' -Skip -ForEach @(Get-XamlDocument | Where-Object { $_.Source -match 'SuiteCommon' }) {
+    It 'has no unthemed button in the vendored SuiteCommon XAML in <_.Source>' -ForEach @(Get-XamlDocument | Where-Object { $_.Source -match 'SuiteCommon' }) {
         $bad = @(Get-ButtonThemeViolation -Text $_.Text -Source $_.Source)
         $bad | Should -BeNullOrEmpty
     }
