@@ -9,6 +9,10 @@
 - Capture the guide maximized, with one verdict for the check and capture.
 - Add layout tests for density and vacant space, and a guard for produced guide images.
 
+### Fixed
+
+- Guard the buttons of the vendored SuiteCommon dialogs: the check no longer skips them, and the vendored SuiteCommon gives its dialogs ThemedButtonStyle.
+
 ## [2026.11.15.0039] - 2026-11-15
 
 ## 15 disabled controls now dim
