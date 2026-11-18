@@ -152,11 +152,13 @@
             <Style x:Key="GridHeaderStyle" TargetType="DataGridColumnHeader" BasedOn="{StaticResource MahApps.Styles.DataGridColumnHeader}">
                 <Setter Property="Padding" Value="6,0,6,0"/>
                 <Setter Property="HorizontalContentAlignment" Value="Left"/>
+                <Setter Property="Controls:ControlsHelper.ContentCharacterCasing" Value="Normal"/>
             </Style>
 
             <Style x:Key="GridHeaderCenterStyle" TargetType="DataGridColumnHeader" BasedOn="{StaticResource MahApps.Styles.DataGridColumnHeader}">
                 <Setter Property="Padding" Value="6,0,6,0"/>
                 <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                <Setter Property="Controls:ControlsHelper.ContentCharacterCasing" Value="Normal"/>
             </Style>
 
             <Style x:Key="GlyphCellStyle" TargetType="DataGridCell" BasedOn="{StaticResource MahApps.Styles.DataGridCell}">

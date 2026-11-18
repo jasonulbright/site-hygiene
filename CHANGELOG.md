@@ -11,6 +11,8 @@
 
 ### Fixed
 
+- Draw grid column headers in the case of their text (Title Case), not in capitals. A window test reads the drawn header text of every view in both themes.
+- Capture tool waits for the alert toast to leave before it shoots a live view, and the produced-images list holds only guide images.
 - Guard the buttons of the vendored SuiteCommon dialogs: the check no longer skips them, and the vendored SuiteCommon gives its dialogs ThemedButtonStyle.
 - Vendor SuiteCommon with the atomic settings save: the settings file is written to a temp file and replaced in one step, so a failed write cannot leave it truncated.
 - Capture tool lock follows D-16: the lock text is owner|pid|start, a lock is stale only after 30 minutes with no running owner process, a live owner lock is never removed, a removed lock is reported, and the holder refreshes it.
