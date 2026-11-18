@@ -620,11 +620,21 @@ function Get-HygieneData {
         CollectionDetails = @{ Label = 'collection schedule details'; FailureHint = 'COL-05, COL-06, and COL-09 report nothing this scan'; Run = {
             $targets = @($result['Collections'] | Where-Object { -not $_.IsBuiltIn -and $_.RefreshType -in 2, 6 })
             $i = 0
+            $skipped = 0
+            $firstSkip = ''
             foreach ($c in $targets) {
                 $i++
                 if ($ProgressState) { $ProgressState.Step = "Reading collection schedules ($i of $($targets.Count))..." }
                 & $pace
-                $full = Get-CMCollection -Id $c.CollectionID -ErrorAction Stop
+                # One collection that cannot be read (after the retry of transient faults) skips only itself.
+                $collectionId = $c.CollectionID
+                $full = $null
+                try { $full = Invoke-SuiteCMRead -Description "Collection $collectionId" -ScriptBlock { Get-CMCollection -Id $collectionId -ErrorAction Stop } }
+                catch {
+                    $skipped++
+                    if (-not $firstSkip) { $firstSkip = '{0}: {1}' -f $collectionId, $_.Exception.Message }
+                    continue
+                }
                 if (-not $full) { continue }
                 foreach ($rule in @($full.CollectionRules)) {
                     if (-not $rule) { continue }
@@ -650,6 +660,7 @@ function Get-HygieneData {
                 } catch { $null = $_ }
                 $c.CollectionID
             }
+            if ($skipped -gt 0) { $notes.Add("collection schedule details: $skipped of $($targets.Count) collections could not be read and were skipped (first: $firstSkip)") }
         } }
         Deployments = @{ Label = 'deployment summaries'; Run = {
             Get-CMDeployment -ErrorAction Stop | ForEach-Object {
@@ -771,11 +782,21 @@ function Get-HygieneData {
         MaintenanceWindows = @{ Label = 'maintenance windows'; FailureHint = 'COL-10 is skipped'; Run = {
             $targets = @($result['CollectionsWithSettings'])
             $i = 0
+            $skipped = 0
+            $firstSkip = ''
             foreach ($id in $targets) {
                 $i++
                 if ($ProgressState) { $ProgressState.Step = "Reading maintenance windows ($i of $($targets.Count))..." }
                 & $pace
-                Get-CMMaintenanceWindow -CollectionId $id -ErrorAction Stop | ForEach-Object {
+                # One collection that cannot be read (after the retry of transient faults) skips only itself.
+                $windowRows = @()
+                try { $windowRows = @(Invoke-SuiteCMRead -Description "Maintenance windows of $id" -ScriptBlock { Get-CMMaintenanceWindow -CollectionId $id -ErrorAction Stop }) }
+                catch {
+                    $skipped++
+                    if (-not $firstSkip) { $firstSkip = '{0}: {1}' -f $id, $_.Exception.Message }
+                    continue
+                }
+                $windowRows | ForEach-Object {
                     [pscustomobject]@{
                         CollectionID   = [string]$id
                         Name           = [string]$_.Name
@@ -786,6 +807,7 @@ function Get-HygieneData {
                     }
                 }
             }
+            if ($skipped -gt 0) { $notes.Add("maintenance windows: $skipped of $($targets.Count) collections could not be read and were skipped (first: $firstSkip); COL-10 may miss expired windows") }
         } }
         AppDeployments = @{ Label = 'application deployments'; Run = {
             Invoke-CMWmiQuery -Query 'SELECT ApplicationName, CollectionName, TargetCollectionID, ExpirationTime FROM SMS_ApplicationAssignment' -Option Fast -ErrorAction Stop | ForEach-Object {

@@ -91,6 +91,7 @@ function Get-ShPreferences {
         SMSProvider           = ''
         SQLServer             = ''
         SqlTrustServerCertificate = $true
+        SqlQueryTimeoutSeconds = 300
         ScanScopes            = @()
         ProviderPacingMs      = 0
         AutoRefreshMinutes    = 15
@@ -1568,12 +1569,15 @@ function Invoke-RefreshAll {
     $sqlServer   = [string]$global:Prefs.SQLServer
     $threshold   = [int]$global:Prefs.InactiveThresholdDays
     $trustSql    = [bool]$global:Prefs.SqlTrustServerCertificate
+    $sqlTimeout  = [int]$global:Prefs.SqlQueryTimeoutSeconds
 
     $script:BgPowerShell = [powershell]::Create()
     $script:BgPowerShell.Runspace = $script:BgRunspace
     [void]$script:BgPowerShell.AddScript({
-        param($SiteCode, $SMSProvider, $SQLServer, $ThresholdDays, $State, $TrustSql)
+        param($SiteCode, $SMSProvider, $SQLServer, $ThresholdDays, $State, $TrustSql, $SqlTimeout)
         try {
+            # The site database reads use the configured timeout (preference SqlQueryTimeoutSeconds; 0 = no limit).
+            Set-HygieneSqlTimeout -Seconds ([Math]::Max(0, [int]$SqlTimeout))
             if (-not (Test-CMConnection)) {
                 $State.Step = "Connecting to $SiteCode..."
                 $ok = Connect-CMSite -SiteCode $SiteCode -SMSProvider $SMSProvider
@@ -1652,7 +1656,7 @@ function Invoke-RefreshAll {
         }
         catch { $State.ErrorDetail = $_.Exception.Message; $State.ErrorMsg = 'An error occurred. The log file has the details.' }
         finally { $State.Done = $true }
-    }).AddArgument($siteCode).AddArgument($smsProvider).AddArgument($sqlServer).AddArgument($threshold).AddArgument($script:BgState).AddArgument($trustSql)
+    }).AddArgument($siteCode).AddArgument($smsProvider).AddArgument($sqlServer).AddArgument($threshold).AddArgument($script:BgState).AddArgument($trustSql).AddArgument($sqlTimeout)
 
     $script:BgInvokeHandle = $script:BgPowerShell.BeginInvoke()
     $script:BgTimer = New-Object System.Windows.Threading.DispatcherTimer

@@ -86,6 +86,8 @@
         'Read-HygieneScanResult'
         'Get-HygieneScanDelta'
         # Live area (SiteHygieneLive.psm1)
+        'Set-HygieneSqlTimeout'
+        'Get-HygieneSqlTimeout'
         'Test-SQLConnection'
         'Get-DeploymentHealth'
         'Get-DeploymentDetails'
