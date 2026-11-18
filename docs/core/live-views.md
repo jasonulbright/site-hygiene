@@ -33,7 +33,7 @@ Use it to check a site in the morning, to find a failed deployment or distributi
 ![The Deployments view before the first refresh](../images/deployments-before.png)
 
 2. Select **Refresh All**. A progress overlay shows. The log lists each query.
-3. Read the grid. The first column holds a status glyph: a check mark for OK, a warning sign for a warning or in progress, a cross for failed or critical and an ellipsis for unknown.
+3. View the grid. The first column holds a status glyph: a check mark for OK, a warning sign for a warning or in progress, a cross for failed or critical and an ellipsis for unknown.
 4. Select a row. The pane below the grid shows the details.
 
 ![The Deployments view after a refresh](../images/deployments.png)
@@ -45,7 +45,7 @@ Use it to check a site in the morning, to find a failed deployment or distributi
 1. Type text in the filter box. Each view matches its own columns, for example the deployment, the collection and the type.
 2. Select a status in the list: **All**, **OK / Healthy**, **Warning / In Progress** or **Failed / Error**.
 
-### Read each view
+### Review each view
 
 The **Content** view has rows only when a distribution failed or runs. An empty grid means that all content is healthy.
 

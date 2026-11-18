@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Use ConfigMgr terms in the window text, the log messages, the README and the guide.
+- Name the software update group in the titles of checks UPD-01 and UPD-04.
+
 ## [2026.11.18.0040] - 2026-11-18
 
 ## 10 changes: configured SQL timeout, per-collection skip, 1080p layout

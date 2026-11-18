@@ -16,12 +16,12 @@ At least one refresh of a Live view. Each refresh adds one point.
 
 ## Steps
 
-### Read a chart
+### View a chart
 
 1. Select **Trends** in the sidebar.
 2. Select a metric in the **Metric** list: **Deployment Compliance %**, **Deployments With Errors**, **Content Items With Issues**, **Failed DP-Content Pairs**, **DPs Critical**, **DPs Degraded**, **Unhealthy Clients**, **Inactive Devices** or **Site Items Critical**.
 3. Select a range in the **Range** list: **7 Days**, **30 Days** or **90 Days**.
-4. Read the line below the chart: the number of samples, the latest, the minimum, the maximum and the average value.
+4. View the line below the chart: the number of samples, the latest, the minimum, the maximum and the average value.
 
 ![The Trends view](../images/trends.png)
 
@@ -68,7 +68,7 @@ An alert fires for a critical site component or site system, a critical distribu
 | Message or symptom | Cause | Fix |
 |---|---|---|
 | The chart is empty. | No refresh has run in the range. | Select **Refresh All**. |
-| No toast shows. | Windows notifications are off for the session. | Read `Logs\SiteHygiene-alerts.log`. |
+| No toast shows. | Windows notifications are off for the session. | Open `Logs\SiteHygiene-alerts.log`. |
 
 ## Links
 

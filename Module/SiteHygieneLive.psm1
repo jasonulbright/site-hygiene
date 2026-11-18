@@ -60,7 +60,7 @@ function New-HygieneSqlParameter {
 function Test-SQLConnection {
     <#
     .SYNOPSIS
-        Tests SQL connectivity to the CM site database.
+        Tests SQL connectivity to the ConfigMgr site database.
     .DESCRIPTION
         Returns $true if Invoke-Sqlcmd can reach CM_<SiteCode> on the specified SQL server.
     #>
@@ -375,7 +375,7 @@ function Get-ContentNameMap {
 function Get-DPHealth {
     <#
     .SYNOPSIS
-        Returns DP health by combining CM cmdlets with WMI site system summarizer.
+        Returns distribution point health by combining ConfigMgr cmdlets with WMI site system summarizer.
     #>
     Write-Log "Querying distribution point health..."
 
@@ -448,7 +448,7 @@ function Get-DPHealth {
 function Get-DPDetails {
     <#
     .SYNOPSIS
-        Returns content status for a specific DP from cached bulk status data.
+        Returns content status for a specific distribution point from cached bulk status data.
     #>
     param(
         [Parameter(Mandatory)][string]$DPName,
@@ -462,7 +462,7 @@ function Get-DPDetails {
 function Get-DPHealthCounts {
     <#
     .SYNOPSIS
-        Returns aggregate DP health counts.
+        Returns aggregate distribution point health counts.
     #>
     param(
         [Parameter(Mandatory)][AllowEmptyCollection()][PSCustomObject[]]$DPData
@@ -789,7 +789,7 @@ function Add-MetricsHistoryEntry {
         Appends one snapshot row of health counts to the metrics history CSV.
     .DESCRIPTION
         One row per completed refresh. Rows older than 180 days are pruned on
-        write so the file stays bounded. Any count object may be $null (e.g.
+        write so the file stays bounded. Any count object may be $null (for example,
         SQL views skipped); those columns are recorded empty.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification='Appends one row to the app-local history CSV.')]

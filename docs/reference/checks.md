@@ -47,7 +47,7 @@ None.
 | TSQ-02 | Task Sequences | Warning | Boot image or driver package referenced by nothing. |
 | TSQ-03 | Task Sequences | Warning | Application in a task sequence without the task sequence install setting. |
 | TSQ-04 | Task Sequences | Error | Application in a task sequence with content on no distribution point. |
-| UPD-01 | Updates | Warning | Update group with high expired-update ratio. |
+| UPD-01 | Updates | Warning | Software update group with a high expired-update ratio. |
 | UPD-03 | Updates | Warning | Automatic deployment rule disabled, stale, or erroring. |
 | MNT-01 | Site | Info | Recommended maintenance tasks disabled. |
 | MNT-02 | Site | Warning | Site backup task disabled. |
@@ -66,7 +66,7 @@ None.
 | DPL-03 | Deployments | Info | Available deployment with no takers. |
 | DPL-04 | Deployments | Warning | Required deployment to a built-in all-resources collection. |
 | DPL-05 | Deployments | Warning | Deployment of a disabled task sequence or program. |
-| UPD-04 | Updates | Warning | Update group over the per-deployment update limit. |
+| UPD-04 | Updates | Warning | Software update group over the per-deployment update limit. |
 | UPD-05 | Updates | Info | Deployment package holding expired update content. |
 | DPT-01 | Distribution Points | Warning | Distribution point in no boundary group. |
 | DPT-02 | Distribution Points | Info | Distribution point group with no members. |

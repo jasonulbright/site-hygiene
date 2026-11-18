@@ -26,13 +26,13 @@ None.
 | **Run Fix** is disabled. | No row is selected, or the finding has guidance only. | Select a row with a fix script. |
 | A finding is gone after a scan. | It is suppressed. | Select **Show Suppressed**. |
 | The Relationships view is empty. | The relationships area is not in the scan scope. | Select the area in **Options > Scan**. |
-| No toast shows for an alert. | Windows notifications are off. | Read `Logs\SiteHygiene-alerts.log`. |
+| No toast shows for an alert. | Windows notifications are off. | Open `Logs\SiteHygiene-alerts.log`. |
 | The settings are lost. | The folder is not writable. | Move the tool to a writable folder. |
 
 ## Steps
 
-1. Read the log pane. It names the cause of most problems.
-2. Read the session log in `Logs`.
+1. View the log pane. It names the cause of most problems.
+2. Open the session log. It is in the `Logs` folder.
 3. Do the fix of the table.
 
 ## Limits

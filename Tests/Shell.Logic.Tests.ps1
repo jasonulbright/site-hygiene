@@ -336,12 +336,12 @@ Describe 'Status text and log' {
         $txtStatus.Text | Should -Be 'Open Options to set the site code and the SMS Provider'
     }
 
-    It 'says what to click on a scan view and on a live view' {
+    It 'says what to select on a scan view and on a live view' {
         Update-StatusBarSummary
-        $txtStatus.Text | Should -Be 'Ready. Click Scan.'
+        $txtStatus.Text | Should -Be 'Ready. Select Scan.'
         $script:ActiveView = 'Deployments'
         Update-StatusBarSummary
-        $txtStatus.Text | Should -Be 'Ready. Click Refresh All.'
+        $txtStatus.Text | Should -Be 'Ready. Select Refresh All.'
     }
 
     It 'counts the findings by severity after a scan' {

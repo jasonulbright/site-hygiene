@@ -16,10 +16,10 @@ Use it to find supersedence and dependency problems: a target that was deleted, 
 
 ## Steps
 
-### Read the inventory
+### View the inventory
 
 1. Select **Relationships** in the sidebar.
-2. Read the grid. Select a row. The pane shows the source and the target application with the manufacturer, the enabled and retired state and the number of incoming and outgoing relationships.
+2. View the grid. Select a row. The pane shows the source and the target application with the manufacturer, the enabled and retired state and the number of incoming and outgoing relationships.
 
 ![The Inventory tab](../images/relationships-inventory.png)
 
@@ -33,7 +33,7 @@ Use it to find supersedence and dependency problems: a target that was deleted, 
 
 ![The Dependency kind](../images/relationships-filter-kind.png)
 
-### Read the tree
+### View the tree
 
 1. Select the **Tree** tab.
 2. Open a node. Select a node to see the standing of the application.

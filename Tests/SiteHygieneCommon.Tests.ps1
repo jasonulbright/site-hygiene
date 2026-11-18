@@ -1062,7 +1062,7 @@ Describe 'APP-04 bounded probe' {
         $f = @(Test-HygAppContentPath -RelationshipData $rel)
         $f.Count | Should -Be 1
         $f[0].Severity | Should -Be 'Warning'
-        $f[0].Evidence | Should -Match 'from this workstation'
+        $f[0].Evidence | Should -Match 'from this computer'
     }
 }
 

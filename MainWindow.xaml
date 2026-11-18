@@ -279,7 +279,7 @@
                 <StackPanel>
                     <TextBlock x:Name="txtModuleTitle" Text="Findings" FontSize="18" FontWeight="SemiBold"/>
                     <TextBlock x:Name="txtModuleSubtitle"
-                               Text="Set the site code and the SMS Provider in Options, then click Scan."
+                               Text="Set the site code and the SMS Provider in Options, then select Scan."
                                FontSize="11"
                                TextWrapping="Wrap"
                                Foreground="{DynamicResource MahApps.Brushes.Gray1}"
