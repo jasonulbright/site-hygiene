@@ -1224,7 +1224,7 @@ function Test-HygDeviceInactive {
     New-HygieneFinding -CheckId 'DEV-01' -Severity $severity -Category 'Devices' `
         -ObjectType 'Site' -ObjectId '' -ObjectName 'Inactive clients' `
         -Evidence ("{0} clients have been inactive for over {1} days; {2}. First 15 by name: {3}" -f $inactive.Count, $days, $cleanupNote, $sample) `
-        -Recommendation 'Verify the machines are really gone, then let cleanup tasks purge them or delete the records.' `
+        -Recommendation 'Verify that the devices no longer exist, then let the cleanup tasks purge them or delete the records.' `
         -FixScript "# Per device: Remove-CMDevice -Name '<name>' -Force  # verify first"
 }
 
@@ -1532,7 +1532,7 @@ function Test-HygAdrChecks {
             New-HygieneFinding -CheckId 'UPD-03' -Severity Error -Category 'Updates' `
                 -ObjectType 'ADR' -ObjectId '' -ObjectName $adr.Name `
                 -Evidence ("Automatic deployment rule's last run ended with error code {0}; new updates are not being deployed by it." -f $adr.LastErrorCode) `
-                -Recommendation 'Open the ADR run history (ruleengine.log on the site server) and fix the failure.' `
+                -Recommendation 'Open the ADR run history (the ruleengine.log file on the site server) and fix the failure.' `
                 -FixScript ("# Rerun after fixing: Invoke-CMSoftwareUpdateAutoDeploymentRule -Name '{0}'" -f (ConvertTo-HygQuotedLiteral $adr.Name))
         }
         elseif (-not $adr.AutoDeploymentEnabled) {
@@ -2015,7 +2015,7 @@ function Build-HygRelationshipTree {
         bounds pathological graphs.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Named for the tree it builds.')]
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'MaxDepth', Justification='Consumed inside the nested New-Node function via dynamic scope.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'MaxDepth', Justification='Consumed inside the nested New-Node function through dynamic scope.')]
     param(
         [Parameter(Mandatory)]$RelationshipData,
         [Parameter(Mandatory)][ValidateSet('Supersedence', 'Dependency')][string]$Kind,
