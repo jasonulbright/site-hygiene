@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [2026.11.18.0040] - 2026-11-18
+
+## 10 changes: configured SQL timeout, per-collection skip, 1080p layout
+
 ### Changed
 
 - Open at the 1080p work area with compact buttons, grid rows and sidebar buttons.
