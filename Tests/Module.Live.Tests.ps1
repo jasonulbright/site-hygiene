@@ -327,6 +327,18 @@ Describe 'SQL reads' {
         Test-SQLConnection -SQLServer 'sql01' -SiteCode 'MCM' | Should -BeFalse
     }
 
+    It 'uses a configured query timeout, 300 seconds by default, and 0 only when it is set to 0' {
+        InModuleScope SiteHygieneLive {
+            (New-HygieneSqlParameter -SQLServer 's' -SiteCode 'ABC' -Query 'q').QueryTimeout | Should -Be 300
+            Set-HygieneSqlTimeout -Seconds 45
+            (New-HygieneSqlParameter -SQLServer 's' -SiteCode 'ABC' -Query 'q').QueryTimeout | Should -Be 45
+            Get-HygieneSqlTimeout | Should -Be 45
+            Set-HygieneSqlTimeout -Seconds 0
+            (New-HygieneSqlParameter -SQLServer 's' -SiteCode 'ABC' -Query 'q').QueryTimeout | Should -Be 0
+            Set-HygieneSqlTimeout -Seconds 300
+        }
+    }
+
     It 'builds the database name from the site code' {
         $p = InModuleScope SiteHygieneLive { New-HygieneSqlParameter -SQLServer 's\i' -SiteCode 'ABC' -Query 'q' }
         $p.Database | Should -Be 'CM_ABC'

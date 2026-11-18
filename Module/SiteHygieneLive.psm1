@@ -14,6 +14,20 @@
     The SQL functions need Invoke-Sqlcmd and read access to the site
     database.
 #>
+# The query timeout of the site database reads, in seconds. 0 means no limit. The default is 300 s. The shell sets it from
+# the preference SqlQueryTimeoutSeconds (settings file) when it starts.
+$script:HygieneSqlTimeoutSeconds = 300
+
+function Set-HygieneSqlTimeout {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification='Sets a module value only.')]
+    param([Parameter(Mandatory)][ValidateRange(0, 86400)][int]$Seconds)
+    $script:HygieneSqlTimeoutSeconds = $Seconds
+}
+
+function Get-HygieneSqlTimeout {
+    return [int]$script:HygieneSqlTimeoutSeconds
+}
+
 function New-HygieneSqlParameter {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification='Builds a value in memory; changes no state.')]
     <#
@@ -30,10 +44,12 @@ function New-HygieneSqlParameter {
         [Parameter(Mandatory)][string]$SQLServer,
         [Parameter(Mandatory)][string]$SiteCode,
         [Parameter(Mandatory)][string]$Query,
-        [bool]$TrustServerCertificate
+        [bool]$TrustServerCertificate,
+        [int]$QueryTimeoutSeconds = $script:HygieneSqlTimeoutSeconds
     )
 
-    $p = @{ ServerInstance = $SQLServer; Database = "CM_$SiteCode"; Query = $Query; QueryTimeout = 0; ErrorAction = 'Stop' }
+    # The timeout is a configured value (Set-HygieneSqlTimeout), not unlimited: 0 means no limit and is a choice.
+    $p = @{ ServerInstance = $SQLServer; Database = "CM_$SiteCode"; Query = $Query; QueryTimeout = $QueryTimeoutSeconds; ErrorAction = 'Stop' }
     if ($TrustServerCertificate) {
         $cmd = Get-Command Invoke-Sqlcmd -ErrorAction SilentlyContinue
         if ($cmd -and $cmd.Parameters.ContainsKey('TrustServerCertificate')) { $p['TrustServerCertificate'] = $true }

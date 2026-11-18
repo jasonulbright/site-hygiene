@@ -223,6 +223,49 @@ Describe 'Get-HygieneData' {
         Should -Invoke Get-CMCollection -ModuleName $script:Mod -Times 1 -Exactly
     }
 
+    It 'skips only the collection that cannot be read when it reads the schedules, and says so in a note' {
+        # Two scheduled custom collections: the read of XYZ00002 fails for good, the read of XYZ00005 works.
+        $saved = $global:HygWmiRows['SMS_Collection']
+        $global:HygWmiRows['SMS_Collection'] = @($saved) + [PSCustomObject]@{ CollectionID = 'XYZ00005'; Name = 'Second'; MemberCount = 1; RefreshType = 2; LimitToCollectionID = 'SMS00001' }
+        Mock Get-CMCollection {
+            if ($Id -eq 'XYZ00002') { throw 'Invalid query' }
+            [PSCustomObject]@{ CollectionRules = @([PSCustomObject]@{ SmsProviderObjectPath = 'SMS_CollectionRuleDirect' }); RefreshSchedule = @([PSCustomObject]@{ DaySpan = 7; HourSpan = 0; MinuteSpan = 0; StartTime = [datetime]'2026-01-01 04:00' }) }
+        } -ModuleName $script:Mod
+        try { $d = Get-HygieneData -Datasets 'CollectionDetails' } finally { $global:HygWmiRows['SMS_Collection'] = $saved }
+        $d.FailedDatasets.Count | Should -Be 0
+        ($d.Collections | Where-Object CollectionID -eq 'XYZ00005').FullDaySpan | Should -Be 7
+        ($d.Collections | Where-Object CollectionID -eq 'XYZ00002').FullStartHour | Should -Be -1
+        @($d.DatasetNotes | Where-Object { $_ -like 'collection schedule details: 1 of 2 collections could not be read*XYZ00002*Invalid query*' }).Count | Should -Be 1
+    }
+
+    It 'retries a transient fault of the read of one collection and gives no note' {
+        $env:HYG_TEST_HIT = '0'
+        Mock Get-CMCollection {
+            $env:HYG_TEST_HIT = [string]([int]$env:HYG_TEST_HIT + 1)
+            if ($env:HYG_TEST_HIT -eq '1') { throw 'The operation has timed out.' }
+            [PSCustomObject]@{ CollectionRules = @(); RefreshSchedule = @([PSCustomObject]@{ DaySpan = 3; HourSpan = 0; MinuteSpan = 0; StartTime = [datetime]'2026-01-01 05:00' }) }
+        } -ModuleName $script:Mod
+        $d = Get-HygieneData -Datasets 'CollectionDetails'
+        ($d.Collections | Where-Object CollectionID -eq 'XYZ00002').FullDaySpan | Should -Be 3
+        @($d.DatasetNotes).Count | Should -Be 0
+        $env:HYG_TEST_HIT | Should -Be '2'
+        Remove-Item -Path Env:HYG_TEST_HIT -ErrorAction SilentlyContinue
+    }
+
+    It 'skips only the collection whose maintenance windows cannot be read, and says so in a note' {
+        $saved = $global:HygWmiRows['SMS_CollectionSettings']
+        $global:HygWmiRows['SMS_CollectionSettings'] = @([PSCustomObject]@{ CollectionID = 'XYZ00002' }, [PSCustomObject]@{ CollectionID = 'XYZ00005' })
+        Mock Get-CMMaintenanceWindow {
+            if ($CollectionId -eq 'XYZ00002') { throw 'Invalid query' }
+            [PSCustomObject]@{ Name = 'MW5'; RecurrenceType = 1; StartTime = [datetime]'2026-03-01'; Duration = 60; IsEnabled = $true }
+        } -ModuleName $script:Mod
+        try { $d = Get-HygieneData -Datasets 'MaintenanceWindows' } finally { $global:HygWmiRows['SMS_CollectionSettings'] = $saved }
+        $d.FailedDatasets.Count | Should -Be 0
+        @($d.MaintenanceWindows).Count | Should -Be 1
+        $d.MaintenanceWindows[0].CollectionID | Should -Be 'XYZ00005'
+        @($d.DatasetNotes | Where-Object { $_ -like 'maintenance windows: 1 of 2 collections could not be read*XYZ00002*' }).Count | Should -Be 1
+    }
+
     It 'skips a collection that no longer exists when it reads the schedules' {
         Mock Get-CMCollection { } -ModuleName $script:Mod
         $d = Get-HygieneData -Datasets 'CollectionDetails'
