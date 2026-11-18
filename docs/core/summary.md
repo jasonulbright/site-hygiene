@@ -17,8 +17,8 @@ At least one scan.
 ## Steps
 
 1. Select **Summary** in the sidebar.
-2. Read the **Findings** column. A check with `0` found nothing.
-3. Read the pane below the grid. `All datasets loaded cleanly.` means that every dataset loaded.
+2. Review the **Findings** column. A check with `0` found nothing.
+3. View the pane below the grid. `All datasets loaded cleanly.` means that every dataset loaded.
 
 ![The Summary view](../images/summary.png)
 
@@ -32,13 +32,13 @@ At least one scan.
 ## Limits
 
 - A check that is not in the scan scope shows `0`.
-- A check shows `0` also when its data did not load. Read the note.
+- A check shows `0` also when its data did not load. Review the note.
 
 ## Troubleshooting
 
 | Message or symptom | Cause | Fix |
 |---|---|---|
-| The note names a dataset. | The read failed. | Read the log for the reason. Scan again. |
+| The note names a dataset. | The read failed. | Review the log for the reason. Scan again. |
 | The grid is empty. | No scan has run. | Select **Scan**. |
 
 ## Links

@@ -18,8 +18,8 @@
       - PowerShell 5.1
       - .NET Framework 4.7.2+
       - MahApps.Metro DLLs in .\Lib\
-      - SiteHygieneCommon module under .\Module\ (pulls in .\Lib\SuiteCommon\)
-      - ConfigurationManager console (provides Get-CMApplication, etc.)
+      - SiteHygieneCommon module under .\Module\ (loads .\Lib\SuiteCommon\)
+      - Configuration Manager console (provides Get-CMApplication and other cmdlets)
       - SqlServer module (Invoke-Sqlcmd) for the Client Health and
         Inactive Devices views; optional
 
@@ -304,7 +304,7 @@ $script:ViewMeta = @{
     'Findings'      = @{ Title = 'Findings';             Subtitle = 'Each hygiene finding from the last scan. Select a row to see the evidence, the recommendation and the fix script.'; Watermark = 'Filter by object, evidence, or check id...' }
     'Relationships' = @{ Title = 'Relationships';        Subtitle = 'Each supersedence and dependency relationship in the application definitions, including the healthy ones. Select a row or a tree node to see the application details.'; Watermark = 'Filter by source, target, or deployment type...' }
     'Summary'       = @{ Title = 'Summary';              Subtitle = 'The finding count of each check from the last scan, and notes about the data that the scan could not read.'; Watermark = '' }
-    'Deployments'   = @{ Title = 'Deployments';          Subtitle = 'Application, package, software update and task sequence deployments. Click Refresh All to load them.'; Watermark = 'Filter by deployment, collection, or type...' }
+    'Deployments'   = @{ Title = 'Deployments';          Subtitle = 'Application, package, software update and task sequence deployments. Select Refresh All to load them.'; Watermark = 'Filter by deployment, collection, or type...' }
     'Content'       = @{ Title = 'Content Distribution'; Subtitle = 'Content that failed or is in progress on a distribution point. Healthy content is not shown.'; Watermark = 'Filter by content, package id, or type...' }
     'DPs'           = @{ Title = 'Distribution Points';  Subtitle = 'Each distribution point with its site, its status and its pull distribution point setting.'; Watermark = 'Filter by name or site...' }
     'Clients'       = @{ Title = 'Client Health';        Subtitle = 'The client health and the active status of each device. This view needs access to the site database.'; Watermark = 'Filter by device, health, or OS...' }
@@ -1218,7 +1218,7 @@ $gridDeploy.Add_SelectionChanged({
 })
 $gridContent.Add_SelectionChanged({
     $row = $gridContent.SelectedItem
-    if (-not $row) { $txtContentDetail.Text = 'Select a content item to see DP breakdown.'; return }
+    if (-not $row) { $txtContentDetail.Text = 'Select a content item to see the distribution point breakdown.'; return }
     $txtContentDetail.Text = @(
         'CONTENT', ('-' * 40),
         ('Name:        {0}' -f $row.ContentName),
@@ -1295,8 +1295,8 @@ function Update-StatusBarSummary {
     $isLive = $script:ActiveView -in $script:LiveViews
     if (-not $global:Prefs.SiteCode -or -not $global:Prefs.SMSProvider) { $parts += 'Open Options to set the site code and the SMS Provider' }
     elseif ($script:LastScanTime -or $script:LiveConnected) { $parts += ('Connected to {0}' -f $global:Prefs.SiteCode) }
-    elseif ($isLive) { $parts += 'Ready. Click Refresh All.' }
-    else { $parts += 'Ready. Click Scan.' }
+    elseif ($isLive) { $parts += 'Ready. Select Refresh All.' }
+    else { $parts += 'Ready. Select Scan.' }
 
     if ($isLive) {
         if ($script:DeploymentCounts) { $parts += ('{0} deployments / {1} failed' -f $script:DeploymentCounts.TotalDeployments, $script:DeploymentCounts.FailedDeployments) }
@@ -1716,7 +1716,7 @@ function Invoke-RefreshAll {
             $btnRefreshAll.IsEnabled = $true
 
             $sqlNote = if ($r.SqlOk) { 'SQL ok' } else { 'SQL skipped' }
-            Add-LogLine ('Refresh complete: {0} deployments, {1} content issues, {2} DPs, {3} clients, {4} inactive, {5} site items ({6})' -f $script:DeploymentRows.Count, $script:ContentRows.Count, $script:DPRows.Count, $script:ClientRows.Count, $script:InactiveRows.Count, $script:SiteRows.Count, $sqlNote)
+            Add-LogLine ('Refresh complete: {0} deployments, {1} content issues, {2} distribution points, {3} devices, {4} inactive, {5} site items ({6})' -f $script:DeploymentRows.Count, $script:ContentRows.Count, $script:DPRows.Count, $script:ClientRows.Count, $script:InactiveRows.Count, $script:SiteRows.Count, $sqlNote)
             Start-AutoRefreshIfEnabled
         }
     })
@@ -2009,14 +2009,14 @@ function Show-OptionsDialog {
                 <TextBlock Text="Configuration Manager Connection" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,10"/>
                 <TextBlock Style="{StaticResource OptLabel}" FontSize="14" FontWeight="Bold" Text="Site Code"/>
                 <TextBox x:Name="txtSiteCode" FontSize="12" Padding="6,4,6,4" MaxLength="3"
-                         Controls:TextBoxHelper.Watermark="e.g. MCM" Width="120" HorizontalAlignment="Left"/>
+                         Controls:TextBoxHelper.Watermark="MCM" Width="120" HorizontalAlignment="Left"/>
                 <TextBlock Style="{StaticResource OptLabel}" FontSize="14" FontWeight="Bold" Text="SMS Provider FQDN"/>
                 <TextBox x:Name="txtSmsProvider" FontSize="12" Padding="6,4,6,4"
-                         Controls:TextBoxHelper.Watermark="e.g. cm01.contoso.com"/>
+                         Controls:TextBoxHelper.Watermark="cm01.contoso.com"/>
                 <TextBlock Style="{StaticResource OptHint}" Text="The app uses these values for the ConfigMgr drive. Every scan and live query runs through this connection with your ConfigMgr security role. A scan changes nothing, so the account needs read access only."/>
                 <TextBlock Style="{StaticResource OptLabel}" Text="SQL Server (Optional)"/>
                 <TextBox x:Name="txtSqlServer" FontSize="12" Padding="6,4,6,4"
-                         Controls:TextBoxHelper.Watermark="e.g. cm01.contoso.com (blank to skip SQL views)"/>
+                         Controls:TextBoxHelper.Watermark="cm01.contoso.com (blank to skip SQL views)"/>
                 <TextBlock Style="{StaticResource OptHint}" Text="The SQL Server instance that hosts the site database CM_&lt;site&gt;. Use the FQDN or FQDN\InstanceName. Leave the box empty to skip the Client Health and Inactive Devices views."/>
                 <CheckBox x:Name="chkSqlTrustCert" Content="Trust the SQL Server Certificate" FontSize="12" Margin="0,10,0,0"/>
                 <TextBlock Style="{StaticResource OptHint}" Text="The connection stays encrypted, but the app does not validate the server certificate. Clear this box when this computer trusts the SQL Server certificate."/>
@@ -2244,7 +2244,7 @@ $window.Add_Loaded({
     Sync-FooterSite
     Update-SuppressCount
     $gridSummary.ItemsSource = @(Get-HygieneScanSummary -Findings @())
-    Add-LogLine 'Site Hygiene ready. Set the site code and the SMS Provider in Options, then click Scan or Refresh All.'
+    Add-LogLine 'Site Hygiene ready. Set the site code and the SMS Provider in Options, then select Scan or Refresh All.'
     # The timer arms at launch only for a window that last showed a Live
     # view; a scan-focused session never starts polling on its own.
     if ($script:ActiveView -in $script:LiveViews -and $global:Prefs.SiteCode -and $global:Prefs.SMSProvider) {

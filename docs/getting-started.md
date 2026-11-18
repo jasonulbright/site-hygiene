@@ -50,7 +50,7 @@ If you select **Scan** before you set the connection, the log asks you to open O
 
 1. Select **Scan**. A progress overlay shows. **Cancel** on the overlay stops the scan.
 2. Wait for the status bar to show `Scan complete`. A scan of the lab site takes about 30 seconds.
-3. Read the findings. See [Findings](core/findings.md).
+3. Review the findings. See [Findings](core/findings.md).
 
 ![The window while a scan runs](images/scan-running.png)
 

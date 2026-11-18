@@ -10,7 +10,7 @@ sites. A scan finds clutter and drift: unused applications and packages,
 dead collections, stale and failing deployments, broken application
 relationships. A scan is read-only. Every finding carries the evidence
 that produced it and the exact PowerShell a fix would run. The tool runs
-a fix script only when you select the finding, click **Run Fix**, and
+a fix script only when you select the finding, select **Run Fix**, and
 confirm the script in a dialog. Many findings carry guidance only; the
 tool never runs those.
 
@@ -46,7 +46,7 @@ The [user guide](docs/index.md) walks every view, dialog and setting with images
   Devices views. Leave SQL Server blank in Options to skip them.
   **Trust the SQL Server Certificate** is on by default: the connection
   stays encrypted, but the server certificate is not validated. Clear it
-  in Options when this workstation trusts the SQL Server certificate.
+  in Options when this computer trusts the SQL Server certificate.
 
 ## Quick Start
 
@@ -57,16 +57,16 @@ The [user guide](docs/index.md) walks every view, dialog and setting with images
    ```powershell
    powershell -ExecutionPolicy Bypass -File start-sitehygiene.ps1
    ```
-3. Click **Options** on the sidebar and set Site Code and SMS Provider.
+3. Select **Options** on the sidebar and set Site Code and SMS Provider.
    Set SQL Server too if you want the two SQL-backed Live views.
    The footer then shows the site at the right end, for example
-   `Site MCM`, a middle dot, and `cm01.contoso.com`. The footer is read-only. Click the
+   `Site MCM`, a middle dot, and `cm01.contoso.com`. The footer is read-only. Select the
    site text to open Options.
 4. Optional: under **Options > Scan**, clear the areas you do not need.
    On a large site, leave the three areas marked slow for a separate
    run. A pause between provider calls, in milliseconds, spaces the scan
    queries out on a busy SMS Provider; the default is 0.
-5. Click **Scan** on a Scan view, or **Refresh All** on a Live view.
+5. Select **Scan** on a Scan view, or **Refresh All** on a Live view.
    **Cancel** on the progress overlay stops either one.
 
 ## Checks
@@ -114,9 +114,9 @@ Stable check IDs so findings and reports stay comparable across scans:
 | TSQ-02 | Warning | Custom boot images / driver packages nothing references |
 | TSQ-03 | Warning | Applications in a task sequence without the setting that lets a task sequence install them |
 | TSQ-04 | Error | Applications in a task sequence with source files and content on no distribution point |
-| UPD-01 | Warning | Update group over the documented expired-update ratio threshold; superseded presence is reported separately |
+| UPD-01 | Warning | Software update group over the documented expired-update ratio threshold; superseded presence is reported separately |
 | UPD-03 | Error/Warning/Info | ADR erroring / stale / disabled |
-| UPD-04 | Warning | Update groups over the limit of 1000 updates in one deployment |
+| UPD-04 | Warning | Software update groups over the limit of 1000 updates in one deployment |
 | UPD-05 | Info | Deployment packages that still hold content for expired updates |
 | DPT-01 | Warning | Distribution points in no boundary group |
 | DPT-02 | Info | Distribution point groups with no members |
@@ -140,7 +140,7 @@ sensible defaults in `Get-HygieneDefaultThresholds`.
 
 ## How a scan works
 
-One prefetch pass pulls the datasets the selected scan areas need. The
+One prefetch pass queries the datasets the selected scan areas need. The
 reads are bulk `Get-CM*` cmdlets and column-restricted WQL queries. All
 reads use the console's provider connection under your Configuration
 Manager role. The checks run as pure functions over that data. A dataset that fails

@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     Import this module to get:
-      - Structured logging and CM site connection management via the
+      - Structured logging and ConfigMgr site connection management by using the
         vendored SuiteCommon module (Lib\SuiteCommon)
       - Scan scopes (Get-HygieneScanScope, Get-HygieneRequiredDataset)
       - Site data prefetch limited to the datasets a scope needs
@@ -98,7 +98,7 @@ function Get-HygieneCheckCatalog {
         [pscustomobject]@{ Id = 'TSQ-02'; Category = 'Task Sequences'; Severity = 'Warning'; Title = 'Boot image or driver package referenced by nothing' }
         [pscustomobject]@{ Id = 'TSQ-03'; Category = 'Task Sequences'; Severity = 'Warning'; Title = 'Application in a task sequence without the task sequence install setting' }
         [pscustomobject]@{ Id = 'TSQ-04'; Category = 'Task Sequences'; Severity = 'Error';   Title = 'Application in a task sequence with content on no distribution point' }
-        [pscustomobject]@{ Id = 'UPD-01'; Category = 'Updates';      Severity = 'Warning'; Title = 'Update group with high expired-update ratio' }
+        [pscustomobject]@{ Id = 'UPD-01'; Category = 'Updates';      Severity = 'Warning'; Title = 'Software update group with a high expired-update ratio' }
         [pscustomobject]@{ Id = 'UPD-03'; Category = 'Updates';      Severity = 'Warning'; Title = 'Automatic deployment rule disabled, stale, or erroring' }
         [pscustomobject]@{ Id = 'MNT-01'; Category = 'Site';         Severity = 'Info';    Title = 'Recommended maintenance tasks disabled' }
         [pscustomobject]@{ Id = 'MNT-02'; Category = 'Site';         Severity = 'Warning'; Title = 'Site backup task disabled' }
@@ -117,7 +117,7 @@ function Get-HygieneCheckCatalog {
         [pscustomobject]@{ Id = 'DPL-03'; Category = 'Deployments';  Severity = 'Info';    Title = 'Available deployment with no takers' }
         [pscustomobject]@{ Id = 'DPL-04'; Category = 'Deployments';  Severity = 'Warning'; Title = 'Required deployment to a built-in all-resources collection' }
         [pscustomobject]@{ Id = 'DPL-05'; Category = 'Deployments';  Severity = 'Warning'; Title = 'Deployment of a disabled task sequence or program' }
-        [pscustomobject]@{ Id = 'UPD-04'; Category = 'Updates';      Severity = 'Warning'; Title = 'Update group over the per-deployment update limit' }
+        [pscustomobject]@{ Id = 'UPD-04'; Category = 'Updates';      Severity = 'Warning'; Title = 'Software update group over the per-deployment update limit' }
         [pscustomobject]@{ Id = 'UPD-05'; Category = 'Updates';      Severity = 'Info';    Title = 'Deployment package holding expired update content' }
         [pscustomobject]@{ Id = 'DPT-01'; Category = 'Distribution Points'; Severity = 'Warning'; Title = 'Distribution point in no boundary group' }
         [pscustomobject]@{ Id = 'DPT-02'; Category = 'Distribution Points'; Severity = 'Info';    Title = 'Distribution point group with no members' }
@@ -312,7 +312,7 @@ function Get-HygieneRequiredDataset {
 function Get-HygieneData {
     <#
     .SYNOPSIS
-        Pulls the datasets the selected checks need, one query per dataset.
+        Queries the datasets the selected checks need, one query per dataset.
 
     .DESCRIPTION
         Each dataset degrades to an empty set on failure with a note in
@@ -1159,7 +1159,7 @@ function Test-HygDeploymentPastDeadlineFailures {
             -ObjectType 'Deployment' -ObjectId ([string]$d.CollectionID) -ObjectName ("{0} -> {1}" -f $d.SoftwareName, $d.CollectionName) `
             -Evidence ("Required deployment passed its deadline {0} (over {1} days ago) with {2} of {3} targeted clients in error ({4}%)." -f $d.EnforcementDeadline, $grace, $d.NumberErrors, $d.NumberTargeted, $pct) `
             -Recommendation 'Investigate the client errors; a deployment stuck past deadline at this failure rate needs a fix or retirement, not more time.' `
-            -FixScript ("# Triage first: deployment status for '{0}' on collection '{1}' in the console or via Get-CMDeployment" -f $d.SoftwareName, $d.CollectionName)
+            -FixScript ("# Triage first: deployment status for '{0}' on collection '{1}' in the console or by using Get-CMDeployment" -f $d.SoftwareName, $d.CollectionName)
     }
 }
 
@@ -1489,7 +1489,7 @@ function Test-HygTaskSequenceApplications {
 function Test-HygUpdateGroupChecks {
     <#
     .SYNOPSIS
-        UPD-01: update groups with a high expired-update ratio.
+        UPD-01: software update groups with a high expired-update ratio.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Runs the update-group check family by design.')]
     param(
@@ -2191,7 +2191,7 @@ function Test-HygAppContentPath {
     <#
     .SYNOPSIS
         APP-04: deployment-type content source folders that are missing or
-        unreachable from this workstation.
+        unreachable from this computer.
 
     .DESCRIPTION
         Probes each unique content location once with a bounded Test-Path.
@@ -2239,14 +2239,14 @@ function Test-HygAppContentPath {
         if ($checked[$path] -eq 'Unknown') {
             New-HygieneFinding -CheckId 'APP-04' -Severity Info -Category 'Applications' `
                 -ObjectType 'DeploymentType' -ObjectId (& $appIdOf $loc.AppCIID) -ObjectName ("{0} / {1}" -f $loc.AppName, $loc.DTName) `
-                -Evidence ("Content source '{0}' did not answer within {1}s from this workstation; its state is unknown, not missing." -f $path, [int]($ProbeTimeoutMs / 1000)) `
+                -Evidence ("Content source '{0}' did not answer within {1}s from this computer; its state is unknown, not missing." -f $path, [int]($ProbeTimeoutMs / 1000)) `
                 -Recommendation 'Probe the path from the site server, where rights and routes may differ.' `
                 -FixScript ("# From the site server: Test-Path -LiteralPath '{0}'" -f (ConvertTo-HygQuotedLiteral $path))
         }
         else {
             New-HygieneFinding -CheckId 'APP-04' -Severity Warning -Category 'Applications' `
                 -ObjectType 'DeploymentType' -ObjectId (& $appIdOf $loc.AppCIID) -ObjectName ("{0} / {1}" -f $loc.AppName, $loc.DTName) `
-                -Evidence ("Content source '{0}' is missing or unreachable from this workstation; the site server may still reach it, but content updates run from a session that cannot will fail." -f $path) `
+                -Evidence ("Content source '{0}' is missing or unreachable from this computer; the site server may still reach it, but content updates run from a session that cannot will fail." -f $path) `
                 -Recommendation 'Verify from the site server; restore the source folder, correct the deployment type content location, or fix share permissions.' `
                 -FixScript ("# Console: '{0}' > Deployment Types > '{1}' > Content - correct the content location" -f $loc.AppName, $loc.DTName)
         }
@@ -2923,7 +2923,7 @@ function Invoke-HygieneFix {
         Executes one finding's fix script against the connected site.
 
     .DESCRIPTION
-        Must be called from the CM site drive. The exact script is logged
+        Must be called from the ConfigMgr site drive. The exact script is logged
         before execution and the outcome after, so the log carries a
         complete record of every mutation this tool performs. The script
         runs with ErrorAction Stop, for terminating and non-terminating
@@ -2944,7 +2944,7 @@ function Invoke-HygieneFix {
         return [pscustomobject]@{ Success = $false; Output = ''; ErrorMessage = 'This finding has a display-only fix script; nothing to execute.' }
     }
     if ((Get-Location).Provider.Name -ne 'CMSite') {
-        return [pscustomobject]@{ Success = $false; Output = ''; ErrorMessage = 'Fix execution requires the CM site drive as the current location.' }
+        return [pscustomobject]@{ Success = $false; Output = ''; ErrorMessage = 'Fix execution requires the ConfigMgr site drive as the current location.' }
     }
     if (-not $PSCmdlet.ShouldProcess(("[{0}] {1}" -f $Finding.CheckId, $Finding.ObjectName), $fixScript)) {
         return [pscustomobject]@{ Success = $false; Output = ''; ErrorMessage = 'Not run: the fix was skipped by -WhatIf or declined at the confirmation.' }
@@ -3112,7 +3112,7 @@ function Test-HygCollectionEvaluationChecks {
         Rules per the Learn collection best-practices and evaluation
         docs: full updates are only a backup on incremental collections;
         direct-rule-only collections with a non-incremental limiting
-        collection need no schedule; deep include/exclude chains pull
+        collection need no schedule; deep include/exclude chains add
         every referenced collection into the evaluation graph; reference
         cycles are never valid; clustered full-update start times create
         evaluation hot spots. Built-in (SMS*) collections are exempt -
@@ -3193,7 +3193,7 @@ function Test-HygCollectionEvaluationChecks {
                 -ObjectType 'Collection' -ObjectId $c.CollectionID -ObjectName $c.Name `
                 -Evidence ("Include/exclude references chain {0} levels deep (threshold {1}). Every referenced collection is evaluated to build this membership, and a change anywhere in the chain re-evaluates the whole branch." -f $d, $maxDepth) `
                 -Recommendation 'Flatten the chain: replace nested include/exclude rules with a WQL query rule using a ResourceId subselect against the target collection.' `
-                -FixScript ("# Replace include/exclude rules on '{0}' with a query rule, e.g.: select * from SMS_R_System where SMS_R_System.ResourceId in (select ResourceID from SMS_CM_RES_COLL_<CollectionID>)" -f $c.Name)
+                -FixScript ("# Replace include/exclude rules on '{0}' with a query rule, for example: select * from SMS_R_System where SMS_R_System.ResourceId in (select ResourceID from SMS_CM_RES_COLL_<CollectionID>)" -f $c.Name)
         }
     }
 

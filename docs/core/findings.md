@@ -18,7 +18,7 @@ Use it after a scan, to decide for each finding whether to fix it, to suppress i
 
 ## Steps
 
-### Read a finding
+### View a finding
 
 1. Select **Scan**, or open the view after a scan.
 2. Select a row. The pane below the grid shows the check, the severity, the object, the evidence and the recommendation. It also shows the fix script, or the text `Fix guidance (display-only, nothing to execute)`.
@@ -64,7 +64,7 @@ The **New** column marks a finding that the previous scan did not have. The log 
 
 1. Select a row whose fix script is shown. **Run Fix** becomes enabled. A selection of several rows runs as one bulk fix.
 2. Select **Run Fix**. A dialog shows the exact script and the site code. The title is `Run Fix for <check ID>?` for one row or `Run <n> Fixes?` for several rows.
-3. Read the script. Select **Yes** to run it or **No** to cancel.
+3. Review the script. Select **Yes** to run it or **No** to cancel.
 
 ![The Run Fix confirmation dialog](../images/run-fix-confirm.png)
 
@@ -107,7 +107,7 @@ The CSV and the HTML files carry the evidence, the recommendation and the fix sc
 |---|---|---|
 | **Run Fix** is disabled. | No row is selected, or the finding has guidance only. | Select a row with a fix script. |
 | The grid is empty after a scan. | A filter hides the rows, or the scan found nothing. | Clear the filters. Select **Show Suppressed**. |
-| The status bar shows `Fix failed - see log.` | The fix script failed on the site. | Read the log line `Fix failed [<check>]`. |
+| The status bar shows `Fix failed - see log.` | The fix script failed on the site. | Review the log line `Fix failed [<check>]`. |
 
 ## Links
 
