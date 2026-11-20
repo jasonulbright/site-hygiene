@@ -4,8 +4,8 @@
 #
 # Rules:
 #   1. Every control in the audited list has a ToolTip.
-#   2. A ToolTip is ASCII and ends in a period. The ToolTip of an audited control has at most 200 characters.
-#   3. The progress bar of the Fix Supersedence window and the Show Blockers window starts hidden.
+#   2. A ToolTip is ASCII and ends in a period. The ToolTip of an audited control has at most 159 characters.
+#   3. The progress bar of the Fix Supersedence window starts hidden.
 #
 # To audit a new control: add its x:Name to the list in BeforeDiscovery. A control that is not in the list
 # needs no ToolTip (read-only output, dialog buttons whose label says it all, grid columns, hidden bars).
@@ -28,7 +28,7 @@ BeforeDiscovery {
 BeforeAll {
     $script:Root = Split-Path -Path $PSScriptRoot -Parent
     $script:XamlNs = 'http://schemas.microsoft.com/winfx/2006/xaml'
-    $script:MaxLength = 200
+    $script:MaxLength = 159
 
     # Every XAML document of the app: MainWindow.xaml and each XAML here-string of the script.
     function Get-XamlDocument {

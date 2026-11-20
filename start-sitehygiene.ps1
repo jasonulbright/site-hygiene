@@ -2029,10 +2029,10 @@ function Show-OptionsDialog {
                          Controls:TextBoxHelper.Watermark="cm01.contoso.com"/>
                 <TextBlock Style="{StaticResource OptHint}" Text="The app uses these values for the ConfigMgr drive. Every scan and live query runs through this connection with your ConfigMgr security role. A scan changes nothing, so the account needs read access only."/>
                 <TextBlock Style="{StaticResource OptLabel}" Text="SQL Server (Optional)"/>
-                <TextBox x:Name="txtSqlServer" ToolTip="Enter the SQL Server that hosts the site database. Leave it empty to skip the Client Health and Inactive Devices views." FontSize="12" Padding="6,4,6,4"
+                <TextBox x:Name="txtSqlServer" ToolTip="Enter the SQL Server that hosts the site database, or leave it empty to skip the Client Health and Inactive Devices views." FontSize="12" Padding="6,4,6,4"
                          Controls:TextBoxHelper.Watermark="cm01.contoso.com (blank to skip SQL views)"/>
                 <TextBlock Style="{StaticResource OptHint}" Text="The SQL Server instance that hosts the site database CM_&lt;site&gt;. Use the FQDN or FQDN\InstanceName. Leave the box empty to skip the Client Health and Inactive Devices views."/>
-                <CheckBox x:Name="chkSqlTrustCert" ToolTip="Connect to SQL Server without validating its certificate. The connection stays encrypted." Content="Trust the SQL Server Certificate" FontSize="12" Margin="0,10,0,0"/>
+                <CheckBox x:Name="chkSqlTrustCert" ToolTip="Connect to SQL Server without validating its certificate, while the connection stays encrypted." Content="Trust the SQL Server Certificate" FontSize="12" Margin="0,10,0,0"/>
                 <TextBlock Style="{StaticResource OptHint}" Text="The connection stays encrypted, but the app does not validate the server certificate. Clear this box when this computer trusts the SQL Server certificate."/>
             </StackPanel>
             <StackPanel x:Name="paneScope" Visibility="Collapsed">
@@ -2047,7 +2047,7 @@ function Show-OptionsDialog {
                            FontSize="11" TextWrapping="Wrap" Margin="0,10,0,0"
                            Foreground="{DynamicResource MahApps.Brushes.Gray1}"/>
                 <TextBlock Style="{StaticResource OptLabel}" Text="Pause Between Provider Calls (Milliseconds)"/>
-                <TextBox x:Name="txtPacing" ToolTip="Enter the pause in milliseconds between the queries of a scan. Enter 0 for no pause." FontSize="12" Padding="6,4,6,4" Width="120" HorizontalAlignment="Left" MaxLength="5"/>
+                <TextBox x:Name="txtPacing" ToolTip="Enter the pause in milliseconds between the queries of a scan, or 0 for no pause." FontSize="12" Padding="6,4,6,4" Width="120" HorizontalAlignment="Left" MaxLength="5"/>
                 <TextBlock Style="{StaticResource OptHint}" Text="The scan runs its queries one after another. A pause spaces them out on a busy SMS Provider. Enter 0 for no pause."/>
                 <TextBlock Style="{StaticResource OptLabel}" Text="Report Deployments Older Than (Days)"/>
                 <TextBox x:Name="txtDeploymentOldDays" ToolTip="Enter the age in days after which check DPL-06 reports a deployment." FontSize="12" Padding="6,4,6,4" Width="120" HorizontalAlignment="Left" MaxLength="5"/>
@@ -2056,7 +2056,7 @@ function Show-OptionsDialog {
             <StackPanel x:Name="paneLive" Visibility="Collapsed">
                 <TextBlock Text="Live" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,10"/>
                 <TextBlock Style="{StaticResource OptLabel}" Text="Auto-Refresh Interval (Minutes)"/>
-                <ComboBox x:Name="cboRefreshInterval" ToolTip="Select the minutes between automatic refreshes of the live views. 0 turns the refresh off." Width="160" HorizontalAlignment="Left" FontSize="12">
+                <ComboBox x:Name="cboRefreshInterval" ToolTip="Select the minutes between automatic refreshes of the live views, or 0 to turn the refresh off." Width="160" HorizontalAlignment="Left" FontSize="12">
                     <ComboBoxItem Content="0"/>
                     <ComboBoxItem Content="5"/>
                     <ComboBoxItem Content="10"/>

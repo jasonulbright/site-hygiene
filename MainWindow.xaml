@@ -807,7 +807,7 @@
 
                     <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,4,0,10">
                         <TextBlock Text="Metric:" VerticalAlignment="Center" FontSize="12" FontWeight="Bold" Margin="0,0,6,0"/>
-                        <ComboBox x:Name="cboTrendMetric" ToolTip="Select the live metric to chart." Width="240" FontSize="12" Margin="0,0,16,0"/>
+                        <ComboBox x:Name="cboTrendMetric" ToolTip="Select the recorded metric to chart over time." Width="240" FontSize="12" Margin="0,0,16,0"/>
                         <TextBlock Text="Range:" VerticalAlignment="Center" FontSize="12" FontWeight="Bold" Margin="0,0,6,0"/>
                         <ComboBox x:Name="cboTrendRange" ToolTip="Select how many days of history the chart shows." Width="110" FontSize="12">
                             <ComboBoxItem Content="7 Days"/>
