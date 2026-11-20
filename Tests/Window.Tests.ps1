@@ -160,7 +160,10 @@ Describe 'Dialog windows' -Skip:(-not $script:WindowGuard.Allowed) {
             $w = [System.Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $x))
             # A name inside a ControlTemplate belongs to the template, not to the window, so FindName cannot find it.
             $names = @($x.SelectNodes("//*[@*[local-name()='Name']][not(ancestor::*[local-name()='ControlTemplate'])]") | ForEach-Object { $_.GetAttribute('Name', 'http://schemas.microsoft.com/winfx/2006/xaml') })
-            [PSCustomObject]@{ Type = $w.GetType().Name; Missing = @($names | Where-Object { -not $w.FindName($_) }); Count = @($names).Count }
+            $result = [PSCustomObject]@{ Type = $w.GetType().Name; Missing = @($names | Where-Object { -not $w.FindName($_) }); Count = @($names).Count }
+            # The window was never shown. Closing it releases its handles: each dialog loaded here would otherwise stay until the process ends.
+            $w.Close()
+            $result
         }
         $r.Type | Should -Be 'MetroWindow'
         $r.Missing | Should -BeNullOrEmpty
