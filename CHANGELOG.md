@@ -20,6 +20,7 @@
 
 - Use ConfigMgr terms in the window text, the log messages, the README and the guide.
 - Name the software update group in the titles of checks UPD-01 and UPD-04.
+- Added tooltips to 21 controls that had none: the filter box, the two Relationships tabs, the two Trends lists, the five Options categories and the Options settings, and Remove References in Fix Supersedence.
 
 ### Fixed
 
