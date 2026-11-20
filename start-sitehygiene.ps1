@@ -2010,11 +2010,11 @@ function Show-OptionsDialog {
         </Grid.RowDefinitions>
         <Border Grid.Column="0" Grid.Row="0" Padding="6,12,0,12">
             <StackPanel>
-                <Button x:Name="btnCatConnection" Content="Connection" Style="{StaticResource CategoryRowStyle}"/>
-                <Button x:Name="btnCatScope"      Content="Scan"       Style="{StaticResource CategoryRowStyle}"/>
-                <Button x:Name="btnCatLive"       Content="Live"       Style="{StaticResource CategoryRowStyle}"/>
-                <Button x:Name="btnCatAlerts"     Content="Alerts"     Style="{StaticResource CategoryRowStyle}"/>
-                <Button x:Name="btnCatAbout"      Content="About"      Style="{StaticResource CategoryRowStyle}"/>
+                <Button x:Name="btnCatConnection" Content="Connection" Style="{StaticResource CategoryRowStyle}" ToolTip="Show the ConfigMgr connection settings: the site code, the SMS Provider and the SQL Server."/>
+                <Button x:Name="btnCatScope"      Content="Scan"       Style="{StaticResource CategoryRowStyle}" ToolTip="Show the scan settings: the areas to scan, the pause between calls and the deployment age."/>
+                <Button x:Name="btnCatLive"       Content="Live"       Style="{StaticResource CategoryRowStyle}" ToolTip="Show the auto-refresh interval and the inactivity threshold."/>
+                <Button x:Name="btnCatAlerts"     Content="Alerts"     Style="{StaticResource CategoryRowStyle}" ToolTip="Show the threshold alert settings."/>
+                <Button x:Name="btnCatAbout"      Content="About"      Style="{StaticResource CategoryRowStyle}" ToolTip="Show the version, the author and the license of the app."/>
             </StackPanel>
         </Border>
         <Border Grid.Column="1" Grid.Row="0" Background="{DynamicResource MahApps.Brushes.Gray8}"/>
@@ -2022,17 +2022,17 @@ function Show-OptionsDialog {
             <StackPanel x:Name="paneConnection" Visibility="Visible">
                 <TextBlock Text="Configuration Manager Connection" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,10"/>
                 <TextBlock Style="{StaticResource OptLabel}" FontSize="14" FontWeight="Bold" Text="Site Code"/>
-                <TextBox x:Name="txtSiteCode" FontSize="12" Padding="6,4,6,4" MaxLength="3"
+                <TextBox x:Name="txtSiteCode" ToolTip="Enter the three-character site code of the ConfigMgr site." FontSize="12" Padding="6,4,6,4" MaxLength="3"
                          Controls:TextBoxHelper.Watermark="MCM" Width="120" HorizontalAlignment="Left"/>
                 <TextBlock Style="{StaticResource OptLabel}" FontSize="14" FontWeight="Bold" Text="SMS Provider FQDN"/>
-                <TextBox x:Name="txtSmsProvider" FontSize="12" Padding="6,4,6,4"
+                <TextBox x:Name="txtSmsProvider" ToolTip="Enter the fully qualified domain name of the server that hosts the SMS Provider." FontSize="12" Padding="6,4,6,4"
                          Controls:TextBoxHelper.Watermark="cm01.contoso.com"/>
                 <TextBlock Style="{StaticResource OptHint}" Text="The app uses these values for the ConfigMgr drive. Every scan and live query runs through this connection with your ConfigMgr security role. A scan changes nothing, so the account needs read access only."/>
                 <TextBlock Style="{StaticResource OptLabel}" Text="SQL Server (Optional)"/>
-                <TextBox x:Name="txtSqlServer" FontSize="12" Padding="6,4,6,4"
+                <TextBox x:Name="txtSqlServer" ToolTip="Enter the SQL Server that hosts the site database. Leave it empty to skip the Client Health and Inactive Devices views." FontSize="12" Padding="6,4,6,4"
                          Controls:TextBoxHelper.Watermark="cm01.contoso.com (blank to skip SQL views)"/>
                 <TextBlock Style="{StaticResource OptHint}" Text="The SQL Server instance that hosts the site database CM_&lt;site&gt;. Use the FQDN or FQDN\InstanceName. Leave the box empty to skip the Client Health and Inactive Devices views."/>
-                <CheckBox x:Name="chkSqlTrustCert" Content="Trust the SQL Server Certificate" FontSize="12" Margin="0,10,0,0"/>
+                <CheckBox x:Name="chkSqlTrustCert" ToolTip="Connect to SQL Server without validating its certificate. The connection stays encrypted." Content="Trust the SQL Server Certificate" FontSize="12" Margin="0,10,0,0"/>
                 <TextBlock Style="{StaticResource OptHint}" Text="The connection stays encrypted, but the app does not validate the server certificate. Clear this box when this computer trusts the SQL Server certificate."/>
             </StackPanel>
             <StackPanel x:Name="paneScope" Visibility="Collapsed">
@@ -2047,16 +2047,16 @@ function Show-OptionsDialog {
                            FontSize="11" TextWrapping="Wrap" Margin="0,10,0,0"
                            Foreground="{DynamicResource MahApps.Brushes.Gray1}"/>
                 <TextBlock Style="{StaticResource OptLabel}" Text="Pause Between Provider Calls (Milliseconds)"/>
-                <TextBox x:Name="txtPacing" FontSize="12" Padding="6,4,6,4" Width="120" HorizontalAlignment="Left" MaxLength="5"/>
+                <TextBox x:Name="txtPacing" ToolTip="Enter the pause in milliseconds between the queries of a scan. Enter 0 for no pause." FontSize="12" Padding="6,4,6,4" Width="120" HorizontalAlignment="Left" MaxLength="5"/>
                 <TextBlock Style="{StaticResource OptHint}" Text="The scan runs its queries one after another. A pause spaces them out on a busy SMS Provider. Enter 0 for no pause."/>
                 <TextBlock Style="{StaticResource OptLabel}" Text="Report Deployments Older Than (Days)"/>
-                <TextBox x:Name="txtDeploymentOldDays" FontSize="12" Padding="6,4,6,4" Width="120" HorizontalAlignment="Left" MaxLength="5"/>
+                <TextBox x:Name="txtDeploymentOldDays" ToolTip="Enter the age in days after which check DPL-06 reports a deployment." FontSize="12" Padding="6,4,6,4" Width="120" HorizontalAlignment="Left" MaxLength="5"/>
                 <TextBlock Style="{StaticResource OptHint}" Text="Check DPL-06 reports a deployment that is older. The default is 365 days."/>
             </StackPanel>
             <StackPanel x:Name="paneLive" Visibility="Collapsed">
                 <TextBlock Text="Live" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,10"/>
                 <TextBlock Style="{StaticResource OptLabel}" Text="Auto-Refresh Interval (Minutes)"/>
-                <ComboBox x:Name="cboRefreshInterval" Width="160" HorizontalAlignment="Left" FontSize="12">
+                <ComboBox x:Name="cboRefreshInterval" ToolTip="Select the minutes between automatic refreshes of the live views. 0 turns the refresh off." Width="160" HorizontalAlignment="Left" FontSize="12">
                     <ComboBoxItem Content="0"/>
                     <ComboBoxItem Content="5"/>
                     <ComboBoxItem Content="10"/>
@@ -2066,7 +2066,7 @@ function Show-OptionsDialog {
                 </ComboBox>
                 <TextBlock Style="{StaticResource OptHint}" Text="The timer starts after the first live refresh of a session, or at launch when the window last showed a Live view. 0 turns it off. A manual refresh resets the timer. Use Pause Auto-Refresh on the action bar to stop it."/>
                 <TextBlock Style="{StaticResource OptLabel}" Text="Inactivity Threshold (Days)"/>
-                <ComboBox x:Name="cboInactiveDays" Width="160" HorizontalAlignment="Left" FontSize="12">
+                <ComboBox x:Name="cboInactiveDays" ToolTip="Select the days without contact after which a device shows in the Inactive Devices view." Width="160" HorizontalAlignment="Left" FontSize="12">
                     <ComboBoxItem Content="7"/>
                     <ComboBoxItem Content="14"/>
                     <ComboBoxItem Content="30"/>
@@ -2077,11 +2077,11 @@ function Show-OptionsDialog {
             </StackPanel>
             <StackPanel x:Name="paneAlerts" Visibility="Collapsed">
                 <TextBlock Text="Alerts" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,10"/>
-                <CheckBox x:Name="chkAlertsEnabled" Content="Enable Threshold Alerts" FontSize="12" Margin="0,4,0,0"/>
+                <CheckBox x:Name="chkAlertsEnabled" ToolTip="Show a Windows toast notification when a live metric crosses its limit after a refresh." Content="Enable Threshold Alerts" FontSize="12" Margin="0,4,0,0"/>
                 <TextBlock Style="{StaticResource OptHint}"
                            Text="After each live refresh, an alert shows when a metric crosses its limit. The metrics are a critical site component or site system, a critical distribution point, a failed content distribution, and deployment compliance below the floor. An alert shows again only after the metric recovers and crosses its limit again."/>
                 <TextBlock Style="{StaticResource OptLabel}" Text="Deployment Compliance Floor (%)"/>
-                <ComboBox x:Name="cboAlertCompliance" Width="160" HorizontalAlignment="Left" FontSize="12">
+                <ComboBox x:Name="cboAlertCompliance" ToolTip="Select the compliance percentage below which a deployment raises an alert." Width="160" HorizontalAlignment="Left" FontSize="12">
                     <ComboBoxItem Content="70"/>
                     <ComboBoxItem Content="80"/>
                     <ComboBoxItem Content="90"/>
@@ -2363,7 +2363,7 @@ function Show-SupersedenceFixDialog {
             </DataGrid.Columns>
         </DataGrid>
         <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
-            <Button x:Name="btnApply"  Content="Remove References" Style="{StaticResource DialogAccentButton}" MinWidth="150" IsEnabled="False"/>
+            <Button x:Name="btnApply"  Content="Remove References" ToolTip="Remove the listed references from the applications, then run the check again on them." Style="{StaticResource DialogAccentButton}" MinWidth="150" IsEnabled="False"/>
             <Button x:Name="btnCancel" Content="Cancel" Style="{StaticResource DialogButton}"/>
         </StackPanel>
     </Grid>

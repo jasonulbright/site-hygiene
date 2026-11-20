@@ -328,7 +328,7 @@
                             Visibility="Collapsed"
                             ToolTip="Pause or resume the automatic refresh."/>
 
-                    <TextBox x:Name="txtFilter"
+                    <TextBox x:Name="txtFilter" ToolTip="Type text to show only the rows of the current view that contain it."
                              Grid.Column="2"
                              FontSize="12"
                              Padding="6,4,6,4"
@@ -490,7 +490,7 @@
 
                     <TabControl x:Name="tabRelationships" Grid.Row="0" Margin="0,8,0,0"
                                 Controls:HeaderedControlHelper.HeaderFontSize="13">
-                        <TabItem><TabItem.Header><TextBlock Text="Inventory" Style="{StaticResource TabHeaderText}" Foreground="{DynamicResource MahApps.Brushes.ThemeForeground}"/></TabItem.Header>
+                        <TabItem ToolTip="Show each relationship as a row in a list."><TabItem.Header><TextBlock Text="Inventory" Style="{StaticResource TabHeaderText}" Foreground="{DynamicResource MahApps.Brushes.ThemeForeground}"/></TabItem.Header>
                             <DataGrid x:Name="gridRelationships"
                                       SelectionMode="Single"
                                       Style="{StaticResource ViewDataGrid}"
@@ -513,7 +513,7 @@
                                 </DataGrid.Columns>
                             </DataGrid>
                         </TabItem>
-                        <TabItem><TabItem.Header><TextBlock Text="Tree" Style="{StaticResource TabHeaderText}" Foreground="{DynamicResource MahApps.Brushes.ThemeForeground}"/></TabItem.Header>
+                        <TabItem ToolTip="Show the relationships as a tree."><TabItem.Header><TextBlock Text="Tree" Style="{StaticResource TabHeaderText}" Foreground="{DynamicResource MahApps.Brushes.ThemeForeground}"/></TabItem.Header>
                             <TreeView x:Name="treeRelationships"
                                       FontSize="12"
                                       BorderThickness="0"
@@ -807,9 +807,9 @@
 
                     <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,4,0,10">
                         <TextBlock Text="Metric:" VerticalAlignment="Center" FontSize="12" FontWeight="Bold" Margin="0,0,6,0"/>
-                        <ComboBox x:Name="cboTrendMetric" Width="240" FontSize="12" Margin="0,0,16,0"/>
+                        <ComboBox x:Name="cboTrendMetric" ToolTip="Select the live metric to chart." Width="240" FontSize="12" Margin="0,0,16,0"/>
                         <TextBlock Text="Range:" VerticalAlignment="Center" FontSize="12" FontWeight="Bold" Margin="0,0,6,0"/>
-                        <ComboBox x:Name="cboTrendRange" Width="110" FontSize="12">
+                        <ComboBox x:Name="cboTrendRange" ToolTip="Select how many days of history the chart shows." Width="110" FontSize="12">
                             <ComboBoxItem Content="7 Days"/>
                             <ComboBoxItem Content="30 Days" IsSelected="True"/>
                             <ComboBoxItem Content="90 Days"/>
