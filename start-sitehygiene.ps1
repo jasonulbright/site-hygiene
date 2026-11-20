@@ -96,6 +96,7 @@ function Get-ShPreferences {
         ProviderPacingMs      = 0
         AutoRefreshMinutes    = 15
         InactiveThresholdDays = 14
+        DeploymentOldDays     = 365
         AlertsEnabled         = $true
         AlertCompliancePct    = 80
     }
@@ -165,6 +166,7 @@ $btnSuppress        = $window.FindName('btnSuppress')
 $btnUnsuppress      = $window.FindName('btnUnsuppress')
 $btnRunFix          = $window.FindName('btnRunFix')
 $btnFixSupersedence = $window.FindName('btnFixSupersedence')
+$btnShowBlockers = $window.FindName('btnShowBlockers')
 $chkShowSuppressed  = $window.FindName('chkShowSuppressed')
 $txtSuppressCount   = $window.FindName('txtSuppressCount')
 $txtFilter          = $window.FindName('txtFilter')
@@ -270,7 +272,7 @@ $script:LiveViews = @('Deployments', 'Content', 'DPs', 'Clients', 'Inactive', 'S
 $script:ActiveView = 'Findings'
 
 # Every button of the main window takes the same themed style. SuiteCommon paints them: blue with white text in the light theme, dark in the dark theme.
-$script:WorkflowButtons = @($btnScan, $btnRefreshAll, $btnPauseResume, $btnSuppress, $btnUnsuppress, $btnRunFix, $btnFixSupersedence, $btnExportCsv, $btnExportHtml, $btnCopySummary, $btnCancelScan)
+$script:WorkflowButtons = @($btnScan, $btnRefreshAll, $btnPauseResume, $btnSuppress, $btnUnsuppress, $btnRunFix, $btnFixSupersedence, $btnShowBlockers, $btnExportCsv, $btnExportHtml, $btnCopySummary, $btnCancelScan)
 
 Initialize-SuiteTheme -Window $window `
     -IsDarkGetter { [bool]$global:Prefs['DarkMode'] } `
@@ -417,6 +419,7 @@ $script:SummaryRows      = @()
 $script:DatasetNotes     = @()
 $script:LastScanTime     = $null
 $script:RelData          = $null
+$script:BlockerData      = $null
 $script:RelationshipRows = @()
 
 # === Live state ===
@@ -686,6 +689,7 @@ $btnUnsuppress.Add_Click({
 $gridFindings.Add_SelectionChanged({
     $row = $gridFindings.SelectedItem
     $btnFixSupersedence.IsEnabled = (@(Get-SupersedenceFixSelection).Count -gt 0)
+    $btnShowBlockers.IsEnabled = ($row -and [string]$row.ObjectType -eq 'Application' -and [string]$row.ObjectId -like '*/Application_*' -and $script:BlockerData -and $script:RelData)
     if (-not $row) {
         $txtFindingDetail.Text = 'Select a finding to see its evidence, recommendation, and the fix script it would take.'
         return
@@ -892,7 +896,7 @@ function Invoke-Scan {
     Initialize-BgRunspace
     Dispose-BgWork
     $script:BgKind = 'Scan'
-    $script:BgState = [hashtable]::Synchronized(@{ Step = 'Connecting...'; Done = $false; Findings = $null; Summary = $null; Notes = $null; RelData = $null; ErrorMsg = $null })
+    $script:BgState = [hashtable]::Synchronized(@{ Step = 'Connecting...'; Done = $false; Findings = $null; Summary = $null; Notes = $null; RelData = $null; BlockerData = $null; ErrorMsg = $null })
     $btnScan.IsEnabled = $false
     $txtProgressTitle.Text = 'Scanning...'
     $txtProgressStep.Text  = 'Connecting...'
@@ -905,6 +909,8 @@ function Invoke-Scan {
     $script:ScanStarted = Get-Date
     $script:BgInfoIndex = 0
     $pacing = [int]$global:Prefs['ProviderPacingMs']
+    $deploymentOldDays = [int]$global:Prefs['DeploymentOldDays']
+    if ($deploymentOldDays -le 0) { $deploymentOldDays = 365 }
     Add-LogLine ('Scan: site={0} provider={1} scope={2} pacing={3}ms' -f $global:Prefs.SiteCode, $global:Prefs.SMSProvider, $(if ($script:ScanIsFull) { 'everything' } else { $scopes -join ', ' }), $pacing)
     Set-StatusText 'Scanning...'
 
@@ -914,7 +920,7 @@ function Invoke-Scan {
     $script:BgPowerShell = [powershell]::Create()
     $script:BgPowerShell.Runspace = $script:BgRunspace
     [void]$script:BgPowerShell.AddScript({
-        param($SiteCode, $SMSProvider, $State, $Scopes, $PacingMs)
+        param($SiteCode, $SMSProvider, $State, $Scopes, $PacingMs, $DeploymentOldDays)
         try {
             if (-not (Test-CMConnection)) {
                 $State.Step = "Connecting to $SiteCode..."
@@ -937,7 +943,9 @@ function Invoke-Scan {
             $data = Get-HygieneData -Datasets @($datasets | Where-Object { $_ -ne 'Relationships' }) -ProgressState $State -PacingMs $PacingMs -AutoInstallByModel $autoInstall
 
             $State.Step = 'Running hygiene checks...'
-            $findings = @(Invoke-HygieneScan -Data $data -RelationshipData $relData -Scopes $Scopes)
+            $thresholds = Get-HygieneDefaultThresholds
+            $thresholds.DeploymentOldDays = [int]$DeploymentOldDays
+            $findings = @(Invoke-HygieneScan -Data $data -Thresholds $thresholds -RelationshipData $relData -Scopes $Scopes)
 
             $notes = @($data.DatasetNotes)
             if ($relData) { $notes += @($relData.DatasetNotes) }
@@ -947,10 +955,12 @@ function Invoke-Scan {
             $State.Summary  = @(Get-HygieneScanSummary -Findings $findings)
             $State.Notes    = $notes
             $State.RelData  = $relData
+            # The datasets that answer what blocks the delete of an application; no query is added for them.
+            $State.BlockerData = [pscustomobject]@{ Applications = @($data.Applications); Deployments = @($data.Deployments); TaskSequences = @($data.TaskSequences) }
         }
         catch { $State.ErrorDetail = $_.Exception.Message; $State.ErrorMsg = 'An error occurred. The log file has the details.' }
         finally { $State.Done = $true }
-    }).AddArgument($siteCode).AddArgument($smsProvider).AddArgument($script:BgState).AddArgument([string[]]$scopes).AddArgument($pacing)
+    }).AddArgument($siteCode).AddArgument($smsProvider).AddArgument($script:BgState).AddArgument([string[]]$scopes).AddArgument($pacing).AddArgument($deploymentOldDays)
 
     $script:BgInvokeHandle = $script:BgPowerShell.BeginInvoke()
     $script:BgTimer = New-Object System.Windows.Threading.DispatcherTimer
@@ -1007,6 +1017,7 @@ function Invoke-Scan {
             $script:SummaryRows  = @($script:BgState.Summary)
             $script:DatasetNotes = @($script:BgState.Notes)
             $script:RelData      = $script:BgState.RelData
+            $script:BlockerData  = $script:BgState.BlockerData
             Update-RelationshipViews
 
             $gridSummary.ItemsSource = $script:SummaryRows
@@ -2038,6 +2049,9 @@ function Show-OptionsDialog {
                 <TextBlock Style="{StaticResource OptLabel}" Text="Pause Between Provider Calls (Milliseconds)"/>
                 <TextBox x:Name="txtPacing" FontSize="12" Padding="6,4,6,4" Width="120" HorizontalAlignment="Left" MaxLength="5"/>
                 <TextBlock Style="{StaticResource OptHint}" Text="The scan runs its queries one after another. A pause spaces them out on a busy SMS Provider. Enter 0 for no pause."/>
+                <TextBlock Style="{StaticResource OptLabel}" Text="Report Deployments Older Than (Days)"/>
+                <TextBox x:Name="txtDeploymentOldDays" FontSize="12" Padding="6,4,6,4" Width="120" HorizontalAlignment="Left" MaxLength="5"/>
+                <TextBlock Style="{StaticResource OptHint}" Text="Check DPL-06 reports a deployment that is older. The default is 365 days."/>
             </StackPanel>
             <StackPanel x:Name="paneLive" Visibility="Collapsed">
                 <TextBlock Text="Live" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,10"/>
@@ -2136,6 +2150,7 @@ function Show-OptionsDialog {
     $txtSqlServer       = $dlg.FindName('txtSqlServer')
     $chkSqlTrustCert    = $dlg.FindName('chkSqlTrustCert')
     $txtPacing          = $dlg.FindName('txtPacing')
+    $txtDeploymentOldDays = $dlg.FindName('txtDeploymentOldDays')
     $panelScopes        = $dlg.FindName('panelScopes')
     $cboRefreshInterval = $dlg.FindName('cboRefreshInterval')
     $cboInactiveDays    = $dlg.FindName('cboInactiveDays')
@@ -2149,6 +2164,7 @@ function Show-OptionsDialog {
     $txtSqlServer.Text   = [string]$global:Prefs.SQLServer
     $chkSqlTrustCert.IsChecked = [bool]$global:Prefs.SqlTrustServerCertificate
     $txtPacing.Text      = [string][int]$global:Prefs.ProviderPacingMs
+    $txtDeploymentOldDays.Text = [string]$(if ([int]$global:Prefs.DeploymentOldDays -gt 0) { [int]$global:Prefs.DeploymentOldDays } else { 365 })
 
     $savedScopes = @(@($global:Prefs['ScanScopes']) | Where-Object { $_ })
     $scopeBoxes = @(Get-HygieneScanScope | ForEach-Object {
@@ -2185,6 +2201,13 @@ function Show-OptionsDialog {
             [void][System.Windows.MessageBox]::Show($dlg, 'The pause must be a whole number of milliseconds from 0 to 60000.', 'Scan')
             return
         }
+        $oldDays = 0
+        if (-not [int]::TryParse(([string]$txtDeploymentOldDays.Text).Trim(), [ref]$oldDays) -or $oldDays -lt 30 -or $oldDays -gt 5000) {
+            & $showPane 'Scope'
+            [void][System.Windows.MessageBox]::Show($dlg, 'The age of an old deployment must be a whole number of days from 30 to 5000.', 'Scan')
+            return
+        }
+        $global:Prefs['DeploymentOldDays'] = $oldDays
         # Empty means everything, so areas added by a later version are
         # scanned without revisiting this dialog.
         $global:Prefs['ScanScopes'] = $(if ($checked.Count -eq $scopeBoxes.Count) { @() } else { $checked })
@@ -2544,6 +2567,100 @@ $btnFixSupersedence.Add_Click({
         foreach ($row in $script:AllFindings) { if ($row.CheckId -eq 'SUP-01' -and @($outcome.Fixed) -contains [string]$row.SuppressKey) { $row.FixState = 'Fixed' } }
         $gridFindings.Items.Refresh()
         Set-StatusText $(if ($outcome.Failed -eq 0) { 'Supersedence fixed - scan again to confirm.' } else { 'Some references failed - see log.' })
+
+# =============================================================================
+# Show Blockers: what blocks the delete of one application. The list is built from the datasets of the last scan, so
+# it reads nothing from the site. A task sequence or a collection that the account may not see is not in them.
+# =============================================================================
+function Show-BlockersDialog {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Modal dialog show; reads as a single action.')]
+    param([Parameter(Mandatory)][string]$ModelName, [Parameter(Mandatory)][string]$Name)
+
+    $blkXaml = @'
+<Controls:MetroWindow
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:Controls="clr-namespace:MahApps.Metro.Controls;assembly=MahApps.Metro"
+    Title="What Blocks The Delete"
+    Width="900" Height="460" MinWidth="560" MinHeight="300"
+    WindowStartupLocation="CenterOwner" TitleCharacterCasing="Normal"
+    GlowBrush="{DynamicResource MahApps.Brushes.Accent}"
+    NonActiveGlowBrush="{DynamicResource MahApps.Brushes.Accent}"
+    BorderThickness="1" ShowIconOnTitleBar="False">
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Controls.xaml" />
+                <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Fonts.xaml" />
+                <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Themes/Dark.Steel.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+            <Style x:Key="ThemedButtonStyle" TargetType="Button" BasedOn="{StaticResource MahApps.Styles.Button.Square}">
+                <Setter Property="BorderBrush" Value="{DynamicResource MahApps.Brushes.Gray2}"/>
+                <Setter Property="Template" Value="{DynamicResource SuiteNeutralButtonTemplate}"/>
+                <Setter Property="Foreground" Value="{DynamicResource MahApps.Brushes.ThemeForeground}"/>
+                <Setter Property="BorderThickness" Value="1"/>
+            </Style>
+            <Style x:Key="DialogButton" TargetType="Button" BasedOn="{StaticResource ThemedButtonStyle}">
+                <Setter Property="Background" Value="{DynamicResource MahApps.Brushes.Gray10}"/>
+                <Setter Property="MinWidth" Value="90"/><Setter Property="Height" Value="32"/>
+                <Setter Property="Margin" Value="0,0,8,0"/>
+                <Setter Property="Controls:ControlsHelper.ContentCharacterCasing" Value="Normal"/>
+            </Style>
+            <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource MahApps.Styles.DataGridColumnHeader}">
+                <Setter Property="Controls:ControlsHelper.ContentCharacterCasing" Value="Normal"/>
+            </Style>
+        </ResourceDictionary>
+    </Window.Resources>
+    <Grid Margin="20,16,20,12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <TextBlock x:Name="txtSummary" Grid.Row="0" FontSize="13" TextWrapping="Wrap"/>
+        <TextBlock x:Name="txtNote" Grid.Row="1" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0" Foreground="{DynamicResource MahApps.Brushes.Gray1}"/>
+        <DataGrid x:Name="gridBlockers" Grid.Row="2" Margin="0,12,0,0" IsReadOnly="True" AutoGenerateColumns="False"
+                  CanUserAddRows="False" SelectionMode="Single" SelectionUnit="FullRow" HeadersVisibility="Column"
+                  GridLinesVisibility="Horizontal" RowHeaderWidth="0" FontSize="12"
+                  Background="{DynamicResource MahApps.Brushes.ThemeBackground}"
+                  Foreground="{DynamicResource MahApps.Brushes.ThemeForeground}"
+                  BorderBrush="{DynamicResource MahApps.Brushes.Gray8}" BorderThickness="1"
+                  HorizontalGridLinesBrush="{DynamicResource MahApps.Brushes.Gray8}">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Kind" Width="190" Binding="{Binding Kind}"/>
+                <DataGridTextColumn Header="Name" Width="*" Binding="{Binding Name}"/>
+                <DataGridTextColumn Header="Detail" Width="2*" Binding="{Binding Detail}"/>
+            </DataGrid.Columns>
+        </DataGrid>
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+            <Button x:Name="btnClose" Content="Close" Style="{StaticResource DialogButton}" IsCancel="True"/>
+        </StackPanel>
+    </Grid>
+</Controls:MetroWindow>
+'@
+    [xml]$blkX = $blkXaml
+    $blkReader = New-Object System.Xml.XmlNodeReader $blkX
+    $blkDlg = [System.Windows.Markup.XamlReader]::Load($blkReader)
+    $blkDlg.Owner = $window
+    Install-TitleBarDragFallback -Window $blkDlg
+    Set-DialogTheme -Dialog $blkDlg
+
+    $items = @(Get-HygApplicationBlocker -Data $script:BlockerData -RelationshipData $script:RelData -ModelName $ModelName)
+    $blkDlg.FindName('gridBlockers').ItemsSource = $items
+    $blkDlg.FindName('txtSummary').Text = $(if ($items.Count -eq 0) { ("Nothing in the last scan refers to '{0}'. The site can still refuse the delete for an object that the scan cannot see." -f $Name) } else { ("{0} blocks the delete of '{1}'." -f $(if ($items.Count -eq 1) { '1 object' } else { '{0} objects' -f $items.Count }), $Name) })
+    $blkDlg.FindName('txtNote').Text = 'The list comes from the last scan. A task sequence, a collection or a folder that your account may not see is not in it. A stale reference is a reference row of a task sequence that the site does not return.'
+    $blkDlg.FindName('btnClose').Add_Click({ $blkDlg.Close() }.GetNewClosure())
+    Add-LogLine ("Show Blockers: {0} object(s) refer to '{1}'." -f $items.Count, $Name)
+    [void]$blkDlg.ShowDialog()
+}
+
+$btnShowBlockers.Add_Click({
+    $row = $gridFindings.SelectedItem
+    if (-not $row -or -not $script:BlockerData -or -not $script:RelData) { return }
+    $name = [string]$row.ObjectName
+    Show-BlockersDialog -ModelName ([string]$row.ObjectId) -Name $name
+})
     }
     $btnFixSupersedence.IsEnabled = (@(Get-SupersedenceFixSelection).Count -gt 0)
 })

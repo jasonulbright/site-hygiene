@@ -89,6 +89,15 @@
         'Remove-HygBrokenSupersedence'
         'Test-HygSupersedenceRecheck'
 
+        # Retired and superseded applications (Q-89)
+        'New-HygSupersedenceRemovalScript'
+        'New-HygDependencyRemovalScript'
+        'New-HygRevisionCleanupScript'
+        'Get-HygApplicationBlocker'
+        'Get-HygLiveTaskSequence'
+        'Test-HygRetiredSupersededChecks'
+        'Test-HygDeploymentOld'
+
         # Collection evaluation deep-dive
         'Get-HygCollectionReferenceGraph'
         'Test-HygCollectionEvaluationChecks'

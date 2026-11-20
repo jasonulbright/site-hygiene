@@ -197,10 +197,11 @@ Describe 'Dialog windows' -Skip:(-not $script:WindowGuard.Allowed) {
 }
 
 Describe 'Dialog text' {
-    It 'finds the dialog XAML in the script: the Options dialog first, then the Fix Supersedence window' {
-        $script:DialogXaml.Count | Should -Be 2
+    It 'finds the dialog XAML in the script: the Options dialog first, then the Fix Supersedence window and the blockers window' {
+        $script:DialogXaml.Count | Should -Be 3
         $script:DialogXaml[0] | Should -Match 'Title="Options"'
         $script:DialogXaml[1] | Should -Match 'Title="Fix Supersedence"'
+        $script:DialogXaml[2] | Should -Match 'Title="What Blocks The Delete"'
     }
 
 

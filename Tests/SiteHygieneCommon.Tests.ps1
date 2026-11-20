@@ -1083,7 +1083,7 @@ Describe 'Version metadata single-sourcing' {
         $header = (Select-String (Join-Path $root 'start-sitehygiene.ps1') -Pattern 'Version    : ([0-9\.]+)' | Select-Object -First 1).Matches[0].Groups[1].Value
         $header | Should -Be $manifestVersion -Because 'the script header must match the manifest'
         (Select-String (Join-Path $root 'start-sitehygiene.ps1') -Pattern '\$script:AppVersion').Count | Should -BeGreaterThan 1 -Because 'UI version strings must render from the manifest-derived variable'
-        @(Get-HygieneCheckCatalog).Count | Should -Be 57
+        @(Get-HygieneCheckCatalog).Count | Should -Be 62
         @(Get-HygieneCheckCatalog | Where-Object { $_.Id -eq 'UPD-02' }).Count | Should -Be 0 -Because 'UPD-02 was removed; its provider join was invalid'
     }
 }

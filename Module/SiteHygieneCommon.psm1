@@ -74,6 +74,8 @@ function Get-HygieneCheckCatalog {
         [pscustomobject]@{ Id = 'APP-03'; Category = 'Applications'; Severity = 'Warning'; Title = 'Superseded application still deployed' }
         [pscustomobject]@{ Id = 'APP-04'; Category = 'Applications'; Severity = 'Warning'; Title = 'Deployment type content source missing or unreachable' }
         [pscustomobject]@{ Id = 'APP-05'; Category = 'Applications'; Severity = 'Info';    Title = 'Application with old revisions' }
+        [pscustomobject]@{ Id = 'APP-07'; Category = 'Applications'; Severity = 'Warning'; Title = 'Retired application that still supersedes or depends on an application' }
+        [pscustomobject]@{ Id = 'APP-08'; Category = 'Applications'; Severity = 'Info';    Title = 'Superseded application that qualifies for deletion' }
         [pscustomobject]@{ Id = 'PKG-01'; Category = 'Packages';     Severity = 'Warning'; Title = 'Package with no programs and no references' }
         [pscustomobject]@{ Id = 'CNT-01'; Category = 'Content';      Severity = 'Warning'; Title = 'Content failed on one or more distribution points' }
         [pscustomobject]@{ Id = 'CNT-02'; Category = 'Content';      Severity = 'Info';    Title = 'Content distribution in progress beyond threshold' }
@@ -98,6 +100,8 @@ function Get-HygieneCheckCatalog {
         [pscustomobject]@{ Id = 'TSQ-02'; Category = 'Task Sequences'; Severity = 'Warning'; Title = 'Boot image or driver package referenced by nothing' }
         [pscustomobject]@{ Id = 'TSQ-03'; Category = 'Task Sequences'; Severity = 'Warning'; Title = 'Application in a task sequence without the task sequence install setting' }
         [pscustomobject]@{ Id = 'TSQ-04'; Category = 'Task Sequences'; Severity = 'Error';   Title = 'Application in a task sequence with content on no distribution point' }
+        [pscustomobject]@{ Id = 'TSQ-05'; Category = 'Task Sequences'; Severity = 'Warning'; Title = 'Task sequence installs a retired or superseded application' }
+        [pscustomobject]@{ Id = 'TSQ-06'; Category = 'Task Sequences'; Severity = 'Warning'; Title = 'Stale reference rows of a task sequence that the site does not return' }
         [pscustomobject]@{ Id = 'UPD-01'; Category = 'Updates';      Severity = 'Warning'; Title = 'Software update group with a high expired-update ratio' }
         [pscustomobject]@{ Id = 'UPD-03'; Category = 'Updates';      Severity = 'Warning'; Title = 'Automatic deployment rule disabled, stale, or erroring' }
         [pscustomobject]@{ Id = 'MNT-01'; Category = 'Site';         Severity = 'Info';    Title = 'Recommended maintenance tasks disabled' }
@@ -117,6 +121,7 @@ function Get-HygieneCheckCatalog {
         [pscustomobject]@{ Id = 'DPL-03'; Category = 'Deployments';  Severity = 'Info';    Title = 'Available deployment with no takers' }
         [pscustomobject]@{ Id = 'DPL-04'; Category = 'Deployments';  Severity = 'Warning'; Title = 'Required deployment to a built-in all-resources collection' }
         [pscustomobject]@{ Id = 'DPL-05'; Category = 'Deployments';  Severity = 'Warning'; Title = 'Deployment of a disabled task sequence or program' }
+        [pscustomobject]@{ Id = 'DPL-06'; Category = 'Deployments';  Severity = 'Info';    Title = 'Deployment created more than the age threshold ago' }
         [pscustomobject]@{ Id = 'UPD-04'; Category = 'Updates';      Severity = 'Warning'; Title = 'Software update group over the per-deployment update limit' }
         [pscustomobject]@{ Id = 'UPD-05'; Category = 'Updates';      Severity = 'Info';    Title = 'Deployment package holding expired update content' }
         [pscustomobject]@{ Id = 'DPT-01'; Category = 'Distribution Points'; Severity = 'Warning'; Title = 'Distribution point in no boundary group' }
@@ -142,6 +147,7 @@ function Get-HygieneDefaultThresholds {
         DeadlineGraceDays         = 7
         FailurePctThreshold       = 20
         AvailableUnusedMinAgeDays = 30
+        DeploymentOldDays         = 365
         InactiveDeviceDays        = 90
         SugExpiredPctThreshold    = 30
         AdrStaleDays              = 45
@@ -267,6 +273,7 @@ function Get-HygScanPlan {
         @{ Id = 'UPD-01'; Scopes = @('Updates'); Requires = @('UpdateGroups'); Run = { param($d, $t) Test-HygUpdateGroupChecks -Data $d -Thresholds $t } }
         @{ Id = 'UPD-03'; Scopes = @('Updates'); Requires = @('AutoDeploymentRules'); Run = { param($d, $t) Test-HygAdrChecks -Data $d -Thresholds $t } }
         @{ Id = 'DPL-04'; Scopes = @('Deployments'); Requires = @('Deployments'); Run = { param($d) Test-HygDeploymentBroadRequired -Data $d } }
+        @{ Id = 'DPL-06'; Scopes = @('Deployments'); Requires = @('Deployments'); Run = { param($d, $t) Test-HygDeploymentOld -Data $d -Thresholds $t } }
         @{ Id = 'DPL-05'; Scopes = @('Deployments'); Requires = @('Deployments','Programs','TaskSequences'); Run = { param($d) Test-HygDeployedDisabledObject -Data $d } }
         @{ Id = 'UPD-04'; Scopes = @('Updates'); Requires = @('UpdateGroups'); Run = { param($d, $t) Test-HygUpdateGroupSize -Data $d -Thresholds $t } }
         @{ Id = 'UPD-05'; Scopes = @('UpdateContent'); Requires = @('ExpiredUpdateIds','UpdateContentMap','UpdatePackageContent','UpdatePackages'); Run = { param($d) Test-HygUpdatePackageExpiredContent -Data $d } }
@@ -279,6 +286,7 @@ function Get-HygScanPlan {
         # $args-based: these only consume the third runner argument.
         @{ Id = 'SUP/DEP/REL'; Scopes = @('AppRelationships'); Requires = @(); NeedsRelationships = $true; Run = { Test-HygRelationshipChecks -RelationshipData $args[2] } }
         @{ Id = 'APP-04';      Scopes = @('AppRelationships'); Requires = @(); NeedsRelationships = $true; Run = { Test-HygAppContentPath -RelationshipData $args[2] } }
+        @{ Id = 'APP-07/08 TSQ-05/06'; Scopes = @('AppRelationships'); Requires = @('Applications','Deployments','TaskSequences'); NeedsRelationships = $true; Run = { Test-HygRetiredSupersededChecks -Data $args[0] -RelationshipData $args[2] } }
     )
 }
 
@@ -394,6 +402,9 @@ function Get-HygieneData {
                     IsSuperseding = [bool]$_.IsSuperseding
                     PackageID     = [string]$_.PackageID
                     DateCreated   = $_.DateCreated
+                    # The number of task sequences that name the application. The reference rows leave out a retired application,
+                    # so this count is the only sign in this read that a task sequence still installs one.
+                    NumberOfDependentTS = $(if ($_.PSObject.Properties['NumberOfDependentTS']) { [int]$_.NumberOfDependentTS } else { 0 })
                 }
             }
         } }
@@ -429,7 +440,10 @@ function Get-HygieneData {
                 $tsId = [string]$_.PackageID
                 $refsByTs[$tsId] = @($refsByTs[$tsId]) + [string]$_.ObjectID
             }
+            $returned = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+            $built = New-Object System.Collections.Generic.List[object]
             Get-CMTaskSequence -Fast -ErrorAction Stop | ForEach-Object {
+                [void]$returned.Add([string]$_.PackageID)
                 $refs = @($refsByTs[[string]$_.PackageID] | Where-Object { $_ })
                 $bootImage = ''
                 $p = $_.PSObject.Properties['BootImageID']
@@ -437,7 +451,32 @@ function Get-HygieneData {
                 $flags = 0
                 $p = $_.PSObject.Properties['ProgramFlags']
                 if ($p -and $null -ne $p.Value) { $flags = [long]$p.Value }
-                [pscustomobject]@{ PackageID = [string]$_.PackageID; Name = [string]$_.Name; ReferencedIDs = $refs; BootImageID = $bootImage; ProgramFlags = $flags }
+                $built.Add([pscustomobject]@{ PackageID = [string]$_.PackageID; Name = [string]$_.Name; ReferencedIDs = $refs; BootImageID = $bootImage; ProgramFlags = $flags; IsStale = $false })
+            }
+            # The reference rows leave out a retired application. When a retired or superseded application has a task sequence
+            # that names it (NumberOfDependentTS above zero) and no row shows it, the References property of each task
+            # sequence is read once (one provider read per task sequence) to name the task sequences. Without such an
+            # application, no read is added.
+            $missing = @($result['Applications'] | Where-Object { ($_.IsExpired -or $_.IsSuperseded) -and [int]$_.NumberOfDependentTS -gt 0 })
+            $rowModels = @($built | ForEach-Object { $_.ReferencedIDs })
+            if (@($missing | Where-Object { $rowModels -notcontains [string]$_.ModelName }).Count -gt 0) {
+                $i = 0
+                foreach ($tsEntry in $built) {
+                    $i++
+                    if ($ProgressState) { $ProgressState.Step = "Reading task sequence steps ($i of $($built.Count))..." }
+                    & $pace
+                    $full = Get-CMTaskSequence -TaskSequencePackageId $tsEntry.PackageID -ErrorAction SilentlyContinue | Select-Object -First 1
+                    if (-not $full) { continue }
+                    $extra = @($full.References | ForEach-Object { [string]$_.Package } | Where-Object { $_ -and ($tsEntry.ReferencedIDs -notcontains $_) })
+                    if ($extra.Count -gt 0) { $tsEntry.ReferencedIDs = @($tsEntry.ReferencedIDs) + $extra }
+                }
+            }
+            $built
+            # A task sequence that has reference rows in the same query and is not returned by Get-CMTaskSequence: a stale
+            # reference row (the task sequence was deleted) or a task sequence outside the scope of the account. The rows come
+            # from the one query above; no query is added. The checks that read references leave these entries out.
+            foreach ($tsId in @($refsByTs.Keys | Where-Object { -not $returned.Contains([string]$_) } | Sort-Object)) {
+                [pscustomobject]@{ PackageID = [string]$tsId; Name = ''; ReferencedIDs = @($refsByTs[$tsId] | Where-Object { $_ }); BootImageID = ''; ProgramFlags = 0; IsStale = $true }
             }
         } }
         # The task sequence install setting exists only in the application
@@ -884,7 +923,7 @@ function Test-HygAppNoReferences {
     )
 
     $tsRefs = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
-    foreach ($ts in @($Data.TaskSequences)) {
+    foreach ($ts in @(Get-HygLiveTaskSequence -Data $Data)) {
         foreach ($r in @($ts.ReferencedIDs)) { [void]$tsRefs.Add([string]$r) }
     }
     $depTargets = New-Object 'System.Collections.Generic.HashSet[int]'
@@ -995,7 +1034,7 @@ function Test-HygPackageUnused {
     foreach ($d in @($Data.Deployments)) { if ($d.PackageID) { [void]$deployed.Add([string]$d.PackageID) } }
 
     $tsRefs = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
-    foreach ($ts in @($Data.TaskSequences)) {
+    foreach ($ts in @(Get-HygLiveTaskSequence -Data $Data)) {
         foreach ($r in @($ts.ReferencedIDs)) { [void]$tsRefs.Add([string]$r) }
     }
 
@@ -1194,6 +1233,36 @@ function Test-HygDeploymentAvailableUnused {
     }
 }
 
+function Test-HygDeploymentOld {
+    <#
+    .SYNOPSIS
+        DPL-06: a deployment created more than the age threshold ago (default 365 days). The recommendation is to review whether
+        it is still needed; nothing is deleted. A deployment that DPL-03 already reports (available, old enough, with no
+        takers) is left to DPL-03, so one situation is one finding.
+    #>
+    param(
+        [Parameter(Mandatory)]$Data,
+        [hashtable]$Thresholds = (Get-HygieneDefaultThresholds)
+    )
+
+    $days = [int]$Thresholds.DeploymentOldDays
+    if ($days -le 0) { return }
+    $cutoff = (Get-Date).AddDays(-$days)
+    $unusedAge = [int]$Thresholds.AvailableUnusedMinAgeDays
+    $unusedCutoff = (Get-Date).AddDays(-$unusedAge)
+
+    foreach ($d in @($Data.Deployments)) {
+        if (-not $d.CreationTime -or $d.CreationTime -gt $cutoff) { continue }
+        # DPL-03 reports it: available, older than its own age, targets clients, nobody installed it.
+        if ($d.DeploymentIntent -eq 2 -and $d.CreationTime -le $unusedCutoff -and $d.NumberTargeted -gt 0 -and ($d.NumberSuccess + $d.NumberInProgress) -le 0) { continue }
+        New-HygieneFinding -CheckId 'DPL-06' -Severity Info -Category 'Deployments' `
+            -ObjectType 'Deployment' -ObjectId ([string]$d.CollectionID) -ObjectName ("{0} -> {1}" -f $d.SoftwareName, $d.CollectionName) `
+            -Evidence ("The deployment was created {0}, more than {1} days ago. It targets {2} clients: {3} installed, {4} in progress, {5} with errors." -f $d.CreationTime, $days, $d.NumberTargeted, $d.NumberSuccess, $d.NumberInProgress, $d.NumberErrors) `
+            -Recommendation 'Review whether the deployment is still needed. Nothing is deleted from here.' `
+            -FixScript ("# Review: deployment of '{0}' to '{1}'" -f $d.SoftwareName, $d.CollectionName)
+    }
+}
+
 # ---------------------------------------------------------------------------
 # Checks: Devices
 # ---------------------------------------------------------------------------
@@ -1386,7 +1455,7 @@ function Test-HygTaskSequenceRefs {
     foreach ($x in @($Data.BootImages))        { [void]$known.Add([string]$x.PackageID) }
     foreach ($x in @($Data.DriverPackages))    { [void]$known.Add([string]$x.PackageID) }
     foreach ($x in @($Data.UpdatePackages))    { [void]$known.Add([string]$x.PackageID) }
-    foreach ($x in @($Data.TaskSequences))     { [void]$known.Add([string]$x.PackageID) }
+    foreach ($x in @(Get-HygLiveTaskSequence -Data $Data))     { [void]$known.Add([string]$x.PackageID) }
     # OS images and OS upgrade packages are legitimate task-sequence
     # references (ImagePackageID / InstallPackageID); without them every
     # Apply/Upgrade Operating System step reads as deleted content.
@@ -1397,7 +1466,7 @@ function Test-HygTaskSequenceRefs {
         if ($x.ModelName) { [void]$known.Add([string]$x.ModelName) }
     }
 
-    foreach ($ts in @($Data.TaskSequences)) {
+    foreach ($ts in @(Get-HygLiveTaskSequence -Data $Data)) {
         # BootImageID is stored separately from References on the task
         # sequence object, so include it explicitly in the broken-reference
         # check as well as in TSQ-02's usage accounting below.
@@ -1413,7 +1482,7 @@ function Test-HygTaskSequenceRefs {
     }
 
     $referenced = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
-    foreach ($ts in @($Data.TaskSequences)) {
+    foreach ($ts in @(Get-HygLiveTaskSequence -Data $Data)) {
         foreach ($r in @($ts.ReferencedIDs)) { [void]$referenced.Add([string]$r) }
         if ($ts.BootImageID) { [void]$referenced.Add([string]$ts.BootImageID) }
     }
@@ -1456,7 +1525,7 @@ function Test-HygTaskSequenceApplications {
     $appByModel = @{}
     foreach ($a in @($Data.Applications)) { if ($a.ModelName) { $appByModel[[string]$a.ModelName] = $a } }
     $tsByModel = @{}
-    foreach ($ts in @($Data.TaskSequences)) {
+    foreach ($ts in @(Get-HygLiveTaskSequence -Data $Data)) {
         foreach ($ref in @($ts.ReferencedIDs)) {
             if ($appByModel.ContainsKey([string]$ref)) { $tsByModel[[string]$ref] = @($tsByModel[[string]$ref]) + $ts.Name }
         }
@@ -1739,6 +1808,9 @@ function ConvertTo-HygRelationships {
                         ToAppExists     = ($null -ne $toApp)
                         Kind            = 'Dependency'
                         DependencyState = $depState
+                        FromDTLogicalName = [string]$dtNode.GetAttribute('LogicalName')
+                        RuleId            = [string]$rule.GetAttribute('id')
+                        ToDTLogicalName   = ''
                     })
                 }
             }
@@ -1937,8 +2009,8 @@ function Test-HygRelationshipChecks {
             New-HygieneFinding -CheckId 'SUP-04' -Severity Warning -Category 'Relationships' `
                 -ObjectType 'Supersedence' -ObjectId (& $modelOf $r.FromAppCIID) -ObjectName $pair `
                 -Evidence ("Superseded application '{0}' is retired; the rule still exists but its target is inactive." -f $r.ToAppName) `
-                -Recommendation 'Remove the supersedence relationship or delete the retired application once nothing references it.' `
-                -FixScript ("# Console: '{0}' Properties > Supersedence tab - review the reference to retired '{1}'" -f $r.FromAppName, $r.ToAppName)
+                -Recommendation 'Remove the supersedence relationship. No active application may supersede a retired one. Run Fix removes the rule with Set-CMApplicationSupersedence and then deletes the old revisions that the change makes.' `
+                -FixScript (New-HygSupersedenceRemovalScript -FromModel ([string](& $modelOf $r.FromAppCIID)) -FromDeploymentType ([string]$r.FromDTLogicalName) -ToModel ([string]$r.ToModelName) -ToDeploymentType ([string]$r.ToDTLogicalName))
         }
         elseif ($fromApp -and -not $fromApp.IsEnabled) {
             New-HygieneFinding -CheckId 'SUP-03' -Severity Warning -Category 'Relationships' `
@@ -1972,8 +2044,8 @@ function Test-HygRelationshipChecks {
             New-HygieneFinding -CheckId 'DEP-04' -Severity Warning -Category 'Relationships' `
                 -ObjectType 'Dependency' -ObjectId (& $modelOf $r.FromAppCIID) -ObjectName $pair `
                 -Evidence ("Dependency target '{0}' is retired; {1} installs relying on it will fail." -f $r.ToAppName, $r.DependencyState) `
-                -Recommendation 'Point the dependency at the current application or reinstate the target.' `
-                -FixScript ("# Console: '{0}' > Deployment Types > '{1}' > Dependencies - update the reference to retired '{2}'" -f $r.FromAppName, $r.FromDTName, $r.ToAppName)
+                -Recommendation 'Remove the dependency, or point it at the current application. No active application may depend on a retired one. Run Fix removes the dependency with Remove-CMDeploymentTypeDependency and then deletes the old revisions that the change makes.' `
+                -FixScript (New-HygDependencyRemovalScript -FromModel ([string](& $modelOf $r.FromAppCIID)) -FromDeploymentType ([string]$r.FromDTLogicalName) -ToModel ([string]$r.ToModelName))
         }
         elseif ($toApp -and -not $toApp.IsEnabled) {
             New-HygieneFinding -CheckId 'DEP-03' -Severity Warning -Category 'Relationships' `
@@ -2424,7 +2496,7 @@ function Test-HygDeployedDisabledObject {
 
     $disabledFlag = 0x1000
     $disabledTs = @{}
-    foreach ($ts in @($Data.TaskSequences)) {
+    foreach ($ts in @(Get-HygLiveTaskSequence -Data $Data)) {
         if ($ts.PSObject.Properties['ProgramFlags'] -and (([long]$ts.ProgramFlags) -band $disabledFlag)) { $disabledTs[[string]$ts.PackageID] = $ts.Name }
     }
     $disabledPrograms = @{}
@@ -3446,6 +3518,204 @@ function Test-HygSupersedenceRecheck {
         $old += @(Get-CMApplicationRevisionHistory -Id ([int]$a.CI_ID) -ErrorAction SilentlyContinue | Where-Object { [int]$_.CIVersion -lt [int]$a.CIVersion }).Count
     }
     return [pscustomobject]@{ Remaining = $findings.Count; OldRevisions = $old; Findings = $findings }
+}
+
+# ---------------------------------------------------------------------------
+# Retired and superseded applications (Q-89)
+# ---------------------------------------------------------------------------
+# Rule: no active application depends on or supersedes a retired application, and no task sequence installs a retired
+# or superseded one. The fixes use the supported cmdlets: Set-CMApplicationSupersedence -RemoveSupersedence and
+# Remove-CMDeploymentTypeDependency work when both applications exist. Each fix script is one statement (Run Fix runs the
+# statements one at a time, and a variable does not live from one statement to the next), followed by a statement that
+# deletes the old revisions of the changed application. The site refuses to delete a revision that another object uses:
+# that revision stays and the fix does not fail.
+
+function New-HygSupersedenceRemovalScript {
+    <#
+    .SYNOPSIS
+        The fix script that removes one supersedence rule between two applications that both exist, then the old revisions
+        that the change makes. Both statements resolve the applications by model name when they run.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$FromModel, [Parameter(Mandatory)][string]$FromDeploymentType,
+        [Parameter(Mandatory)][string]$ToModel, [Parameter(Mandatory)][string]$ToDeploymentType
+    )
+    $f = ConvertTo-HygQuotedLiteral $FromModel; $t = ConvertTo-HygQuotedLiteral $ToModel
+    $fd = ConvertTo-HygQuotedLiteral ('*/' + $FromDeploymentType); $td = ConvertTo-HygQuotedLiteral ('*/' + $ToDeploymentType)
+    $remove = "& { `$f = Get-CMApplication -ModelName '$f'; `$t = Get-CMApplication -ModelName '$t'; `$fd = Get-CMDeploymentType -InputObject `$f | Where-Object { `$_.ModelName -like '$fd' }; `$td = Get-CMDeploymentType -InputObject `$t | Where-Object { `$_.ModelName -like '$td' }; Set-CMApplicationSupersedence -Id `$f.CI_ID -CurrentDeploymentTypeId `$fd.CI_ID -SupersededApplicationId `$t.CI_ID -OldDeploymentTypeId `$td.CI_ID -RemoveSupersedence -Force }"
+    return ($remove + "`r`n" + (New-HygRevisionCleanupScript -Model $FromModel))
+}
+
+function New-HygDependencyRemovalScript {
+    <#
+    .SYNOPSIS
+        The fix script that removes the dependency of one deployment type on one application, then the old revisions that the
+        change makes. A dependency group that has no dependency left is removed by the cmdlet.
+    #>
+    param([Parameter(Mandatory)][string]$FromModel, [Parameter(Mandatory)][string]$FromDeploymentType, [Parameter(Mandatory)][string]$ToModel)
+    $f = ConvertTo-HygQuotedLiteral $FromModel; $t = ConvertTo-HygQuotedLiteral $ToModel
+    $fd = ConvertTo-HygQuotedLiteral ('*/' + $FromDeploymentType)
+    $remove = "& { `$f = Get-CMApplication -ModelName '$f'; `$dt = Get-CMDeploymentType -InputObject `$f | Where-Object { `$_.ModelName -like '$fd' }; foreach (`$g in @(Get-CMDeploymentTypeDependencyGroup -InputObject `$dt)) { foreach (`$d in @(Get-CMDeploymentTypeDependency -InputObject `$g)) { if (`$d.AppModelName -eq '$t') { Remove-CMDeploymentTypeDependency -InputObject `$g -DeploymentTypeDependency `$d -Force } } } }"
+    return ($remove + "`r`n" + (New-HygRevisionCleanupScript -Model $FromModel))
+}
+
+function New-HygRevisionCleanupScript {
+    <#
+    .SYNOPSIS
+        The fix statement that deletes the old revisions of one application (the ones older than the current revision). A revision
+        that another object still uses stays, and the statement says so; it does not fail.
+    #>
+    param([Parameter(Mandatory)][string]$Model)
+    $m = ConvertTo-HygQuotedLiteral $Model
+    return "& { `$a = Get-CMApplication -ModelName '$m'; foreach (`$rev in @(Get-CMApplicationRevisionHistory -Id `$a.CI_ID | ForEach-Object { [int]`$_.CIVersion } | Sort-Object)) { if (`$rev -lt [int]`$a.CIVersion) { try { Remove-CMApplicationRevisionHistory -Id `$a.CI_ID -Revision `$rev -Force -ErrorAction Stop } catch { Write-Output ('Revision {0} stays: another object uses it.' -f `$rev) } } } }"
+}
+
+function Get-HygApplicationBlocker {
+    <#
+    .SYNOPSIS
+        Every object that refers to an application and so blocks its delete, from the datasets that a scan already holds.
+
+    .DESCRIPTION
+        Kinds: Deployment, Task sequence (also a task sequence that holds the task sequence that installs the application),
+        Stale reference (a reference row of a task sequence that Get-CMTaskSequence does not return), Dependency (another
+        application depends on it) and Supersedence (another application supersedes it). A task sequence or a collection that
+        the account may not see is not in the data; the dialog says so.
+
+    .OUTPUTS
+        Objects with Kind, Name and Detail.
+    #>
+    param(
+        [Parameter(Mandatory)]$Data,
+        [Parameter(Mandatory)]$RelationshipData,
+        [Parameter(Mandatory)][string]$ModelName
+    )
+    $out = New-Object System.Collections.Generic.List[object]
+    $app = @($Data.Applications | Where-Object { [string]$_.ModelName -eq $ModelName }) | Select-Object -First 1
+    if ($app) {
+        foreach ($d in @($Data.Deployments | Where-Object { [int]$_.FeatureType -eq 1 -and [string]$_.SoftwareName -eq [string]$app.Name })) {
+            $out.Add([pscustomobject]@{ Kind = 'Deployment'; Name = [string]$d.CollectionName; Detail = ('Collection {0} ({1})' -f $d.CollectionName, $d.CollectionID) })
+        }
+    }
+    $live = @(Get-HygLiveTaskSequence -Data $Data)
+    foreach ($ts in $live) {
+        $refs = @($ts.ReferencedIDs)
+        if ($refs -contains $ModelName -or ($app -and $app.PackageID -and $refs -contains [string]$app.PackageID)) {
+            $out.Add([pscustomobject]@{ Kind = 'Task sequence'; Name = [string]$ts.Name; Detail = ('Package {0}' -f $ts.PackageID) })
+            foreach ($outer in @($live | Where-Object { @($_.ReferencedIDs) -contains [string]$ts.PackageID })) {
+                $out.Add([pscustomobject]@{ Kind = 'Task sequence (nested)'; Name = [string]$outer.Name; Detail = ('Package {0}; it holds the task sequence {1}, which installs the application' -f $outer.PackageID, $ts.Name) })
+            }
+        }
+    }
+    foreach ($ts in @($Data.TaskSequences | Where-Object { $_.PSObject.Properties['IsStale'] -and $_.IsStale })) {
+        if (@($ts.ReferencedIDs) -contains $ModelName -or ($app -and $app.PackageID -and @($ts.ReferencedIDs) -contains [string]$app.PackageID)) {
+            $out.Add([pscustomobject]@{ Kind = 'Stale reference'; Name = [string]$ts.PackageID; Detail = 'A reference row of a task sequence that the site does not return. It still blocks the delete.' })
+        }
+    }
+    foreach ($e in @($RelationshipData.Relationships | Where-Object { $_.ToModelName -eq $ModelName })) {
+        if ($e.Kind -eq 'Dependency') { $out.Add([pscustomobject]@{ Kind = 'Dependency'; Name = [string]$e.FromAppName; Detail = ('Deployment type {0} depends on it' -f $e.FromDTName) }) }
+        elseif ($e.Kind -eq 'Supersedence') { $out.Add([pscustomobject]@{ Kind = 'Supersedence'; Name = [string]$e.FromAppName; Detail = ('Deployment type {0} supersedes it' -f $e.FromDTName) }) }
+    }
+    return $out.ToArray()
+}
+
+function Get-HygLiveTaskSequence {
+    <#
+    .SYNOPSIS
+        The task sequences that Get-CMTaskSequence returned. The dataset also holds an entry for each task sequence whose
+        reference rows the site returns and whose task sequence it does not (IsStale); the checks that read references leave those out.
+    #>
+    param([Parameter(Mandatory)]$Data)
+    return @(@($Data.TaskSequences) | Where-Object { -not $_.PSObject.Properties['IsStale'] -or -not $_.IsStale })
+}
+
+function Test-HygRetiredSupersededChecks {
+    <#
+    .SYNOPSIS
+        APP-07 (a retired application that still holds supersedence or dependency rules), APP-08 (a superseded application that
+        qualifies for deletion), TSQ-05 (a task sequence installs a retired or superseded application) and TSQ-06 (a stale
+        reference row). The incoming references to a retired application are SUP-04 and DEP-04, so one situation is one finding.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Runs the retired and superseded check family by design.')]
+    param([Parameter(Mandatory)]$Data, [Parameter(Mandatory)]$RelationshipData)
+
+    $apps = $RelationshipData.Apps
+    $edges = @($RelationshipData.Relationships)
+    $byModel = @{}
+    foreach ($a in @($Data.Applications)) { if ($a.ModelName) { $byModel[[string]$a.ModelName] = $a } }
+    $modelOfCi = { param($ci) $a = $apps[[int]$ci]; if ($a -and $a.ModelName) { [string]$a.ModelName } else { '' } }
+    $live = @(Get-HygLiveTaskSequence -Data $Data)
+
+    # APP-07: a retired application that holds rules of its own toward an application that exists and is not retired
+    # (a retired target is SUP-04 or DEP-04, a deleted one SUP-01 or DEP-01).
+    foreach ($app in @($apps.Values | Where-Object { $_.IsExpired -and $_.ModelName })) {
+        $own = @($edges | Where-Object { [int]$_.FromAppCIID -eq [int]$app.CI_ID -and $_.ToAppExists -and -not ($apps[[int]$_.ToAppCIID] -and $apps[[int]$_.ToAppCIID].IsExpired) })
+        if ($own.Count -eq 0) { continue }
+        $incoming = @($edges | Where-Object { $_.ToModelName -eq [string]$app.ModelName }).Count
+        $lines = New-Object System.Collections.Generic.List[string]
+        $scripts = New-Object System.Collections.Generic.List[string]
+        $text = foreach ($e in $own) {
+            $to = [string]$e.ToAppName
+            if ($e.Kind -eq 'Supersedence') {
+                $scripts.Add((New-HygSupersedenceRemovalScript -FromModel ([string]$app.ModelName) -FromDeploymentType ([string]$e.FromDTLogicalName) -ToModel ([string]$e.ToModelName) -ToDeploymentType ([string]$e.ToDTLogicalName)))
+                "supersedes '{0}' (deployment type '{1}')" -f $to, $e.FromDTName
+            }
+            else {
+                $scripts.Add((New-HygDependencyRemovalScript -FromModel ([string]$app.ModelName) -FromDeploymentType ([string]$e.FromDTLogicalName) -ToModel ([string]$e.ToModelName)))
+                "depends on '{0}' (deployment type '{1}')" -f $to, $e.FromDTName
+            }
+        }
+        New-HygieneFinding -CheckId 'APP-07' -Severity Warning -Category 'Applications' `
+            -ObjectType 'Application' -ObjectId ([string]$app.ModelName) -ObjectName ([string]$app.Name) `
+            -Evidence ("The application is retired and still {0}.{1}" -f ($text -join '; and '), $(if ($incoming -gt 0) { (' {0} other rule(s) point at it: see SUP-04 and DEP-04.' -f $incoming) } else { '' })) `
+            -Recommendation 'A retired application must not supersede or depend on an active one. Remove the rules. Each removal makes a new revision of the retired application; the fix deletes the old revisions it creates.' `
+            -FixScript ($scripts -join "`r`n")
+    }
+
+    # APP-08: a superseded application that nothing but the supersedence of its replacement refers to.
+    # A retired superseded application is SUP-04 (remove the rule); once the rule is gone, APP-01 reports the unused application.
+    foreach ($app in @($Data.Applications | Where-Object { $_.IsSuperseded -and -not $_.IsExpired -and $_.ModelName })) {
+        $model = [string]$app.ModelName
+        if ($app.IsDeployed) { continue }
+        $blockers = @(Get-HygApplicationBlocker -Data $Data -RelationshipData $RelationshipData -ModelName $model | Where-Object { $_.Kind -ne 'Supersedence' })
+        if ($blockers.Count -gt 0) { continue }
+        $rules = @($edges | Where-Object { $_.Kind -eq 'Supersedence' -and $_.ToModelName -eq $model -and $_.ToAppExists })
+        if ($rules.Count -eq 0) { continue }
+        $scripts = New-Object System.Collections.Generic.List[string]
+        foreach ($e in $rules) { $scripts.Add((New-HygSupersedenceRemovalScript -FromModel (& $modelOfCi $e.FromAppCIID) -FromDeploymentType ([string]$e.FromDTLogicalName) -ToModel $model -ToDeploymentType ([string]$e.ToDTLogicalName))) }
+        $scripts.Add(("Get-CMApplication -ModelName '{0}' | Remove-CMApplication -Force" -f (ConvertTo-HygQuotedLiteral $model)))
+        $by = (@($rules | ForEach-Object { "'{0}'" -f $_.FromAppName } | Sort-Object -Unique) -join ', ')
+        New-HygieneFinding -CheckId 'APP-08' -Severity Info -Category 'Applications' `
+            -ObjectType 'Application' -ObjectId $model -ObjectName ([string]$app.Name) `
+            -Evidence ("The application is superseded by {0}. It has no deployment, no dependency on it and no task sequence that refers to it (also no stale reference row). Blocked by: nothing." -f $by) `
+            -Recommendation 'The application qualifies for deletion. Run Fix removes the supersedence rule of the replacement, deletes the application and deletes the old revisions that the rule change makes. The site refuses a delete that something still blocks; the result says what.' `
+            -FixScript ($scripts -join "`r`n")
+    }
+
+    # TSQ-05: a task sequence installs a retired or superseded application.
+    foreach ($ts in $live) {
+        foreach ($ref in @($ts.ReferencedIDs | Where-Object { $_ -like '*/Application_*' } | Sort-Object -Unique)) {
+            $app = $byModel[[string]$ref]
+            if (-not $app) { continue }
+            $state = $(if ($app.IsExpired) { 'retired' } elseif ($app.IsSuperseded) { 'superseded' } else { '' })
+            if (-not $state) { continue }
+            $by = @($edges | Where-Object { $_.Kind -eq 'Supersedence' -and $_.ToModelName -eq [string]$ref } | ForEach-Object { $_.FromAppName } | Sort-Object -Unique)
+            New-HygieneFinding -CheckId 'TSQ-05' -Severity Warning -Category 'Task Sequences' `
+                -ObjectType 'TaskSequence' -ObjectId ([string]$ts.PackageID) -ObjectName ("{0} ({1}) -> {2}" -f $ts.Name, $ts.PackageID, $app.Name) `
+                -Evidence ("Task sequence '{0}' (package {1}) has a step that installs the {2} application '{3}'.{4}" -f $ts.Name, $ts.PackageID, $state, $app.Name, $(if ($by.Count -gt 0) { (' It is superseded by {0}.' -f (($by | ForEach-Object { "'$_'" }) -join ', ')) } else { '' })) `
+                -Recommendation 'Edit the task sequence in the console and point the Install Application step at the active application. No fix runs from here: a task sequence is never edited without you.' `
+                -FixScript ("# Console: Task Sequences > '{0}' > Edit - replace the application '{1}' in the Install Application step" -f $ts.Name, $app.Name)
+        }
+    }
+
+    # TSQ-06: reference rows of a task sequence that the site does not return.
+    foreach ($ts in @($Data.TaskSequences | Where-Object { $_.PSObject.Properties['IsStale'] -and $_.IsStale })) {
+        $names = @($ts.ReferencedIDs | ForEach-Object { $a = $byModel[[string]$_]; if ($a) { [string]$a.Name } else { [string]$_ } } | Select-Object -First 8)
+        New-HygieneFinding -CheckId 'TSQ-06' -Severity Warning -Category 'Task Sequences' `
+            -ObjectType 'TaskSequence' -ObjectId ([string]$ts.PackageID) -ObjectName ([string]$ts.PackageID) `
+            -Evidence ("Stale reference: the site returns {0} reference row(s) of task sequence {1}, but the task sequence itself is not returned (deleted, or outside your security scope). The rows still block the delete of what they name: {2}." -f @($ts.ReferencedIDs).Count, $ts.PackageID, ($names -join ', ')) `
+            -Recommendation 'Check the task sequence in the console with an account that sees all objects. When it is gone, the rows are stale: the site removes them with its own cleanup, or a site repair is needed. No fix runs from here.' `
+            -FixScript ("# No supported cmdlet removes a reference row of task sequence {0}." -f $ts.PackageID)
+    }
 }
 
 # ---------------------------------------------------------------------------

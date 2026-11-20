@@ -442,6 +442,8 @@
                                     ToolTip="Run the fix script of the selected finding after you confirm."/>
                             <Button x:Name="btnFixSupersedence" Content="Fix Supersedence" Style="{StaticResource SquareInlineButtonStyle}" MinWidth="140" IsEnabled="False"
                                     ToolTip="Show the broken supersedence references of the selected findings, then remove them after you confirm. Nothing is saved to a file."/>
+                            <Button x:Name="btnShowBlockers" Content="Show Blockers" Style="{StaticResource SquareInlineButtonStyle}" MinWidth="130" IsEnabled="False"
+                                    ToolTip="Show what blocks the delete of the selected application: every deployment, task sequence, dependency, supersedence rule and stale reference that refers to it."/>
                             <CheckBox x:Name="chkShowSuppressed" Content="Show Suppressed" FontSize="12" VerticalAlignment="Center" Margin="8,0,0,0"
                                       Controls:ControlsHelper.ContentCharacterCasing="Normal"
                                       ToolTip="Include the suppressed findings in the list."/>
