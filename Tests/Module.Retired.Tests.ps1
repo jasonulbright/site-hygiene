@@ -35,7 +35,7 @@ BeforeAll {
 
 Describe 'The fix scripts' {
     It 'removes a supersedence rule with the supported cmdlet and then the old revisions, as two statements that parse' {
-        $s = New-HygSupersedenceRemovalScript -FromModel 'S/Application_N' -FromDeploymentType 'DeploymentType_N1' -ToModel 'S/Application_O' -ToDeploymentType 'DeploymentType_O1'
+        $s = Get-HygSupersedenceRemovalScript -FromModel 'S/Application_N' -FromDeploymentType 'DeploymentType_N1' -ToModel 'S/Application_O' -ToDeploymentType 'DeploymentType_O1'
         Get-StatementCount $s | Should -Be 2
         $s | Should -Match 'Set-CMApplicationSupersedence -Id \$f\.CI_ID .* -RemoveSupersedence -Force'
         $s | Should -Match "Get-CMApplication -ModelName 'S/Application_N'"
@@ -45,13 +45,13 @@ Describe 'The fix scripts' {
         Test-HygieneFixExecutable -FixScript $s | Should -BeTrue
     }
     It 'removes a dependency with the supported cmdlet and then the old revisions' {
-        $s = New-HygDependencyRemovalScript -FromModel 'S/Application_N' -FromDeploymentType 'DeploymentType_N1' -ToModel 'S/Application_R'
+        $s = Get-HygDependencyRemovalScript -FromModel 'S/Application_N' -FromDeploymentType 'DeploymentType_N1' -ToModel 'S/Application_R'
         Get-StatementCount $s | Should -Be 2
         $s | Should -Match 'Remove-CMDeploymentTypeDependency -InputObject \$g -DeploymentTypeDependency \$d -Force'
         $s | Should -Match "AppModelName -eq 'S/Application_R'"
     }
     It 'keeps a model name with a quote inside the quotes of the script' {
-        $s = New-HygDependencyRemovalScript -FromModel "S/Application_N'x" -FromDeploymentType 'D' -ToModel 'S/Application_R'
+        $s = Get-HygDependencyRemovalScript -FromModel "S/Application_N'x" -FromDeploymentType 'D' -ToModel 'S/Application_R'
         Get-StatementCount $s | Should -Be 2
     }
 }

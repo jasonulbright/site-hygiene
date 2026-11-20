@@ -90,9 +90,9 @@
         'Test-HygSupersedenceRecheck'
 
         # Retired and superseded applications (Q-89)
-        'New-HygSupersedenceRemovalScript'
-        'New-HygDependencyRemovalScript'
-        'New-HygRevisionCleanupScript'
+        'Get-HygSupersedenceRemovalScript'
+        'Get-HygDependencyRemovalScript'
+        'Get-HygRevisionCleanupScript'
         'Get-HygApplicationBlocker'
         'Get-HygLiveTaskSequence'
         'Test-HygRetiredSupersededChecks'

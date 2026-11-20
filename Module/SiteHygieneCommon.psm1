@@ -2010,7 +2010,7 @@ function Test-HygRelationshipChecks {
                 -ObjectType 'Supersedence' -ObjectId (& $modelOf $r.FromAppCIID) -ObjectName $pair `
                 -Evidence ("Superseded application '{0}' is retired; the rule still exists but its target is inactive." -f $r.ToAppName) `
                 -Recommendation 'Remove the supersedence relationship. No active application may supersede a retired one. Run Fix removes the rule with Set-CMApplicationSupersedence and then deletes the old revisions that the change makes.' `
-                -FixScript (New-HygSupersedenceRemovalScript -FromModel ([string](& $modelOf $r.FromAppCIID)) -FromDeploymentType ([string]$r.FromDTLogicalName) -ToModel ([string]$r.ToModelName) -ToDeploymentType ([string]$r.ToDTLogicalName))
+                -FixScript (Get-HygSupersedenceRemovalScript -FromModel ([string](& $modelOf $r.FromAppCIID)) -FromDeploymentType ([string]$r.FromDTLogicalName) -ToModel ([string]$r.ToModelName) -ToDeploymentType ([string]$r.ToDTLogicalName))
         }
         elseif ($fromApp -and -not $fromApp.IsEnabled) {
             New-HygieneFinding -CheckId 'SUP-03' -Severity Warning -Category 'Relationships' `
@@ -2045,7 +2045,7 @@ function Test-HygRelationshipChecks {
                 -ObjectType 'Dependency' -ObjectId (& $modelOf $r.FromAppCIID) -ObjectName $pair `
                 -Evidence ("Dependency target '{0}' is retired; {1} installs relying on it will fail." -f $r.ToAppName, $r.DependencyState) `
                 -Recommendation 'Remove the dependency, or point it at the current application. No active application may depend on a retired one. Run Fix removes the dependency with Remove-CMDeploymentTypeDependency and then deletes the old revisions that the change makes.' `
-                -FixScript (New-HygDependencyRemovalScript -FromModel ([string](& $modelOf $r.FromAppCIID)) -FromDeploymentType ([string]$r.FromDTLogicalName) -ToModel ([string]$r.ToModelName))
+                -FixScript (Get-HygDependencyRemovalScript -FromModel ([string](& $modelOf $r.FromAppCIID)) -FromDeploymentType ([string]$r.FromDTLogicalName) -ToModel ([string]$r.ToModelName))
         }
         elseif ($toApp -and -not $toApp.IsEnabled) {
             New-HygieneFinding -CheckId 'DEP-03' -Severity Warning -Category 'Relationships' `
@@ -3530,7 +3530,7 @@ function Test-HygSupersedenceRecheck {
 # deletes the old revisions of the changed application. The site refuses to delete a revision that another object uses:
 # that revision stays and the fix does not fail.
 
-function New-HygSupersedenceRemovalScript {
+function Get-HygSupersedenceRemovalScript {
     <#
     .SYNOPSIS
         The fix script that removes one supersedence rule between two applications that both exist, then the old revisions
@@ -3543,10 +3543,10 @@ function New-HygSupersedenceRemovalScript {
     $f = ConvertTo-HygQuotedLiteral $FromModel; $t = ConvertTo-HygQuotedLiteral $ToModel
     $fd = ConvertTo-HygQuotedLiteral ('*/' + $FromDeploymentType); $td = ConvertTo-HygQuotedLiteral ('*/' + $ToDeploymentType)
     $remove = "& { `$f = Get-CMApplication -ModelName '$f'; `$t = Get-CMApplication -ModelName '$t'; `$fd = Get-CMDeploymentType -InputObject `$f | Where-Object { `$_.ModelName -like '$fd' }; `$td = Get-CMDeploymentType -InputObject `$t | Where-Object { `$_.ModelName -like '$td' }; Set-CMApplicationSupersedence -Id `$f.CI_ID -CurrentDeploymentTypeId `$fd.CI_ID -SupersededApplicationId `$t.CI_ID -OldDeploymentTypeId `$td.CI_ID -RemoveSupersedence -Force }"
-    return ($remove + "`r`n" + (New-HygRevisionCleanupScript -Model $FromModel))
+    return ($remove + "`r`n" + (Get-HygRevisionCleanupScript -Model $FromModel))
 }
 
-function New-HygDependencyRemovalScript {
+function Get-HygDependencyRemovalScript {
     <#
     .SYNOPSIS
         The fix script that removes the dependency of one deployment type on one application, then the old revisions that the
@@ -3556,10 +3556,10 @@ function New-HygDependencyRemovalScript {
     $f = ConvertTo-HygQuotedLiteral $FromModel; $t = ConvertTo-HygQuotedLiteral $ToModel
     $fd = ConvertTo-HygQuotedLiteral ('*/' + $FromDeploymentType)
     $remove = "& { `$f = Get-CMApplication -ModelName '$f'; `$dt = Get-CMDeploymentType -InputObject `$f | Where-Object { `$_.ModelName -like '$fd' }; foreach (`$g in @(Get-CMDeploymentTypeDependencyGroup -InputObject `$dt)) { foreach (`$d in @(Get-CMDeploymentTypeDependency -InputObject `$g)) { if (`$d.AppModelName -eq '$t') { Remove-CMDeploymentTypeDependency -InputObject `$g -DeploymentTypeDependency `$d -Force } } } }"
-    return ($remove + "`r`n" + (New-HygRevisionCleanupScript -Model $FromModel))
+    return ($remove + "`r`n" + (Get-HygRevisionCleanupScript -Model $FromModel))
 }
 
-function New-HygRevisionCleanupScript {
+function Get-HygRevisionCleanupScript {
     <#
     .SYNOPSIS
         The fix statement that deletes the old revisions of one application (the ones older than the current revision). A revision
@@ -3651,16 +3651,15 @@ function Test-HygRetiredSupersededChecks {
         $own = @($edges | Where-Object { [int]$_.FromAppCIID -eq [int]$app.CI_ID -and $_.ToAppExists -and -not ($apps[[int]$_.ToAppCIID] -and $apps[[int]$_.ToAppCIID].IsExpired) })
         if ($own.Count -eq 0) { continue }
         $incoming = @($edges | Where-Object { $_.ToModelName -eq [string]$app.ModelName }).Count
-        $lines = New-Object System.Collections.Generic.List[string]
         $scripts = New-Object System.Collections.Generic.List[string]
         $text = foreach ($e in $own) {
             $to = [string]$e.ToAppName
             if ($e.Kind -eq 'Supersedence') {
-                $scripts.Add((New-HygSupersedenceRemovalScript -FromModel ([string]$app.ModelName) -FromDeploymentType ([string]$e.FromDTLogicalName) -ToModel ([string]$e.ToModelName) -ToDeploymentType ([string]$e.ToDTLogicalName)))
+                $scripts.Add((Get-HygSupersedenceRemovalScript -FromModel ([string]$app.ModelName) -FromDeploymentType ([string]$e.FromDTLogicalName) -ToModel ([string]$e.ToModelName) -ToDeploymentType ([string]$e.ToDTLogicalName)))
                 "supersedes '{0}' (deployment type '{1}')" -f $to, $e.FromDTName
             }
             else {
-                $scripts.Add((New-HygDependencyRemovalScript -FromModel ([string]$app.ModelName) -FromDeploymentType ([string]$e.FromDTLogicalName) -ToModel ([string]$e.ToModelName)))
+                $scripts.Add((Get-HygDependencyRemovalScript -FromModel ([string]$app.ModelName) -FromDeploymentType ([string]$e.FromDTLogicalName) -ToModel ([string]$e.ToModelName)))
                 "depends on '{0}' (deployment type '{1}')" -f $to, $e.FromDTName
             }
         }
@@ -3681,7 +3680,7 @@ function Test-HygRetiredSupersededChecks {
         $rules = @($edges | Where-Object { $_.Kind -eq 'Supersedence' -and $_.ToModelName -eq $model -and $_.ToAppExists })
         if ($rules.Count -eq 0) { continue }
         $scripts = New-Object System.Collections.Generic.List[string]
-        foreach ($e in $rules) { $scripts.Add((New-HygSupersedenceRemovalScript -FromModel (& $modelOfCi $e.FromAppCIID) -FromDeploymentType ([string]$e.FromDTLogicalName) -ToModel $model -ToDeploymentType ([string]$e.ToDTLogicalName))) }
+        foreach ($e in $rules) { $scripts.Add((Get-HygSupersedenceRemovalScript -FromModel (& $modelOfCi $e.FromAppCIID) -FromDeploymentType ([string]$e.FromDTLogicalName) -ToModel $model -ToDeploymentType ([string]$e.ToDTLogicalName))) }
         $scripts.Add(("Get-CMApplication -ModelName '{0}' | Remove-CMApplication -Force" -f (ConvertTo-HygQuotedLiteral $model)))
         $by = (@($rules | ForEach-Object { "'{0}'" -f $_.FromAppName } | Sort-Object -Unique) -join ', ')
         New-HygieneFinding -CheckId 'APP-08' -Severity Info -Category 'Applications' `
