@@ -2,13 +2,16 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- The APP-07 fix now works on a retired application. The site ignores `Set-CMApplicationSupersedence -RemoveSupersedence` and `Remove-CMDeploymentTypeDependency` for a retired application (no error, no change), so the fix reinstates the application, removes the rule and retires it again in one statement, also when the change fails. The fix refuses a retired application that has a deployment.
+
 ## [2026.11.20.0041] - 2026-11-20
 
 ## 8 changes: retired and superseded application checks
 
 ### Added
 
-- The APP-07 fix now works on a retired application. The site ignores `Set-CMApplicationSupersedence -RemoveSupersedence` and `Remove-CMDeploymentTypeDependency` for a retired application (no error, no change), so the fix reinstates the application, removes the rule and retires it again in one statement, also when the change fails. The fix refuses a retired application that has a deployment.
 - Retired and superseded applications. Check SUP-04 (supersedence target retired) and DEP-04 (dependency target retired) now have fixes with the supported cmdlets `Set-CMApplicationSupersedence -RemoveSupersedence` and `Remove-CMDeploymentTypeDependency`. Each fix also deletes the old revisions that its change makes (a revision that another object uses stays).
 - New check APP-07: a retired application that still supersedes or depends on an application; the fix removes those rules. A rule to a retired target stays with SUP-04 and DEP-04, so one situation is one finding.
 - New check APP-08: a superseded application with no deployment, dependency, task sequence or stale reference row qualifies for deletion; the fix removes the rule of its replacement and deletes it. A retired superseded application is left to SUP-04.
