@@ -1,5 +1,5 @@
 {
-  "Count": 50,
+  "Count": 51,
   "Images": [
     "after-unsuppress.png",
     "auto-refresh-paused.png",
@@ -42,6 +42,7 @@
     "run-fix-confirm.png",
     "scan-running.png",
     "scan-without-connection.png",
+    "show-blockers.png",
     "show-suppressed.png",
     "site-health-detail.png",
     "site-health.png",
