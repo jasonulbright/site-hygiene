@@ -173,7 +173,9 @@ function New-HygieneFinding {
         [Parameter(Mandatory)][AllowEmptyString()][string]$ObjectName,
         [Parameter(Mandatory)][string]$Evidence,
         [Parameter(Mandatory)][string]$Recommendation,
-        [AllowEmptyString()][string]$FixScript = ''
+        [AllowEmptyString()][string]$FixScript = '',
+        # The exact identifiers of a fix that has its own window, not a script. Null for every other finding.
+        [AllowNull()]$FixData = $null
     )
 
     # A fix script that starts with a comment is guidance for the operator. A name from the site that holds a line
@@ -190,6 +192,7 @@ function New-HygieneFinding {
         Evidence       = $Evidence
         Recommendation = $Recommendation
         FixScript      = $FixScript
+        FixData        = $FixData
     }
 }
 
@@ -1690,6 +1693,7 @@ function ConvertTo-HygRelationships {
                     $refModel = '{0}/{1}' -f $appRef.GetAttribute('AuthoringScopeId'), $appRef.GetAttribute('LogicalName')
                     $toApp = $null
                     if ($modelToApp.ContainsKey($refModel)) { $toApp = $modelToApp[$refModel] }
+                    $dtRef = $intent.SelectSingleNode('r:DeploymentTypeReference', $nsm)
 
                     $relationships.Add([pscustomobject]@{
                         FromAppCIID     = [int]$app.CI_ID
@@ -1701,6 +1705,11 @@ function ConvertTo-HygRelationships {
                         ToAppExists     = ($null -ne $toApp)
                         Kind            = 'Supersedence'
                         DependencyState = ''
+                        # The fix of SUP-01 names the exact rule: the deployment type of the source application, the rule
+                        # and the deployment type that the rule points at.
+                        FromDTLogicalName = [string]$dtNode.GetAttribute('LogicalName')
+                        RuleId            = [string]$rule.GetAttribute('id')
+                        ToDTLogicalName   = $(if ($dtRef) { [string]$dtRef.GetAttribute('LogicalName') } else { '' })
                     })
                 }
             }
@@ -1908,8 +1917,18 @@ function Test-HygRelationshipChecks {
             New-HygieneFinding -CheckId 'SUP-01' -Severity Error -Category 'Relationships' `
                 -ObjectType 'Supersedence' -ObjectId (& $modelOf $r.FromAppCIID) -ObjectName $pair `
                 -Evidence ("Supersedence on deployment type '{0}' references {1}, which no longer exists in the site." -f $r.FromDTName, $r.ToModelName) `
-                -Recommendation 'Remove the broken supersedence reference.' `
-                -FixScript ("# Console: '{0}' Properties > Supersedence tab - remove the reference to the deleted application" -f $r.FromAppName)
+                -Recommendation 'Remove the broken supersedence reference. A broken reference makes the evaluation of other deployments fail on clients. Fix Supersedence shows what it removes and then removes the reference.' `
+                -FixScript ("# Fix Supersedence removes the reference of '{0}' to the deleted application. No script runs from here." -f $r.FromAppName) `
+                -FixData ([pscustomobject]@{
+                    Kind                       = 'SupersedenceToDeletedApplication'
+                    ApplicationModelName       = [string](& $modelOf $r.FromAppCIID)
+                    ApplicationName            = [string]$r.FromAppName
+                    DeploymentTypeLogicalName  = [string]$r.FromDTLogicalName
+                    DeploymentTypeName         = [string]$r.FromDTName
+                    RuleId                     = [string]$r.RuleId
+                    ReferencedApplicationModel = [string]$r.ToModelName
+                    ReferencedDeploymentTypeLogicalName = [string]$r.ToDTLogicalName
+                })
             continue
         }
         $fromApp = $apps[[int]$r.FromAppCIID]
@@ -2977,6 +2996,456 @@ function Invoke-HygieneFix {
         Write-Log ("Fix FAILED [{0}] {1}: {2}" -f $Finding.CheckId, $Finding.ObjectName, $_.Exception.Message) -Level ERROR -Quiet
         return [pscustomobject]@{ Success = $false; Output = ''; ErrorMessage = $_.Exception.Message }
     }
+}
+
+# ---------------------------------------------------------------------------
+# Supersedence repair (SUP-01)
+# ---------------------------------------------------------------------------
+# A supersedence reference to an application that was deleted breaks the evaluation of other deployments on clients.
+# The supported cmdlet, Set-CMApplicationSupersedence with -RemoveSupersedence (it replaces the deprecated
+# Remove-CMDeploymentTypeSupersedence since version 2111), needs both the superseded application and its deployment
+# type as parameters. The deleted application has neither, so on this site version the cmdlet answers "No object
+# corresponds to the specified parameters". The repair therefore edits the application document of the superseding
+# application, with the serializer of the console assemblies that the ConfigMgr cmdlets use, and writes it back with
+# Put. It removes only the rules that point at an application that no longer exists, refuses to write when the edited
+# document differs from the original in anything else, and writes no file of the removed data.
+
+function Find-HygBrokenSupersedenceRule {
+    <#
+    .SYNOPSIS
+        The supersedence rules of one application document whose referenced application no longer exists.
+
+    .DESCRIPTION
+        Pure over the XML and the existence test. A rule with more than one reference, where only some of the
+        referenced applications are gone, is returned with Removable set to false: the repair never edits it.
+
+    .PARAMETER SdmPackageXml
+        The SDMPackageXML of the superseding application.
+
+    .PARAMETER Exists
+        A script block that takes a model name (ScopeId/Application_guid) and returns true when the application is in the site.
+    #>
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][string]$SdmPackageXml,
+        [Parameter(Mandatory)][scriptblock]$Exists
+    )
+
+    $rows = New-Object System.Collections.Generic.List[object]
+    if ([string]::IsNullOrWhiteSpace($SdmPackageXml)) { return @() }
+    [xml]$xml = $SdmPackageXml
+    $nsm = [System.Xml.XmlNamespaceManager]::new($xml.NameTable)
+    $nsm.AddNamespace('d', 'http://schemas.microsoft.com/SystemCenterConfigurationManager/2009/AppMgmtDigest')
+    $nsm.AddNamespace('r', 'http://schemas.microsoft.com/SystemsCenterConfigurationManager/2009/06/14/Rules')
+
+    foreach ($dtNode in $xml.SelectNodes('/d:AppMgmtDigest/d:DeploymentType', $nsm)) {
+        $titleNode = $dtNode.SelectSingleNode('d:Title', $nsm)
+        $dtTitle = $(if ($titleNode) { [string]$titleNode.InnerText } else { '' })
+        foreach ($rule in $dtNode.SelectNodes('d:Supersedes/r:DeploymentTypeRule', $nsm)) {
+            $refs = @($rule.SelectNodes('.//r:DeploymentTypeIntentExpression', $nsm) | ForEach-Object {
+                $appRef = $_.SelectSingleNode('r:DeploymentTypeApplicationReference', $nsm)
+                $dtRef = $_.SelectSingleNode('r:DeploymentTypeReference', $nsm)
+                if ($appRef) {
+                    [pscustomobject]@{
+                        Model   = ('{0}/{1}' -f $appRef.GetAttribute('AuthoringScopeId'), $appRef.GetAttribute('LogicalName'))
+                        DtLogicalName = $(if ($dtRef) { [string]$dtRef.GetAttribute('LogicalName') } else { '' })
+                    }
+                }
+            })
+            if ($refs.Count -eq 0) { continue }
+            $missing = @($refs | Where-Object { -not [bool](& $Exists ([string]$_.Model)) })
+            if ($missing.Count -eq 0) { continue }
+            $rows.Add([pscustomobject]@{
+                DeploymentTypeName                  = $dtTitle
+                DeploymentTypeLogicalName           = [string]$dtNode.GetAttribute('LogicalName')
+                RuleId                              = [string]$rule.GetAttribute('id')
+                ReferencedApplicationModel          = [string]$missing[0].Model
+                ReferencedDeploymentTypeLogicalName = [string]$missing[0].DtLogicalName
+                Removable                           = ($missing.Count -eq $refs.Count)
+            })
+        }
+    }
+    return $rows.ToArray()
+}
+
+function Get-HygSupersedencePlan {
+    <#
+    .SYNOPSIS
+        The plan of the SUP-01 repair: each application and deployment type with a broken supersedence reference, and
+        the reference that the repair removes. Changes nothing.
+
+    .DESCRIPTION
+        Reads each application fresh from the connected site. A finding whose reference no longer holds (the rule is
+        gone, or the referenced application exists again) is listed under Skipped with the reason, not in the plan.
+
+    .PARAMETER Target
+        Objects with FindingKey and FixData (the FixData of a SUP-01 finding).
+
+    .OUTPUTS
+        [pscustomobject] Rows, Skipped, Applications (ModelName, Name, CIId, CIVersion, Xml).
+    #>
+    param([Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Target)
+
+    $rows = New-Object System.Collections.Generic.List[object]
+    $skipped = New-Object System.Collections.Generic.List[object]
+    $apps = New-Object System.Collections.Generic.List[object]
+    $existsCache = @{}
+    $exists = {
+        param([string]$Model)
+        if (-not $existsCache.ContainsKey($Model)) {
+            $existsCache[$Model] = [bool](Get-CMApplication -ModelName $Model -Fast -ErrorAction SilentlyContinue)
+        }
+        $existsCache[$Model]
+    }
+
+    foreach ($group in @($Target | Group-Object { [string]$_.FixData.ApplicationModelName })) {
+        $model = [string]$group.Name
+        $app = $null
+        try { $app = Get-CMApplication -ModelName $model -ErrorAction Stop } catch { $app = $null }
+        if (-not $app) {
+            foreach ($t in $group.Group) { $skipped.Add([pscustomobject]@{ FindingKey = [string]$t.FindingKey; Reason = 'The application is no longer in the site.' }) }
+            continue
+        }
+        $xml = [string]$app.SDMPackageXML
+        $apps.Add([pscustomobject]@{ ModelName = $model; Name = [string]$app.LocalizedDisplayName; CIId = [int]$app.CI_ID; CIVersion = [int]$app.CIVersion })
+        $broken = @(Find-HygBrokenSupersedenceRule -SdmPackageXml $xml -Exists $exists)
+        foreach ($t in $group.Group) {
+            $d = $t.FixData
+            $hit = @($broken | Where-Object {
+                $_.RuleId -eq [string]$d.RuleId -and $_.DeploymentTypeLogicalName -eq [string]$d.DeploymentTypeLogicalName -and $_.ReferencedApplicationModel -eq [string]$d.ReferencedApplicationModel
+            }) | Select-Object -First 1
+            if (-not $hit) {
+                $skipped.Add([pscustomobject]@{ FindingKey = [string]$t.FindingKey; Reason = 'The reference is no longer broken: the rule is gone from the application, or the referenced application exists again.' })
+                continue
+            }
+            if (-not $hit.Removable) {
+                $skipped.Add([pscustomobject]@{ FindingKey = [string]$t.FindingKey; Reason = 'The rule also points at an application that still exists, so it is not edited here. Use the console.' })
+                continue
+            }
+            $rows.Add([pscustomobject]@{
+                FindingKey                          = [string]$t.FindingKey
+                ApplicationName                     = [string]$app.LocalizedDisplayName
+                ApplicationModelName                = $model
+                ApplicationCIId                     = [int]$app.CI_ID
+                DeploymentTypeName                  = $hit.DeploymentTypeName
+                DeploymentTypeLogicalName           = $hit.DeploymentTypeLogicalName
+                RuleId                              = $hit.RuleId
+                ReferencedApplicationModel          = $hit.ReferencedApplicationModel
+                ReferencedDeploymentTypeLogicalName = $hit.ReferencedDeploymentTypeLogicalName
+            })
+        }
+    }
+    return [pscustomobject]@{ Rows = $rows.ToArray(); Skipped = $skipped.ToArray(); Applications = $apps.ToArray() }
+}
+
+function Read-HygApplicationDocument {
+    <#
+    .SYNOPSIS
+        The application object of an application document, read with the serializer of the console assemblies.
+    #>
+    param([Parameter(Mandatory)][string]$Xml)
+    $serializer = 'Microsoft.ConfigurationManagement.ApplicationManagement.Serialization.SccmSerializer' -as [type]
+    if (-not $serializer) { throw 'The console assemblies for application documents are not loaded. Import the ConfigurationManager module first.' }
+    return $serializer::DeserializeFromString($Xml, $true)
+}
+
+function ConvertTo-HygApplicationDocument {
+    <#
+    .SYNOPSIS
+        The application document (XML text) of an application object.
+    #>
+    param([Parameter(Mandatory)]$Application)
+    $serializer = 'Microsoft.ConfigurationManagement.ApplicationManagement.Serialization.SccmSerializer' -as [type]
+    if (-not $serializer) { throw 'The console assemblies for application documents are not loaded. Import the ConfigurationManager module first.' }
+    return [string]$serializer::SerializeToString($Application, $true)
+}
+
+function Get-HygSerializerInfo {
+    <#
+    .SYNOPSIS
+        Where the serializer of application documents was loaded from, and where the ConfigurationManager module (the console) is.
+    #>
+    $serializer = 'Microsoft.ConfigurationManagement.ApplicationManagement.Serialization.SccmSerializer' -as [type]
+    $module = Get-Module -Name ConfigurationManager | Select-Object -First 1
+    $info = [ordered]@{ Loaded = [bool]$serializer; AssemblyFolder = ''; AssemblyVersion = ''; ConsoleFolder = ''; ConsoleVersion = '' }
+    if ($serializer) {
+        $path = [string]$serializer.Assembly.Location
+        $info.AssemblyFolder = $(if ($path) { Split-Path -Path $path -Parent } else { '' })
+        $info.AssemblyVersion = $(if ($path) { [string](Get-Item -LiteralPath $path).VersionInfo.FileVersion } else { '' })
+    }
+    if ($module) { $info.ConsoleFolder = [string]$module.ModuleBase; $info.ConsoleVersion = [string]$module.Version }
+    return [pscustomobject]$info
+}
+
+function Test-HygSerializerInfo {
+    <#
+    .SYNOPSIS
+        Null when the serializer is the one of the console, else the reason it is not. The fix refuses to edit a document with another serializer.
+
+    .DESCRIPTION
+        The serializer must be loaded from the folder of the ConfigurationManager module and must have the same major and
+        minor version (for example 5.2603). A build number may differ: the console assemblies carry their own build numbers.
+    #>
+    param([Parameter(Mandatory)]$Info)
+    if (-not $Info.Loaded) { return 'The serializer of the console is not loaded.' }
+    if (-not $Info.ConsoleFolder) { return 'The ConfigurationManager module of the console is not loaded.' }
+    if ([string]$Info.AssemblyFolder -ne [string]$Info.ConsoleFolder) { return 'The serializer is not the one of the console: it was loaded from another folder.' }
+    $a = [string]$Info.AssemblyVersion -split '\.'
+    $c = [string]$Info.ConsoleVersion -split '\.'
+    if ($a.Count -lt 2 -or $c.Count -lt 2 -or $a[0] -ne $c[0] -or $a[1] -ne $c[1]) { return ('The serializer version {0} differs from the console version {1}.' -f $Info.AssemblyVersion, $Info.ConsoleVersion) }
+    return $null
+}
+
+function ConvertTo-HygDocumentLine {
+    <#
+    .SYNOPSIS
+        An application document as a sorted list of one line for each element: path, attributes (the Version attribute left out,
+        because each write raises it) and the text of a leaf. Formatting, namespace declarations, the order of siblings and an empty Supersedes container do not count.
+    #>
+    param([Parameter(Mandatory)][string]$Xml, [string[]]$WithoutRuleId = @())
+    $doc = New-Object System.Xml.XmlDocument
+    $doc.LoadXml($Xml)
+    foreach ($id in $WithoutRuleId) {
+        foreach ($rule in @($doc.SelectNodes("//*[local-name()='DeploymentTypeRule'][@id='$($id -replace "'", '')']"))) { [void]$rule.ParentNode.RemoveChild($rule) }
+    }
+    $lines = New-Object System.Collections.Generic.List[string]
+    $walk = $null
+    $walk = {
+        param($node, [string]$path)
+        foreach ($child in $node.ChildNodes) {
+            if ($child.NodeType -ne 'Element') { continue }
+            $attrs = (@($child.Attributes | Where-Object { $_.Name -ne 'Version' -and $_.Name -notlike 'xmlns*' } | ForEach-Object { '{0}={1}' -f $_.Name, $_.Value } | Sort-Object) -join ',')
+            $hasChild = $false
+            foreach ($g in $child.ChildNodes) { if ($g.NodeType -eq 'Element') { $hasChild = $true } }
+            # The serializer leaves out the container of a deployment type that has no supersedence rule left: an empty
+            # container and no container are the same document.
+            if ($child.LocalName -eq 'Supersedes' -and -not $hasChild) { continue }
+            $lines.Add(('{0}/{1}[{2}]={3}' -f $path, $child.LocalName, $attrs, $(if ($hasChild) { '' } else { $child.InnerText.Trim() })))
+            & $walk $child ('{0}/{1}' -f $path, $child.LocalName)
+        }
+    }
+    & $walk $doc.DocumentElement ''
+    return @($lines | Sort-Object)
+}
+
+function Get-HygDocumentDifference {
+    <#
+    .SYNOPSIS
+        What differs between two application documents once the named supersedence rules are taken out of the first one.
+        An empty result means the second document is the first one without those rules and nothing else.
+    #>
+    param([Parameter(Mandatory)][string]$Before, [Parameter(Mandatory)][string]$After, [string[]]$RemovedRuleId = @())
+    $expected = @(ConvertTo-HygDocumentLine -Xml $Before -WithoutRuleId $RemovedRuleId)
+    $actual = @(ConvertTo-HygDocumentLine -Xml $After)
+    $diff = New-Object System.Collections.Generic.List[string]
+    $left = New-Object 'System.Collections.Generic.Dictionary[string,int]'
+    foreach ($l in $expected) { if ($left.ContainsKey($l)) { $left[$l]++ } else { $left[$l] = 1 } }
+    foreach ($l in $actual) {
+        if ($left.ContainsKey($l) -and $left[$l] -gt 0) { $left[$l]-- } else { $diff.Add('added: ' + $l) }
+    }
+    foreach ($k in $left.Keys) { for ($i = 0; $i -lt $left[$k]; $i++) { $diff.Add('missing: ' + $k) } }
+    return $diff.ToArray()
+}
+
+function Remove-HygBrokenSupersedence {
+    <#
+    .SYNOPSIS
+        Removes the supersedence references of a plan that point at deleted applications, and then the old revisions that the change made.
+
+    .DESCRIPTION
+        Set-CMApplicationSupersedence -RemoveSupersedence and the deprecated Remove-CMDeploymentTypeSupersedence need the superseded
+        application and its deployment type as parameters. A deleted application has neither, so the cmdlets cannot remove this reference.
+        The fix edits the application document of the superseding application with the serializer of the console and writes it back.
+
+        For each application it reads the application again, checks that each reference is still broken, and removes only those rules.
+        It refuses when the serializer is not the one of the console, and when the edited document differs from the original in anything
+        but the removed rules. After the write it reads the application again and checks the same. An application that fails does not
+        stop the others. No file of the removed data is written.
+
+        With -DeleteOldRevisions it then deletes the old revisions of exactly the applications that it changed. The site refuses to delete
+        a revision that another object still uses: that revision is kept, the result says so, and the run does not fail.
+        Set $State.StopRequested to stop after the application in work.
+
+    .OUTPUTS
+        [pscustomobject] Success, Message, Results (one row for each planned reference with Result Removed, Failed or Skipped, a Message,
+        and for a changed application RevisionsDeleted, RevisionsKept and RevisionNote), Removed, Failed, Skipped.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter(Mandatory)]$Plan,
+        [switch]$DeleteOldRevisions,
+        [hashtable]$State
+    )
+
+    $results = New-Object System.Collections.Generic.List[object]
+    $rows = @($Plan.Rows)
+    $finish = {
+        param([bool]$Ok, [string]$Message)
+        [pscustomobject]@{
+            Success = $Ok
+            Message = $Message
+            Results = $results.ToArray()
+            Removed = @($results | Where-Object { $_.Result -eq 'Removed' }).Count
+            Failed  = @($results | Where-Object { $_.Result -eq 'Failed' }).Count
+            Skipped = @($results | Where-Object { $_.Result -eq 'Skipped' }).Count
+        }
+    }
+    if ($rows.Count -eq 0) { return (& $finish $true 'The plan has no reference to remove.') }
+    if (-not $PSCmdlet.ShouldProcess(('{0} reference(s) on the connected site' -f $rows.Count), 'Remove the broken supersedence references')) {
+        foreach ($r in $rows) { $results.Add([pscustomobject]@{ Row = $r; Result = 'Skipped'; Message = 'Not run: skipped by -WhatIf or declined.' }) }
+        return (& $finish $true 'Not run: skipped by -WhatIf or declined.')
+    }
+
+    $refusal = Test-HygSerializerInfo -Info (Get-HygSerializerInfo)
+    if ($refusal) {
+        Write-Log 'Supersedence repair refused: the serializer is not the one of the console. Nothing was changed.' -Level ERROR
+        foreach ($r in $rows) { $results.Add([pscustomobject]@{ Row = $r; Result = 'Skipped'; Message = $refusal + ' Nothing was changed.' }) }
+        return (& $finish $false ($refusal + ' Nothing was changed.'))
+    }
+
+    $existsCache = @{}
+    $exists = {
+        param([string]$Model)
+        if (-not $existsCache.ContainsKey($Model)) { $existsCache[$Model] = [bool](Get-CMApplication -ModelName $Model -Fast -ErrorAction SilentlyContinue) }
+        $existsCache[$Model]
+    }
+
+    foreach ($group in @($rows | Group-Object ApplicationModelName)) {
+        $groupRows = @($group.Group)
+        $label = [string]$groupRows[0].ApplicationName
+        if ($State -and $State.StopRequested) {
+            foreach ($r in $groupRows) { $results.Add([pscustomobject]@{ Row = $r; Result = 'Skipped'; Message = 'Stopped before this application.' }) }
+            continue
+        }
+        try {
+            $app = Get-CMApplication -ModelName $group.Name -ErrorAction Stop
+            if (-not $app) { throw 'The application is no longer in the site.' }
+            $original = [string]$app.SDMPackageXML
+            $live = @(Find-HygBrokenSupersedenceRule -SdmPackageXml $original -Exists $exists)
+            $todo = New-Object System.Collections.Generic.List[object]
+            foreach ($r in $groupRows) {
+                $stillBroken = @($live | Where-Object { $_.RuleId -eq $r.RuleId -and $_.Removable -and $_.ReferencedApplicationModel -eq $r.ReferencedApplicationModel })
+                if ($stillBroken.Count -gt 0) { $todo.Add($r) }
+                else { $results.Add([pscustomobject]@{ Row = $r; Result = 'Skipped'; Message = 'The reference is no longer broken, so it was left as it is.' }) }
+            }
+            if ($todo.Count -eq 0) { continue }
+
+            $ids = @($todo | ForEach-Object { [string]$_.RuleId })
+            $object = Read-HygApplicationDocument -Xml $original
+            $removedIds = New-Object System.Collections.Generic.List[string]
+            # The rules are copied first, because the collection changes while a rule is removed. The copy is made with
+            # foreach: an array subexpression over a generic collection of objects can throw "Argument types do not match".
+            foreach ($dt in $object.DeploymentTypes) {
+                $copy = New-Object System.Collections.ArrayList
+                foreach ($rule in $dt.Supersedes) { [void]$copy.Add($rule) }
+                foreach ($rule in $copy) {
+                    if ($ids -contains [string]$rule.RuleId) {
+                        [void]$dt.Supersedes.Remove($rule)
+                        $removedIds.Add([string]$rule.RuleId)
+                    }
+                }
+            }
+            if ($removedIds.Count -eq 0) { throw 'The rule was not found in the application document.' }
+            $edited = ConvertTo-HygApplicationDocument -Application $object
+
+            # Nothing but the removed rules may differ. Otherwise the document is not written.
+            $before = @(Get-HygDocumentDifference -Before $original -After $edited -RemovedRuleId $removedIds.ToArray())
+            if ($before.Count -gt 0) {
+                Write-Log ('Supersedence repair refused [{0}]: the edited document differs from the original in more than the broken rules. Nothing was changed.' -f $label) -Level ERROR
+                foreach ($r in $todo) { $results.Add([pscustomobject]@{ Row = $r; Result = 'Failed'; Message = 'The edited document differs from the original in more than the broken rules, so nothing was changed.'; Detail = ($before | Select-Object -First 5) -join ' | ' }) }
+                continue
+            }
+
+            $app.SDMPackageXML = $edited
+            [void]$app.Put()
+
+            # Read the application again: it must read back, and it must be the original without the removed rules.
+            $after = Get-CMApplication -ModelName $group.Name -ErrorAction Stop
+            $readBack = @()
+            try { [void](Read-HygApplicationDocument -Xml ([string]$after.SDMPackageXML)); $readBack = @(Get-HygDocumentDifference -Before $original -After ([string]$after.SDMPackageXML) -RemovedRuleId $removedIds.ToArray()) }
+            catch { $readBack = @('the document did not read back') }
+            if ($readBack.Count -gt 0) {
+                Write-Log ('Supersedence repair FAILED [{0}]: the application did not read back as the original without the broken rules.' -f $label) -Level ERROR
+                foreach ($r in $todo) { $results.Add([pscustomobject]@{ Row = $r; Result = 'Failed'; Message = 'The application did not read back as the original without the broken rules. Check it in the console.'; Detail = ($readBack | Select-Object -First 5) -join ' | ' }) }
+                continue
+            }
+
+            $deleted = 0; $kept = New-Object System.Collections.Generic.List[string]
+            if ($DeleteOldRevisions) {
+                $newest = [int]$after.CIVersion
+                foreach ($rev in @(Get-CMApplicationRevisionHistory -Id ([int]$after.CI_ID) -ErrorAction SilentlyContinue | ForEach-Object { [int]$_.CIVersion } | Sort-Object -Unique)) {
+                    if ($rev -ge $newest) { continue }
+                    try { Remove-CMApplicationRevisionHistory -Id ([int]$after.CI_ID) -Revision $rev -Force -ErrorAction Stop; $deleted++ }
+                    catch { $kept.Add(('revision {0}: the site did not delete it because another object still uses it' -f $rev)) }
+                }
+            }
+            $note = $(if (-not $DeleteOldRevisions) { '' } elseif ($kept.Count -eq 0) { ('{0} old revision(s) deleted.' -f $deleted) } else { ('{0} old revision(s) deleted; kept: {1}.' -f $deleted, ($kept -join '; ')) })
+            foreach ($r in $todo) {
+                $results.Add([pscustomobject]@{ Row = $r; Result = 'Removed'; Message = 'Removed.'; RevisionsDeleted = $deleted; RevisionsKept = $kept.ToArray(); RevisionNote = $note })
+                Write-Log ('Supersedence repair [{0}] deployment type {1}: removed the broken reference' -f $r.ApplicationName, $r.DeploymentTypeName)
+            }
+            if ($note) { Write-Log ('Supersedence repair [{0}]: {1}' -f $label, $note) }
+        }
+        catch {
+            Write-Log ('Supersedence repair FAILED [{0}]' -f $label) -Level ERROR
+            foreach ($r in $groupRows) {
+                if (-not ($results | Where-Object { $_.Row.RuleId -eq $r.RuleId -and $_.Row.ApplicationModelName -eq $r.ApplicationModelName })) {
+                    $results.Add([pscustomobject]@{ Row = $r; Result = 'Failed'; Message = 'The change failed. The log file has the details.'; Detail = [string]$_.Exception.Message })
+                }
+            }
+        }
+    }
+    $summary = '{0} removed, {1} failed, {2} skipped.' -f @($results | Where-Object Result -eq 'Removed').Count, @($results | Where-Object Result -eq 'Failed').Count, @($results | Where-Object Result -eq 'Skipped').Count
+    Write-Log ('Supersedence repair finished: {0}' -f $summary)
+    return (& $finish (@($results | Where-Object Result -eq 'Failed').Count -eq 0) $summary)
+}
+
+function Test-HygSupersedenceRecheck {
+    <#
+    .SYNOPSIS
+        Runs check SUP-01 again on the named applications, on fresh data from the site, and counts their old revisions (check APP-05).
+
+    .OUTPUTS
+        [pscustomobject] Remaining (the number of SUP-01 findings left on these applications), OldRevisions (the old revisions of these
+        applications), Findings.
+    #>
+    param([Parameter(Mandatory)][string[]]$ApplicationModelName)
+
+    $apps = New-Object System.Collections.Generic.List[object]
+    $seen = @{}
+    $toApp = {
+        param($A, [bool]$WithXml)
+        [pscustomobject]@{
+            CI_ID = [int]$A.CI_ID; ModelName = [string]$A.ModelName; Name = [string]$A.LocalizedDisplayName; SoftwareVersion = [string]$A.SoftwareVersion
+            Manufacturer = [string]$A.Manufacturer; IsEnabled = [bool]$A.IsEnabled; IsExpired = [bool]$A.IsExpired; IsSuperseded = [bool]$A.IsSuperseded
+            IsSuperseding = [bool]$A.IsSuperseding; HasContent = [bool]$A.HasContent
+            NumberOfDeploymentTypes = $(if ($WithXml) { [int]$A.NumberOfDeploymentTypes } else { 0 })
+            SDMPackageXML = $(if ($WithXml) { [string]$A.SDMPackageXML } else { '' })
+            CIVersion = [int]$A.CIVersion
+        }
+    }
+    foreach ($model in $ApplicationModelName) {
+        $a = Get-CMApplication -ModelName $model -ErrorAction SilentlyContinue
+        if ($a) { $apps.Add((& $toApp $a $true)); $seen[$model] = $true }
+    }
+    # The referenced applications that exist join the data, so the check tells a deleted one from a present one.
+    foreach ($rel in @((ConvertTo-HygRelationships -Applications $apps.ToArray()).Relationships)) {
+        $m = [string]$rel.ToModelName
+        if ($seen.ContainsKey($m)) { continue }
+        $seen[$m] = $true
+        $r = Get-CMApplication -ModelName $m -ErrorAction SilentlyContinue
+        if ($r) { $apps.Add((& $toApp $r $false)) }
+    }
+    $all = $apps.ToArray()
+    $parsed = ConvertTo-HygRelationships -Applications $all
+    $lookup = @{}
+    foreach ($a in $all) { $lookup[[int]$a.CI_ID] = $a }
+    $data = [pscustomobject]@{ Apps = $lookup; Relationships = $parsed.Relationships }
+    $findings = @(Test-HygRelationshipChecks -RelationshipData $data | Where-Object { $_.CheckId -eq 'SUP-01' -and $ApplicationModelName -contains [string]$_.ObjectId })
+    $old = 0
+    foreach ($a in @($all | Where-Object { $ApplicationModelName -contains $_.ModelName })) {
+        $old += @(Get-CMApplicationRevisionHistory -Id ([int]$a.CI_ID) -ErrorAction SilentlyContinue | Where-Object { [int]$_.CIVersion -lt [int]$a.CIVersion }).Count
+    }
+    return [pscustomobject]@{ Remaining = $findings.Count; OldRevisions = $old; Findings = $findings }
 }
 
 # ---------------------------------------------------------------------------

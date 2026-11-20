@@ -248,14 +248,17 @@ Describe 'Every button takes the shared themed style (d)' {
     }
 
     It 'has one secondary button style and one primary button style in the dialog, and no other button style that sets a Background' {
+        # The Options dialog and the Fix Supersedence window each define the two dialog styles.
         $doc = @(Get-XamlDocument | Where-Object { $_.Source -notmatch 'SuiteCommon' -and $_.Text -match 'DialogAccentButton' })
-        $doc.Count | Should -Be 1
-        [xml]$x = $doc[0].Text
+        $doc.Count | Should -Be 2
         $xns = 'http://schemas.microsoft.com/winfx/2006/xaml'
-        $withBackground = foreach ($s in @($x.SelectNodes("//*[local-name()='Style'][@TargetType='Button']"))) {
-            if (@($s.ChildNodes | Where-Object { $_.LocalName -eq 'Setter' -and $_.GetAttribute('Property') -eq 'Background' }).Count -gt 0) { $s.GetAttribute('Key', $xns) }
+        foreach ($d in $doc) {
+            [xml]$x = $d.Text
+            $withBackground = foreach ($s in @($x.SelectNodes("//*[local-name()='Style'][@TargetType='Button']"))) {
+                if (@($s.ChildNodes | Where-Object { $_.LocalName -eq 'Setter' -and $_.GetAttribute('Property') -eq 'Background' }).Count -gt 0) { $s.GetAttribute('Key', $xns) }
+            }
+            @($withBackground | Sort-Object) | Should -Be @('DialogAccentButton', 'DialogButton') -Because $d.Source
         }
-        @($withBackground | Sort-Object) | Should -Be @('DialogAccentButton', 'DialogButton')
     }
 
     It 'names every button of the main window and lists each one in the themed set of the script' {

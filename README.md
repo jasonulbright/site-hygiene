@@ -12,7 +12,11 @@ relationships. A scan is read-only. Every finding carries the evidence
 that produced it and the exact PowerShell a fix would run. The tool runs
 a fix script only when you select the finding, select **Run Fix**, and
 confirm the script in a dialog. Many findings carry guidance only; the
-tool never runs those.
+tool never runs those. One check has a repair window of its own: a
+supersedence that points at a deleted application (SUP-01). **Fix
+Supersedence** shows each application and deployment type that loses a
+reference and removes it after you confirm. It also deletes the old
+revisions that the change creates, unless you clear the check box.
 
 The Live views show current deployment, content, distribution point,
 client, and site status on demand and on a timer, with per-metric
@@ -173,7 +177,11 @@ unchanged.
   full evidence, the recommendation, and the fix script; Run Fix
   executes that script against the site after confirmation, and a
   multi-row selection runs as a bulk fix behind one confirmation that
-  lists every script. A New column flags findings first seen this scan;
+  lists every script. For SUP-01 findings, **Fix Supersedence** opens a
+  window with the plan (application, deployment type and the reference
+  that goes), removes the references after you select **Remove
+  References**, deletes the old revisions of the changed applications
+  (a check box, on by default) and runs the check again on them. A New column flags findings first seen this scan;
   resolved findings are logged, with the comparison baseline kept in
   `SiteHygiene.lastscan.json`. Suppress and
   Unsuppress (multi-select) hide accepted findings from future scans;
@@ -276,6 +284,15 @@ provider, SQL server, scan scope, pause, refresh, threshold, alerts),
   confirmation dialog that shows the exact script it will run. The
   script is logged before execution and the outcome after. Comment-only
   fix guidance never enables the action.
+- Fix Supersedence changes only the rules that point at an application
+  that no longer exists. The cmdlets `Set-CMApplicationSupersedence
+  -RemoveSupersedence` and `Remove-CMDeploymentTypeSupersedence` need the
+  deleted application, so they cannot do it. The fix edits the application
+  document of the superseding application with the serializer of the
+  console, and refuses to write when the serializer is not the one of the
+  console or when the edited document differs from the original in anything
+  but those rules. It reads the application again afterwards and checks the
+  same. It writes no file of the removed data.
 - The Live views are read-only: `Get-CM*` cmdlets, WMI summarizer
   classes, and `SELECT` statements against the site database.
 - Scans, fixes, and refreshes run one at a time in a background runspace

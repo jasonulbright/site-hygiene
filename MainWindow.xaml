@@ -440,6 +440,8 @@
                                     ToolTip="Remove the selected findings from the suppression list."/>
                             <Button x:Name="btnRunFix" Content="Run Fix" Style="{StaticResource SquareInlineButtonStyle}" MinWidth="110" IsEnabled="False"
                                     ToolTip="Run the fix script of the selected finding after you confirm."/>
+                            <Button x:Name="btnFixSupersedence" Content="Fix Supersedence" Style="{StaticResource SquareInlineButtonStyle}" MinWidth="140" IsEnabled="False"
+                                    ToolTip="Show the broken supersedence references of the selected findings, then remove them after you confirm. The original data is saved first."/>
                             <CheckBox x:Name="chkShowSuppressed" Content="Show Suppressed" FontSize="12" VerticalAlignment="Center" Margin="8,0,0,0"
                                       Controls:ControlsHelper.ContentCharacterCasing="Normal"
                                       ToolTip="Include the suppressed findings in the list."/>

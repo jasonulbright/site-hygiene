@@ -14,6 +14,10 @@ Use it to learn what a check ID means and which severity it has.
 
 None.
 
+## Fixes
+
+Check SUP-01 has a repair window, **Fix Supersedence**. See [Findings](../core/findings.md). The checks SUP-02, SUP-03 and SUP-04 have guidance only: a loop, a disabled superseding application and a retired target need a decision that the tool cannot make for you.
+
 ## Checks
 
 | ID | Category | Severity | Title |

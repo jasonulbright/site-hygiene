@@ -77,6 +77,18 @@
         'Test-HygieneFixExecutable'
         'Invoke-HygieneFix'
 
+        # Supersedence repair (SUP-01)
+        'Find-HygBrokenSupersedenceRule'
+        'Get-HygSupersedencePlan'
+        'Read-HygApplicationDocument'
+        'ConvertTo-HygApplicationDocument'
+        'Get-HygSerializerInfo'
+        'Test-HygSerializerInfo'
+        'ConvertTo-HygDocumentLine'
+        'Get-HygDocumentDifference'
+        'Remove-HygBrokenSupersedence'
+        'Test-HygSupersedenceRecheck'
+
         # Collection evaluation deep-dive
         'Get-HygCollectionReferenceGraph'
         'Test-HygCollectionEvaluationChecks'
