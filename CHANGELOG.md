@@ -2,29 +2,27 @@
 
 ## [Unreleased]
 
+## [2026.11.20.0041] - 2026-11-20
+
+## 8 changes: retired and superseded application checks
+
 ### Added
 
-- Retired and superseded applications. Check SUP-04 (supersedence target retired) and DEP-04 (dependency target retired) now have fixes with the supported cmdlets `Set-CMApplicationSupersedence -RemoveSupersedence` and `Remove-CMDeploymentTypeDependency`. Each fix also deletes the old revisions that its change makes (a revision that another object uses stays).
-- New check APP-07: a retired application that still supersedes or depends on an application; the fix removes those rules. A rule to a retired target stays with SUP-04 and DEP-04, so one situation is one finding.
-- New check APP-08: a superseded application with no deployment, dependency, task sequence or stale reference row qualifies for deletion; the fix removes the rule of its replacement and deletes it. A retired superseded application is left to SUP-04.
-- New check TSQ-05: a task sequence with a step that installs a retired or superseded application (task sequence name and package ID, the application). No fix: a task sequence is never edited from here. The reference rows leave out a retired application, so the task sequence read now also reads the steps of each task sequence, one read each, but only when a retired or superseded application has a task sequence that names it (`NumberOfDependentTS`).
-- New check TSQ-06: stale reference rows, the reference rows that the site returns for a task sequence that it does not return. They come from the query that the task sequence read already makes.
-- Show Blockers: a button that lists every object that refers to the selected application (deployments, task sequences also nested, dependencies, supersedence rules, stale references). It reads nothing from the site.
-- New check DPL-06: a deployment created more than 365 days ago (the age is a setting in Options). Review only; nothing is deleted. A deployment that DPL-03 already reports is left to DPL-03.
-
-- Add Fix Supersedence for check SUP-01 (a supersedence that points at a deleted application). The window lists each application and deployment type with the reference that goes, removes the references after you select Remove References and runs the check again on the changed applications. Cancel changes nothing. The log has a line for each change with the names of the application and the deployment type, and the counts.
-- The fix deletes the old revisions that its own change creates (a check box in the window, on by default), so that check APP-05 does not report them. It touches only the applications that it changed, and it keeps a revision that the site refuses to delete and says so.
-- The cmdlets `Set-CMApplicationSupersedence -RemoveSupersedence` and `Remove-CMDeploymentTypeSupersedence` need the deleted application, so the fix edits the application document of the superseding application with the serializer of the console. It refuses when the serializer is not the one of the console, and it does not write when the edited document differs from the original in anything but the removed rules. It writes no file of the removed data.
+- Add checks APP-07 and APP-08 for retired and superseded applications.
+- Add checks TSQ-05 and TSQ-06 for task sequence steps and stale reference rows.
+- Add check DPL-06 for deployments older than a configurable age.
+- Add Show Blockers to list every object that refers to an application.
+- Add Fix Supersedence for check SUP-01.
+- Add fixes for checks SUP-04 and DEP-04.
 
 ### Changed
 
-- Use ConfigMgr terms in the window text, the log messages, the README and the guide.
-- Name the software update group in the titles of checks UPD-01 and UPD-04.
-- Added tooltips to 21 controls that had none: the filter box, the two Relationships tabs, the two Trends lists, the five Options categories and the Options settings, and Remove References in Fix Supersedence.
+- Change window text, log messages and guide to use ConfigMgr terms.
+- Add tooltips to 21 controls.
 
 ### Fixed
 
-- The guide capture tool stops only the processes that it started, by process id. It no longer stops PowerShell processes by command-line pattern, which could end the window of another session. A new guard test fails when a tool script stops a process by a pattern.
+- Stop the guide capture tool from stopping processes by command-line pattern.
 
 ## [2026.11.18.0040] - 2026-11-18
 
