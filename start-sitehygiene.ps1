@@ -2322,7 +2322,7 @@ function Show-SupersedenceFixDialog {
                    Foreground="{DynamicResource MahApps.Brushes.Gray1}"/>
         <CheckBox x:Name="chkRevisions" Grid.Row="2" Margin="0,8,0,0" FontSize="12" IsChecked="True" IsEnabled="False"
                   Controls:ControlsHelper.ContentCharacterCasing="Normal"
-                  Content="Also delete the old revisions this fix creates"
+                  Content="Also Delete the Old Revisions This Fix Creates"
                   ToolTip="The change makes a new revision of each application. This step deletes the older revisions of the changed applications, so that check APP-05 does not report them. A revision that another object still uses stays."/>
         <ProgressBar x:Name="barRunning" Grid.Row="3" Height="4" Margin="0,8,0,0" IsIndeterminate="True"/>
         <DataGrid x:Name="gridPlan" Grid.Row="4" Margin="0,12,0,0" IsReadOnly="True" AutoGenerateColumns="False"

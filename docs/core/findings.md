@@ -82,7 +82,7 @@ A broken supersedence is a rule of an application that points at an application 
 
 ![The plan of the fix](../images/fix-supersedence-plan.png)
 
-3. Check the list. The check box **Also delete the old revisions this fix creates** is on by default. Clear it to keep the old revisions. Select **Cancel** to close the window with no change. Select **Remove References** to continue.
+3. Check the list. The check box **Also Delete the Old Revisions This Fix Creates** is on by default. Clear it to keep the old revisions. Select **Cancel** to close the window with no change. Select **Remove References** to continue.
 4. The tool removes only the rules that point at an application that no longer exists. A rule that also points at an application that still exists stays. Before it writes, it checks that the serializer is the one of the console and that the edited document is the original without those rules and nothing else. After the write it reads each application again and checks the same. It writes no file of the removed data.
 5. The change makes a new revision of the application. With the check box on, the tool then deletes the older revisions of exactly the applications that it changed, so that check APP-05 does not report them. The site refuses to delete a revision that another object still uses: the tool keeps that revision, says so in the result and does not fail the run.
 6. The window shows `<n> removed, <n> failed, <n> skipped.`, the result of check SUP-01 run again on the changed applications and the old revisions that are left on them. The log has a line for each change with the names of the application and the deployment type. The rows that were fixed show `Fixed`. Run a scan to confirm on the whole site.
