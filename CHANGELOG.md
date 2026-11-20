@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+
+- Add Fix Supersedence for check SUP-01 (a supersedence that points at a deleted application). The window lists each application and deployment type with the reference that goes, removes the references after you select Remove References and runs the check again on the changed applications. Cancel changes nothing. The log has a line for each change with the names of the application and the deployment type, and the counts.
+- The fix deletes the old revisions that its own change creates (a check box in the window, on by default), so that check APP-05 does not report them. It touches only the applications that it changed, and it keeps a revision that the site refuses to delete and says so.
+- The cmdlets `Set-CMApplicationSupersedence -RemoveSupersedence` and `Remove-CMDeploymentTypeSupersedence` need the deleted application, so the fix edits the application document of the superseding application with the serializer of the console. It refuses when the serializer is not the one of the console, and it does not write when the edited document differs from the original in anything but the removed rules. It writes no file of the removed data.
+
 ### Changed
 
 - Use ConfigMgr terms in the window text, the log messages, the README and the guide.

@@ -8,7 +8,7 @@ $script:AppConfig = @{
     Xaml          = 'MainWindow.xaml'
     OptionsButton = 'btnOptions'
     LogLabel      = 'lblLogOutput'
-    WorkflowButtons = @('btnScan', 'btnRefreshAll', 'btnPauseResume', 'btnSuppress', 'btnUnsuppress', 'btnRunFix', 'btnExportCsv', 'btnExportHtml', 'btnCopySummary', 'btnCancelScan')
+    WorkflowButtons = @('btnScan', 'btnRefreshAll', 'btnPauseResume', 'btnSuppress', 'btnUnsuppress', 'btnRunFix', 'btnFixSupersedence', 'btnExportCsv', 'btnExportHtml', 'btnCopySummary', 'btnCancelScan')
     Views         = @(
         @{ Name = 'Findings';      Container = 'viewFindings';      Button = 'btnViewFindings' }
         @{ Name = 'Relationships'; Container = 'viewRelationships'; Button = 'btnViewRelationships' }

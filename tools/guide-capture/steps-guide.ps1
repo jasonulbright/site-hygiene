@@ -43,6 +43,19 @@ Section 'run fix dialog' {
   Invoke-El (Get-El $win 'No')
   Start-Sleep -Seconds 2; Shot $win 'after-fix-cancel'
 }
+Section 'fix supersedence dialog' {
+  # The window is captured and cancelled. The guide never confirms a fix. The lab site needs a supersedence to a deleted
+  # application (check SUP-01) for this step: a missing row fails the capture.
+  Invoke-El (Get-El $win 'btnViewFindings'); Start-Sleep -Seconds 1
+  Set-Text (Get-El $win 'txtFilter') 'SUP-01'; Start-Sleep -Seconds 1
+  $r = Rows 'gridFindings'; if (-not $r.Count) { throw 'No SUP-01 finding on the lab site for the Fix Supersedence window.' }
+  Select-El $r[0]; Start-Sleep -Milliseconds 600
+  Click-El (Get-El $win 'btnFixSupersedence'); $d = Find-Last 'Fix Supersedence' 20
+  $null = Wait-Until { (Get-ElText (Get-El $d 'txtSummary')) -match 'will be removed|Nothing to remove|could not' } 90; Start-Sleep -Seconds 1
+  Shot $d 'fix-supersedence-plan'
+  Click-El (Get-El $d 'btnCancel'); Start-Sleep -Seconds 2
+  Set-Text (Get-El $win 'txtFilter') ''; Start-Sleep -Milliseconds 600
+}
 Section 'relationships' {
   Invoke-El (Get-El $win 'btnViewRelationships'); Start-Sleep -Seconds 2; Shot $win 'relationships-inventory'
   $r = Rows 'gridRelationships'; if ($r.Count) { Select-El $r[0]; Start-Sleep -Milliseconds 800; Shot $win 'relationships-detail' }

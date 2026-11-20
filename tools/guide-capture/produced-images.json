@@ -1,5 +1,5 @@
 {
-  "Count": 49,
+  "Count": 50,
   "Images": [
     "after-unsuppress.png",
     "auto-refresh-paused.png",
@@ -21,6 +21,7 @@
     "findings-filter-text.png",
     "findings-severity-warning.png",
     "findings.png",
+    "fix-supersedence-plan.png",
     "inactive-no-sql.png",
     "light-deployments.png",
     "light-findings.png",

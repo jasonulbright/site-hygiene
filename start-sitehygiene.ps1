@@ -164,6 +164,7 @@ $btnPauseResume     = $window.FindName('btnPauseResume')
 $btnSuppress        = $window.FindName('btnSuppress')
 $btnUnsuppress      = $window.FindName('btnUnsuppress')
 $btnRunFix          = $window.FindName('btnRunFix')
+$btnFixSupersedence = $window.FindName('btnFixSupersedence')
 $chkShowSuppressed  = $window.FindName('chkShowSuppressed')
 $txtSuppressCount   = $window.FindName('txtSuppressCount')
 $txtFilter          = $window.FindName('txtFilter')
@@ -269,7 +270,7 @@ $script:LiveViews = @('Deployments', 'Content', 'DPs', 'Clients', 'Inactive', 'S
 $script:ActiveView = 'Findings'
 
 # Every button of the main window takes the same themed style. SuiteCommon paints them: blue with white text in the light theme, dark in the dark theme.
-$script:WorkflowButtons = @($btnScan, $btnRefreshAll, $btnPauseResume, $btnSuppress, $btnUnsuppress, $btnRunFix, $btnExportCsv, $btnExportHtml, $btnCopySummary, $btnCancelScan)
+$script:WorkflowButtons = @($btnScan, $btnRefreshAll, $btnPauseResume, $btnSuppress, $btnUnsuppress, $btnRunFix, $btnFixSupersedence, $btnExportCsv, $btnExportHtml, $btnCopySummary, $btnCancelScan)
 
 Initialize-SuiteTheme -Window $window `
     -IsDarkGetter { [bool]$global:Prefs['DarkMode'] } `
@@ -684,6 +685,7 @@ $btnUnsuppress.Add_Click({
 
 $gridFindings.Add_SelectionChanged({
     $row = $gridFindings.SelectedItem
+    $btnFixSupersedence.IsEnabled = (@(Get-SupersedenceFixSelection).Count -gt 0)
     if (-not $row) {
         $txtFindingDetail.Text = 'Select a finding to see its evidence, recommendation, and the fix script it would take.'
         return
@@ -997,6 +999,7 @@ function Invoke-Scan {
                     Evidence       = $_.Evidence
                     Recommendation = $_.Recommendation
                     FixScript      = $_.FixScript
+                    FixData        = $_.FixData
                     FixState       = ''
                     SuppressKey    = Get-HygieneSuppressionKey -Finding $_
                 }
@@ -2213,6 +2216,338 @@ function Show-OptionsDialog {
     Update-StatusBarSummary
 }
 $btnOptions.Add_Click({ Show-OptionsDialog })
+
+# =============================================================================
+# Fix Supersedence (check SUP-01). The window shows the plan, which applications and deployment types lose which
+# reference, and changes nothing until the operator selects Remove References. Cancel closes it without a change.
+# The work runs in a runspace of its own, so the window stays open.
+# =============================================================================
+function Get-SupersedenceFixSelection {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Returns the selected findings that the fix can act on.')]
+    param()
+    return @($gridFindings.SelectedItems | Where-Object { $_.CheckId -eq 'SUP-01' -and $_.FixData -and $_.FixState -ne 'Fixed' })
+}
+
+function Show-SupersedenceFixDialog {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Modal dialog show; reads as a single action.')]
+    param([Parameter(Mandatory)][object[]]$Rows)
+
+    $supXaml = @'
+<Controls:MetroWindow
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:Controls="clr-namespace:MahApps.Metro.Controls;assembly=MahApps.Metro"
+    Title="Fix Supersedence"
+    Width="940" Height="560" MinWidth="640" MinHeight="380"
+    WindowStartupLocation="CenterOwner" TitleCharacterCasing="Normal"
+    GlowBrush="{DynamicResource MahApps.Brushes.Accent}"
+    NonActiveGlowBrush="{DynamicResource MahApps.Brushes.Accent}"
+    BorderThickness="1" ShowIconOnTitleBar="False">
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Controls.xaml" />
+                <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Fonts.xaml" />
+                <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Themes/Dark.Steel.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+            <ControlTemplate x:Key="ThemedButtonTemplate" TargetType="Button">
+                <Border x:Name="Bd"
+                        Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}"
+                        SnapsToDevicePixels="True">
+                    <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                      VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                      Margin="{TemplateBinding Padding}"
+                                      RecognizesAccessKey="True"
+                                      SnapsToDevicePixels="True"/>
+                </Border>
+                <ControlTemplate.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter TargetName="Bd" Property="Opacity" Value="0.85"/>
+                    </Trigger>
+                    <Trigger Property="IsKeyboardFocused" Value="True">
+                        <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource MahApps.Brushes.ThemeForeground}"/>
+                    </Trigger>
+                    <Trigger Property="IsPressed" Value="True">
+                        <Setter TargetName="Bd" Property="Opacity" Value="0.7"/>
+                    </Trigger>
+                    <Trigger Property="IsEnabled" Value="False">
+                        <Setter TargetName="Bd" Property="Opacity" Value="0.5"/>
+                    </Trigger>
+                </ControlTemplate.Triggers>
+            </ControlTemplate>
+            <Style x:Key="ThemedButtonStyle" TargetType="Button" BasedOn="{StaticResource MahApps.Styles.Button.Square}">
+                <Setter Property="BorderBrush" Value="{DynamicResource MahApps.Brushes.Gray2}"/>
+                <Setter Property="Template" Value="{StaticResource ThemedButtonTemplate}"/>
+                <Setter Property="Foreground" Value="{DynamicResource MahApps.Brushes.ThemeForeground}"/>
+                <Setter Property="BorderThickness" Value="1"/>
+            </Style>
+            <!-- The one secondary style: a gray fill, the theme text color and a visible border. Cancel uses it. The primary style is DialogAccentButton. -->
+            <Style x:Key="DialogButton" TargetType="Button" BasedOn="{StaticResource ThemedButtonStyle}">
+                <Setter Property="Template" Value="{DynamicResource SuiteNeutralButtonTemplate}"/>
+                <Setter Property="Background" Value="{DynamicResource MahApps.Brushes.Gray10}"/>
+                <Setter Property="Foreground" Value="{DynamicResource MahApps.Brushes.ThemeForeground}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource MahApps.Brushes.Gray2}"/>
+                <Setter Property="MinWidth" Value="90"/><Setter Property="Height" Value="32"/>
+                <Setter Property="Margin" Value="0,0,8,0"/>
+                <Setter Property="Controls:ControlsHelper.ContentCharacterCasing" Value="Normal"/>
+            </Style>
+            <Style x:Key="DialogAccentButton" TargetType="Button" BasedOn="{StaticResource ThemedButtonStyle}">
+                <Setter Property="Template" Value="{DynamicResource SuiteAccentButtonTemplate}"/>
+                <Setter Property="MinWidth" Value="90"/><Setter Property="Height" Value="32"/>
+                <Setter Property="Background" Value="{DynamicResource MahApps.Brushes.AccentBase}"/>
+                <Setter Property="Foreground" Value="{DynamicResource MahApps.Brushes.IdealForeground}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource MahApps.Brushes.AccentBase}"/>
+                <Setter Property="Margin" Value="0,0,8,0"/>
+                <Setter Property="Controls:ControlsHelper.ContentCharacterCasing" Value="Normal"/>
+            </Style>
+            <!-- Grid headers keep the case of their text, as in the main window. -->
+            <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource MahApps.Styles.DataGridColumnHeader}">
+                <Setter Property="Controls:ControlsHelper.ContentCharacterCasing" Value="Normal"/>
+            </Style>
+        </ResourceDictionary>
+    </Window.Resources>
+    <Grid Margin="20,16,20,12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <TextBlock x:Name="txtSummary" Grid.Row="0" FontSize="13" TextWrapping="Wrap" Text="Reading the plan from the site..."/>
+        <TextBlock x:Name="txtDetail" Grid.Row="1" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0"
+                   Foreground="{DynamicResource MahApps.Brushes.Gray1}"/>
+        <CheckBox x:Name="chkRevisions" Grid.Row="2" Margin="0,8,0,0" FontSize="12" IsChecked="True" IsEnabled="False"
+                  Controls:ControlsHelper.ContentCharacterCasing="Normal"
+                  Content="Also Delete the Old Revisions This Fix Creates"
+                  ToolTip="The change makes a new revision of each application. This step deletes the older revisions of the changed applications, so that check APP-05 does not report them. A revision that another object still uses stays."/>
+        <ProgressBar x:Name="barRunning" Grid.Row="3" Height="4" Margin="0,8,0,0" IsIndeterminate="True" Visibility="Collapsed"/>
+        <DataGrid x:Name="gridPlan" Grid.Row="4" Margin="0,12,0,0" IsReadOnly="True" AutoGenerateColumns="False"
+                  CanUserAddRows="False" CanUserDeleteRows="False" SelectionMode="Single" SelectionUnit="FullRow"
+                  HeadersVisibility="Column" GridLinesVisibility="Horizontal" RowHeaderWidth="0" FontSize="12"
+                  Background="{DynamicResource MahApps.Brushes.ThemeBackground}"
+                  Foreground="{DynamicResource MahApps.Brushes.ThemeForeground}"
+                  BorderBrush="{DynamicResource MahApps.Brushes.Gray8}" BorderThickness="1"
+                  HorizontalGridLinesBrush="{DynamicResource MahApps.Brushes.Gray8}">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Application" Width="*" Binding="{Binding ApplicationName}"/>
+                <DataGridTextColumn Header="Deployment Type" Width="*" Binding="{Binding DeploymentTypeName}"/>
+                <DataGridTextColumn Header="Reference To Deleted Application" Width="3*" Binding="{Binding Reference}"/>
+                <DataGridTextColumn Header="Result" Width="*" Binding="{Binding Result}"/>
+            </DataGrid.Columns>
+        </DataGrid>
+        <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+            <Button x:Name="btnApply"  Content="Remove References" Style="{StaticResource DialogAccentButton}" MinWidth="150" IsEnabled="False"/>
+            <Button x:Name="btnCancel" Content="Cancel" Style="{StaticResource DialogButton}"/>
+        </StackPanel>
+    </Grid>
+</Controls:MetroWindow>
+'@
+    [xml]$supX = $supXaml
+    $supReader = New-Object System.Xml.XmlNodeReader $supX
+    $supDlg = [System.Windows.Markup.XamlReader]::Load($supReader)
+    $supDlg.Owner = $window
+    Install-TitleBarDragFallback -Window $supDlg
+    Set-DialogTheme -Dialog $supDlg
+
+    $txtSummary = $supDlg.FindName('txtSummary')
+    $txtDetail  = $supDlg.FindName('txtDetail')
+    $barRunning = $supDlg.FindName('barRunning')
+    # The bar is collapsed in the XAML (an indeterminate bar animates for as long as it is visible) and shows while the window reads the plan.
+    $barRunning.Visibility = [System.Windows.Visibility]::Visible
+    $gridPlan   = $supDlg.FindName('gridPlan')
+    $btnApply   = $supDlg.FindName('btnApply')
+    $chkRevisions = $supDlg.FindName('chkRevisions')
+    $btnCancel  = $supDlg.FindName('btnCancel')
+
+    $siteCode    = [string]$global:Prefs.SiteCode
+    $smsProvider = [string]$global:Prefs.SMSProvider
+    $targets = @($Rows | ForEach-Object { [pscustomobject]@{ FindingKey = [string]$_.SuppressKey; FixData = $_.FixData } })
+    # phase: Planning, Ready, Applying, Done. The timer reads it; the buttons change it.
+    $state = [hashtable]::Synchronized(@{ Phase = 'Planning'; Done = $false; Plan = $null; Result = $null; Recheck = $null; ErrorMsg = $null; StopRequested = $false; Cancelled = $false })
+    $outcome = [hashtable]@{ Fixed = @(); Removed = 0; Failed = 0; Skipped = 0; Remaining = -1; OldRevisions = -1 }
+
+    $rs = New-SuiteBgRunspace -ModulePath (Join-Path $PSScriptRoot 'Module\SiteHygieneCommon.psd1') -LogPath $script:ToolLogPath
+    $run = @{ PowerShell = $null; Handle = $null; Items = $null }
+    $startWork = {
+        param([scriptblock]$Script, [object[]]$Arguments)
+        $state.Done = $false
+        $ps = [powershell]::Create()
+        $ps.Runspace = $rs
+        [void]$ps.AddScript($Script)
+        foreach ($a in $Arguments) { [void]$ps.AddArgument($a) }
+        $run.PowerShell = $ps
+        $run.Handle = $ps.BeginInvoke()
+    }.GetNewClosure()
+    $endWork = {
+        try { [void]$run.PowerShell.EndInvoke($run.Handle) } catch { $null = $_ }
+        try { $run.PowerShell.Dispose() } catch { $null = $_ }
+        $run.PowerShell = $null
+    }.GetNewClosure()
+
+    $planScript = {
+        param($Targets, $SiteCode, $SmsProvider, $State)
+        try {
+            if (-not (Connect-CMSite -SiteCode $SiteCode -SMSProvider $SmsProvider)) { $State.ErrorMsg = ('Failed to connect to site {0} (SMS Provider {1}).' -f $SiteCode, $SmsProvider); return }
+            $State.Plan = Get-HygSupersedencePlan -Target $Targets
+        }
+        catch { $State.ErrorMsg = 'The plan could not be read. The log file has the details.'; Write-Log ('Fix Supersedence plan failed: {0}' -f $_.Exception.Message) -Level ERROR -Quiet }
+        finally { $State.Done = $true }
+    }
+    $applyScript = {
+        param($Plan, $DeleteRevisions, $State)
+        try {
+            $State.Result = Remove-HygBrokenSupersedence -Plan $Plan -DeleteOldRevisions:([bool]$DeleteRevisions) -State $State -Confirm:$false
+            $changed = @($State.Result.Results | Where-Object { $_.Result -eq 'Removed' } | ForEach-Object { $_.Row.ApplicationModelName } | Select-Object -Unique)
+            if ($changed.Count -gt 0) { $State.Recheck = Test-HygSupersedenceRecheck -ApplicationModelName $changed }
+        }
+        catch { $State.ErrorMsg = 'The fix stopped with an error. The log file has the details.'; Write-Log ('Fix Supersedence failed: {0}' -f $_.Exception.Message) -Level ERROR -Quiet }
+        finally { $State.Done = $true }
+    }
+
+    $words = { param([int]$N, [string]$One, [string]$Many) if ($N -eq 1) { '{0} {1}' -f $N, $One } else { '{0} {1}' -f $N, $Many } }.GetNewClosure()
+    $showPlan = {
+        $plan = $state.Plan
+        $planRows = @($plan.Rows)
+        $items = New-Object System.Collections.Generic.List[object]
+        foreach ($r in $planRows) {
+            $ref = [string]$r.ReferencedApplicationModel
+            if ($ref -match '/') { $ref = $ref.Substring($ref.IndexOf('/') + 1) }
+            $items.Add([pscustomobject]@{ ApplicationName = $r.ApplicationName; DeploymentTypeName = $r.DeploymentTypeName; Reference = $ref; Result = ''; Row = $r })
+        }
+        $run.Items = $items
+        $gridPlan.ItemsSource = $items
+        $apps = @($planRows | Select-Object -ExpandProperty ApplicationModelName -Unique).Count
+        $skipped = @($plan.Skipped).Count
+        if ($planRows.Count -eq 0) {
+            $txtSummary.Text = 'Nothing to remove.'
+            $txtDetail.Text = $(if ($skipped -gt 0) { ('{0} no longer need a fix. Scan again to refresh the list.' -f (& $words $skipped 'finding' 'findings')) } else { '' })
+            Add-LogLine ('Fix Supersedence: nothing to remove ({0} skipped).' -f $skipped)
+            return
+        }
+        $txtSummary.Text = ('{0} on {1} will be removed.' -f (& $words $planRows.Count 'broken supersedence reference' 'broken supersedence references'), (& $words $apps 'application' 'applications'))
+        $txtDetail.Text = ('Only the rules that point at an application that no longer exists are removed. The cmdlets Set-CMApplicationSupersedence and Remove-CMDeploymentTypeSupersedence cannot do this, because they need the deleted application. The fix edits the application document with the serializer of the console and refuses to write when anything but those rules would change. Each change makes a new revision of the application.{0}' -f $(if ($skipped -gt 0) { (' {0} no longer need a fix and are left out.' -f (& $words $skipped 'finding' 'findings')) } else { '' }))
+        $chkRevisions.IsEnabled = $true
+        $btnApply.IsEnabled = $true
+        $state.Phase = 'Ready'
+        Add-LogLine ('Fix Supersedence plan: {0} on {1}. Nothing is changed until you confirm.' -f (& $words $planRows.Count 'reference' 'references'), (& $words $apps 'application' 'applications'))
+        foreach ($r in $planRows) { Add-LogLine ('  Plan: [{0}] deployment type {1}: remove the broken reference' -f $r.ApplicationName, $r.DeploymentTypeName) }
+    }.GetNewClosure()
+
+    $timer = New-Object System.Windows.Threading.DispatcherTimer
+    $timer.Interval = [TimeSpan]::FromMilliseconds(150)
+    $timer.Add_Tick({
+        if (-not $state.Done) { return }
+        $timer.Stop()
+        & $endWork
+        $barRunning.Visibility = [System.Windows.Visibility]::Collapsed
+        if ($state.ErrorMsg) {
+            $txtSummary.Text = [string]$state.ErrorMsg
+            $txtDetail.Text = ''
+            $btnApply.IsEnabled = $false
+            $btnCancel.Content = 'Close'
+            $state.Phase = 'Done'
+            Add-LogLine ('Fix Supersedence: {0}' -f $state.ErrorMsg) -Level ERROR
+            return
+        }
+        if ($state.Phase -eq 'Planning') { & $showPlan; $btnCancel.Content = 'Cancel'; if ($state.Phase -ne 'Ready') { $btnCancel.Content = 'Close'; $state.Phase = 'Done' }; return }
+
+        # Applying finished.
+        $res = $state.Result
+        $outcome.Removed = [int]$res.Removed; $outcome.Failed = [int]$res.Failed; $outcome.Skipped = [int]$res.Skipped; 
+        foreach ($item in $run.Items) {
+            $hit = @($res.Results | Where-Object { $_.Row.RuleId -eq $item.Row.RuleId -and $_.Row.ApplicationModelName -eq $item.Row.ApplicationModelName }) | Select-Object -First 1
+            if ($hit) { $item.Result = [string]$hit.Result; if ($hit.Result -eq 'Removed') { $outcome.Fixed += [string]$item.Row.FindingKey } }
+        }
+        $gridPlan.Items.Refresh()
+        $remaining = $(if ($state.Recheck) { [int]$state.Recheck.Remaining } else { -1 })
+        $outcome.Remaining = $remaining
+        $line = ('{0} removed, {1} failed, {2} skipped.' -f $res.Removed, $res.Failed, $res.Skipped)
+        $txtSummary.Text = $(if ($res.Failed -eq 0 -and $res.Removed -gt 0) { ('Removed {0}.' -f (& $words $res.Removed 'broken supersedence reference' 'broken supersedence references')) } else { $line })
+        $recheckText = $(if ($remaining -ge 0) { ('Check SUP-01 ran again on the changed applications: {0} left. Old revisions left on them: {1}.' -f $remaining, [int]$state.Recheck.OldRevisions) } else { 'Check SUP-01 was not run again: no reference was removed.' })
+        $notes = @($res.Results | Where-Object { $_.Result -eq 'Removed' -and $_.RevisionNote } | ForEach-Object { $_.RevisionNote } | Select-Object -Unique)
+        $txtDetail.Text = ('{0} {1}{2}' -f $line, $recheckText, $(if ($notes.Count -gt 0) { ' ' + ($notes -join ' ') } else { '' }))
+        Add-LogLine ('Fix Supersedence: {0}' -f $line)
+        foreach ($n in $notes) { Add-LogLine ('Fix Supersedence: {0}' -f $n) }
+        Add-LogLine ('Fix Supersedence: {0}' -f $recheckText)
+        foreach ($m in @($res.Results | Where-Object { $_.Result -eq 'Failed' })) { Add-LogLine ('Fix Supersedence failed [{0}] {1}. The log file has the details.' -f $m.Row.ApplicationName, $m.Row.DeploymentTypeName) -Level WARN }
+        $btnCancel.Content = 'Close'
+        $state.Phase = 'Done'
+    }.GetNewClosure())
+
+    $btnApply.Add_Click({
+        if ($state.Phase -ne 'Ready') { return }
+        $state.Phase = 'Applying'
+        $btnApply.IsEnabled = $false
+        $barRunning.Visibility = [System.Windows.Visibility]::Visible
+        $chkRevisions.IsEnabled = $false
+        $txtSummary.Text = 'Removing the references...'
+        Add-LogLine ('Fix Supersedence: confirmed. Removing the references{0}.' -f $(if ([bool]$chkRevisions.IsChecked) { ', then the old revisions of the changed applications' } else { '' }))
+        & $startWork $applyScript @($state.Plan, [bool]$chkRevisions.IsChecked, $state)
+        $timer.Start()
+    }.GetNewClosure())
+
+    $btnCancel.Add_Click({
+        switch ($state.Phase) {
+            'Planning' {
+                $state.Cancelled = $true
+                $timer.Stop()
+                try { if ($run.PowerShell) { [void]$run.PowerShell.BeginStop($null, $null) } } catch { $null = $_ }
+                Add-LogLine 'Fix Supersedence: cancelled. Nothing was changed.'
+                $supDlg.Close()
+            }
+            'Ready' { Add-LogLine 'Fix Supersedence: cancelled. Nothing was changed.'; $supDlg.Close() }
+            'Applying' {
+                if (-not $state.StopRequested) {
+                    $state.StopRequested = $true
+                    $btnCancel.IsEnabled = $false
+                    $txtSummary.Text = 'Stopping after the application in work...'
+                    Add-LogLine 'Fix Supersedence: stop requested. The application in work finishes first.'
+                }
+            }
+            default { $supDlg.Close() }
+        }
+    }.GetNewClosure())
+    $supDlg.Add_KeyDown({
+        param($s, $e)
+        if ($e.Key -eq [System.Windows.Input.Key]::Escape -and $state.Phase -ne 'Applying') { $e.Handled = $true; $btnCancel.RaiseEvent((New-Object System.Windows.RoutedEventArgs([System.Windows.Controls.Primitives.ButtonBase]::ClickEvent))) }
+    }.GetNewClosure())
+    $supDlg.Add_Closing({
+        param($s, $e)
+        if ($state.Phase -eq 'Applying') {
+            $e.Cancel = $true
+            if (-not $state.StopRequested) { $state.StopRequested = $true; $btnCancel.IsEnabled = $false; $txtSummary.Text = 'Stopping after the application in work...' }
+            return
+        }
+        $timer.Stop()
+        try { if ($run.PowerShell) { [void]$run.PowerShell.BeginStop($null, $null) } } catch { $null = $_ }
+        Close-SuiteBgRunspace -Runspace $rs
+    }.GetNewClosure())
+
+    $btnApply.IsEnabled = $false
+    & $startWork $planScript @($targets, $siteCode, $smsProvider, $state)
+    $timer.Start()
+    [void]$supDlg.ShowDialog()
+    return [pscustomobject]$outcome
+}
+
+$btnFixSupersedence.Add_Click({
+    $rows = @(Get-SupersedenceFixSelection)
+    if ($rows.Count -eq 0) { return }
+    if (Test-BgBusy -Action 'Fix Supersedence') { return }
+    Add-LogLine ('Fix Supersedence: {0} finding(s) selected. The plan is read from the site first.' -f $rows.Count)
+    $outcome = Show-SupersedenceFixDialog -Rows $rows
+    if ($outcome -and @($outcome.Fixed).Count -gt 0) {
+        foreach ($row in $script:AllFindings) { if ($row.CheckId -eq 'SUP-01' -and @($outcome.Fixed) -contains [string]$row.SuppressKey) { $row.FixState = 'Fixed' } }
+        $gridFindings.Items.Refresh()
+        Set-StatusText $(if ($outcome.Failed -eq 0) { 'Supersedence fixed - scan again to confirm.' } else { 'Some references failed - see log.' })
+    }
+    $btnFixSupersedence.IsEnabled = (@(Get-SupersedenceFixSelection).Count -gt 0)
+})
+
 
 # === Window state (geometry logic: SuiteCommon) ===
 $global:WindowStatePath = Join-Path $PSScriptRoot 'SiteHygiene.windowstate.json'
