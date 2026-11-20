@@ -89,6 +89,32 @@ A broken supersedence is a rule of an application that points at an application 
 
 The tool does not use `Set-CMApplicationSupersedence -RemoveSupersedence` for this fix. The cmdlet needs the superseded application and its deployment type as parameters, and the deleted application has neither. The cmdlet answers `No object corresponds to the specified parameters`. The deprecated `Remove-CMDeploymentTypeSupersedence` needs the same objects. So the fix edits the application document of the superseding application with the serializer of the console, which is why it checks the document before and after the write.
 
+### Fix a retired or superseded application
+
+The rule is that no active application depends on or supersedes a retired application, and that no task sequence installs a retired or superseded one. The checks that apply it:
+
+| Check | Finding | **Run Fix** |
+|---|---|---|
+| SUP-04 | A supersedence rule whose target is retired. | Removes the rule. |
+| DEP-04 | A dependency on a retired application. | Removes the dependency. |
+| APP-07 | A retired application that still supersedes or depends on an active application. | Removes those rules. |
+| APP-08 | A superseded application that qualifies for deletion. | Removes the rule of the replacement, then deletes the application. |
+| TSQ-05 | A task sequence installs a retired or superseded application. | None. Edit the task sequence in the console. |
+| TSQ-06 | Stale reference rows: the site returns reference rows of a task sequence that it does not return. | None. |
+
+1. Select the row. The fix script shows the exact statements. The first removes the rule with `Set-CMApplicationSupersedence -RemoveSupersedence` or `Remove-CMDeploymentTypeDependency`, which work because both applications exist. The next one deletes the old revisions that the change makes, so that check APP-05 does not report them. A revision that another object still uses stays, and the fix does not fail.
+2. Select **Run Fix** and confirm the script. A task sequence is never edited by a fix.
+
+### See what blocks the delete of an application
+
+1. Select a finding of an application, for example APP-08.
+2. Select **Show Blockers**. The window lists every object that refers to the application: a deployment (the collection), a task sequence (name and package ID), a task sequence that holds that task sequence, another application that depends on it or supersedes it, and a stale reference.
+![The window of the blockers](../images/show-blockers.png)
+
+3. The list comes from the last scan and reads nothing from the site. A task sequence, a collection or a folder that your account may not see is not in it. The site can still refuse the delete for such an object.
+
+A **stale reference** is a reference row of a task sequence that the site does not return: the task sequence was deleted, or it is outside the scope of your account. The row still blocks the delete of the application. A task sequence step that names a retired application is found through the task sequence itself, because the reference rows leave out a retired application.
+
 ### Export the findings
 
 1. Select **Export CSV** or **Export HTML**. The tool writes the rows that the filters show.
@@ -110,6 +136,7 @@ The CSV and the HTML files carry the evidence, the recommendation and the fix sc
 | **Export CSV**, **Export HTML** | Write the shown rows to a file. |
 | **Suppress**, **Unsuppress** | Hide or show the selected findings in later scans. |
 | **Run Fix** | Runs the fix script of the selected rows after a confirmation. |
+| **Show Blockers** | Lists every object that refers to the selected application and so blocks its delete. |
 | **Fix Supersedence** | Opens the plan of the selected SUP-01 rows. **Remove References** removes the references and, with the check box on, the old revisions of the changed applications. |
 | **Show Suppressed** | Shows the suppressed findings in the grid. |
 

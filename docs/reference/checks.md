@@ -16,7 +16,9 @@ None.
 
 ## Fixes
 
-Check SUP-01 has a repair window, **Fix Supersedence**. See [Findings](../core/findings.md). The checks SUP-02, SUP-03 and SUP-04 have guidance only: a loop, a disabled superseding application and a retired target need a decision that the tool cannot make for you.
+Check SUP-01 has a repair window, **Fix Supersedence**. See [Findings](../core/findings.md). The checks SUP-02 and SUP-03 have guidance only: a loop and a disabled superseding application need a decision that the tool cannot make for you.
+
+The rule behind the next checks: no active application depends on or supersedes a retired application, and no task sequence installs a retired or superseded application. SUP-04 and DEP-04 (the target is retired) and APP-07 (the retired application holds rules itself) have fixes that use the supported cmdlets `Set-CMApplicationSupersedence -RemoveSupersedence` and `Remove-CMDeploymentTypeDependency`; each fix then deletes the old revisions that its change makes. APP-08 qualifies a superseded application for deletion only when no deployment, dependency, task sequence or stale reference row refers to it; a retired superseded application is left to SUP-04, and once its rule is gone APP-01 reports it. TSQ-05 and TSQ-06 report only: a task sequence is never edited from here.
 
 ## Checks
 
@@ -27,6 +29,8 @@ Check SUP-01 has a repair window, **Fix Supersedence**. See [Findings](../core/f
 | APP-03 | Applications | Warning | Superseded application still deployed. |
 | APP-04 | Applications | Warning | Deployment type content source missing or unreachable. |
 | APP-05 | Applications | Info | Application with old revisions. |
+| APP-07 | Applications | Warning | Retired application that still supersedes or depends on an application. |
+| APP-08 | Applications | Info | Superseded application that qualifies for deletion. |
 | PKG-01 | Packages | Warning | Package with no programs and no references. |
 | CNT-01 | Content | Warning | Content failed on one or more distribution points. |
 | CNT-02 | Content | Info | Content distribution in progress beyond threshold. |
@@ -51,6 +55,8 @@ Check SUP-01 has a repair window, **Fix Supersedence**. See [Findings](../core/f
 | TSQ-02 | Task Sequences | Warning | Boot image or driver package referenced by nothing. |
 | TSQ-03 | Task Sequences | Warning | Application in a task sequence without the task sequence install setting. |
 | TSQ-04 | Task Sequences | Error | Application in a task sequence with content on no distribution point. |
+| TSQ-05 | Task Sequences | Warning | Task sequence installs a retired or superseded application. |
+| TSQ-06 | Task Sequences | Warning | Stale reference rows of a task sequence that the site does not return. |
 | UPD-01 | Updates | Warning | Software update group with a high expired-update ratio. |
 | UPD-03 | Updates | Warning | Automatic deployment rule disabled, stale, or erroring. |
 | MNT-01 | Site | Info | Recommended maintenance tasks disabled. |
@@ -70,6 +76,7 @@ Check SUP-01 has a repair window, **Fix Supersedence**. See [Findings](../core/f
 | DPL-03 | Deployments | Info | Available deployment with no takers. |
 | DPL-04 | Deployments | Warning | Required deployment to a built-in all-resources collection. |
 | DPL-05 | Deployments | Warning | Deployment of a disabled task sequence or program. |
+| DPL-06 | Deployments | Info | Deployment created more than the age threshold ago. |
 | UPD-04 | Updates | Warning | Software update group over the per-deployment update limit. |
 | UPD-05 | Updates | Info | Deployment package holding expired update content. |
 | DPT-01 | Distribution Points | Warning | Distribution point in no boundary group. |

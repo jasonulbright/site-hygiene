@@ -42,6 +42,7 @@ The footer of the main window shows the site on the right, for example `Site MCM
 1. Select the **Scan** page.
 2. Select the areas that a scan reads. The areas marked `(slow)` read one object at a time from the SMS Provider.
 3. Optional: type a pause between provider calls in milliseconds, from 0 to 60000. The default is 0.
+4. Optional: type the age in days from which check DPL-06 reports a deployment, from 30 to 5000. The default is 365.
 
 ![The Scan page](../images/options-scan.png)
 
@@ -107,6 +108,7 @@ See the tables above. [Settings](../reference/settings.md) lists the file keys.
 |---|---|---|
 | `Select at least one scan area.` | Every area is cleared. | Select an area. |
 | `The pause must be a whole number of milliseconds from 0 to 60000.` | The pause is not a number in range. | Type a whole number from 0 to 60000. |
+| `The age of an old deployment must be a whole number of days from 30 to 5000.` | The age is not a number in range. | Type a whole number from 30 to 5000. |
 
 ## Links
 
