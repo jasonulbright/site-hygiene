@@ -56,6 +56,37 @@ Describe 'The fix scripts' {
     }
 }
 
+Describe 'The fix scripts of a retired application (APP-07)' {
+    It 'reinstates the application, changes it and retires it again in one statement, with the deployment guard, and the old revisions after it' {
+        $s = Get-HygSupersedenceRemovalScript -FromModel 'S/Application_N' -FromDeploymentType 'DeploymentType_N1' -ToModel 'S/Application_O' -ToDeploymentType 'DeploymentType_O1' -RetiredSource
+        Get-StatementCount $s | Should -Be 2
+        $s | Should -Match 'Get-CMApplicationDeployment -InputObject \$r'
+        $s | Should -Match 'Resume-CMApplication -InputObject \$r; try \{'
+        $s | Should -Match 'finally \{ Suspend-CMApplication'
+        $s | Should -Match '-RemoveSupersedence -Force'
+        $s | Should -Match 'Remove-CMApplicationRevisionHistory'
+        Test-HygieneFixExecutable -FixScript $s | Should -BeTrue
+    }
+    It 'wraps the removal of a dependency the same way' {
+        $s = Get-HygDependencyRemovalScript -FromModel 'S/Application_N' -FromDeploymentType 'DeploymentType_N1' -ToModel 'S/Application_R' -RetiredSource
+        Get-StatementCount $s | Should -Be 2
+        $s | Should -Match 'Resume-CMApplication'
+        $s | Should -Match 'Remove-CMDeploymentTypeDependency'
+        $s | Should -Match 'finally \{ Suspend-CMApplication'
+    }
+    It 'leaves the script of an active application as it was (no reinstate)' {
+        (Get-HygSupersedenceRemovalScript -FromModel 'S/Application_N' -FromDeploymentType 'D1' -ToModel 'S/Application_O' -ToDeploymentType 'D2') | Should -Not -Match 'Resume-CMApplication|Suspend-CMApplication'
+    }
+    It 'gives the APP-07 finding the reinstating scripts' {
+        $ret = New-RetApp -CI 1 -Name 'Retired' -Expired $true; $act = New-RetApp -CI 2 -Name 'Active'
+        $x = New-RetData -Apps @($ret, $act) -Edges @((New-RetEdge Supersedence $ret $act))
+        $f = @(Test-HygRetiredSupersededChecks -Data $x.Data -RelationshipData $x.Rel | Where-Object CheckId -eq 'APP-07')
+        $f.Count | Should -BeGreaterThan 0
+        $f[0].FixScript | Should -Match 'Resume-CMApplication'
+        $f[0].FixScript | Should -Match 'Suspend-CMApplication'
+    }
+}
+
 Describe 'SUP-04 and DEP-04 have a fix' {
     It 'gives SUP-04 the removal of the rule and DEP-04 the removal of the dependency' {
         $new = New-RetApp -CI 1 -Name 'New'; $old = New-RetApp -CI 2 -Name 'Old' -Expired $true

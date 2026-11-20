@@ -3538,11 +3538,13 @@ function Get-HygSupersedenceRemovalScript {
     #>
     param(
         [Parameter(Mandatory)][string]$FromModel, [Parameter(Mandatory)][string]$FromDeploymentType,
-        [Parameter(Mandatory)][string]$ToModel, [Parameter(Mandatory)][string]$ToDeploymentType
+        [Parameter(Mandatory)][string]$ToModel, [Parameter(Mandatory)][string]$ToDeploymentType,
+        [switch]$RetiredSource
     )
     $f = ConvertTo-HygQuotedLiteral $FromModel; $t = ConvertTo-HygQuotedLiteral $ToModel
     $fd = ConvertTo-HygQuotedLiteral ('*/' + $FromDeploymentType); $td = ConvertTo-HygQuotedLiteral ('*/' + $ToDeploymentType)
     $remove = "& { `$f = Get-CMApplication -ModelName '$f'; `$t = Get-CMApplication -ModelName '$t'; `$fd = Get-CMDeploymentType -InputObject `$f | Where-Object { `$_.ModelName -like '$fd' }; `$td = Get-CMDeploymentType -InputObject `$t | Where-Object { `$_.ModelName -like '$td' }; Set-CMApplicationSupersedence -Id `$f.CI_ID -CurrentDeploymentTypeId `$fd.CI_ID -SupersededApplicationId `$t.CI_ID -OldDeploymentTypeId `$td.CI_ID -RemoveSupersedence -Force }"
+    if ($RetiredSource) { $remove = Get-HygRetiredSourceScript -Model $FromModel -Change $remove }
     return ($remove + "`r`n" + (Get-HygRevisionCleanupScript -Model $FromModel))
 }
 
@@ -3552,11 +3554,29 @@ function Get-HygDependencyRemovalScript {
         The fix script that removes the dependency of one deployment type on one application, then the old revisions that the
         change makes. A dependency group that has no dependency left is removed by the cmdlet.
     #>
-    param([Parameter(Mandatory)][string]$FromModel, [Parameter(Mandatory)][string]$FromDeploymentType, [Parameter(Mandatory)][string]$ToModel)
+    param([Parameter(Mandatory)][string]$FromModel, [Parameter(Mandatory)][string]$FromDeploymentType, [Parameter(Mandatory)][string]$ToModel, [switch]$RetiredSource)
     $f = ConvertTo-HygQuotedLiteral $FromModel; $t = ConvertTo-HygQuotedLiteral $ToModel
     $fd = ConvertTo-HygQuotedLiteral ('*/' + $FromDeploymentType)
     $remove = "& { `$f = Get-CMApplication -ModelName '$f'; `$dt = Get-CMDeploymentType -InputObject `$f | Where-Object { `$_.ModelName -like '$fd' }; foreach (`$g in @(Get-CMDeploymentTypeDependencyGroup -InputObject `$dt)) { foreach (`$d in @(Get-CMDeploymentTypeDependency -InputObject `$g)) { if (`$d.AppModelName -eq '$t') { Remove-CMDeploymentTypeDependency -InputObject `$g -DeploymentTypeDependency `$d -Force } } } }"
+    if ($RetiredSource) { $remove = Get-HygRetiredSourceScript -Model $FromModel -Change $remove }
     return ($remove + "`r`n" + (Get-HygRevisionCleanupScript -Model $FromModel))
+}
+
+function Get-HygRetiredSourceScript {
+    <#
+    .SYNOPSIS
+        Wraps one change of a RETIRED application in one statement: refuse when the application has a deployment, reinstate the
+        application, make the change, and retire the application again, also when the change fails.
+
+    .DESCRIPTION
+        The site ignores Set-CMApplicationSupersedence -RemoveSupersedence and Remove-CMDeploymentTypeDependency for a retired
+        application: the cmdlets return no error and change nothing (measured on a lab site). The change, the retire and the guard are
+        one statement, because Run Fix stops at the first error and runs no later statement, and the application must be retired again
+        whatever happens. A retired application with a deployment is refused, because it would deploy while it is reinstated.
+    #>
+    param([Parameter(Mandatory)][string]$Model, [Parameter(Mandatory)][string]$Change)
+    $m = ConvertTo-HygQuotedLiteral $Model
+    return "& { `$r = Get-CMApplication -ModelName '$m'; if (@(Get-CMApplicationDeployment -InputObject `$r).Count -gt 0) { throw 'The retired application has a deployment. The fix reinstates the application for a moment, so delete the deployment first (check APP-02).' }; Resume-CMApplication -InputObject `$r; try { $Change } finally { Suspend-CMApplication -InputObject (Get-CMApplication -ModelName '$m') } }"
 }
 
 function Get-HygRevisionCleanupScript {
@@ -3655,18 +3675,18 @@ function Test-HygRetiredSupersededChecks {
         $text = foreach ($e in $own) {
             $to = [string]$e.ToAppName
             if ($e.Kind -eq 'Supersedence') {
-                $scripts.Add((Get-HygSupersedenceRemovalScript -FromModel ([string]$app.ModelName) -FromDeploymentType ([string]$e.FromDTLogicalName) -ToModel ([string]$e.ToModelName) -ToDeploymentType ([string]$e.ToDTLogicalName)))
+                $scripts.Add((Get-HygSupersedenceRemovalScript -FromModel ([string]$app.ModelName) -FromDeploymentType ([string]$e.FromDTLogicalName) -ToModel ([string]$e.ToModelName) -ToDeploymentType ([string]$e.ToDTLogicalName) -RetiredSource))
                 "supersedes '{0}' (deployment type '{1}')" -f $to, $e.FromDTName
             }
             else {
-                $scripts.Add((Get-HygDependencyRemovalScript -FromModel ([string]$app.ModelName) -FromDeploymentType ([string]$e.FromDTLogicalName) -ToModel ([string]$e.ToModelName)))
+                $scripts.Add((Get-HygDependencyRemovalScript -FromModel ([string]$app.ModelName) -FromDeploymentType ([string]$e.FromDTLogicalName) -ToModel ([string]$e.ToModelName) -RetiredSource))
                 "depends on '{0}' (deployment type '{1}')" -f $to, $e.FromDTName
             }
         }
         New-HygieneFinding -CheckId 'APP-07' -Severity Warning -Category 'Applications' `
             -ObjectType 'Application' -ObjectId ([string]$app.ModelName) -ObjectName ([string]$app.Name) `
             -Evidence ("The application is retired and still {0}.{1}" -f ($text -join '; and '), $(if ($incoming -gt 0) { (' {0} other rule(s) point at it: see SUP-04 and DEP-04.' -f $incoming) } else { '' })) `
-            -Recommendation 'A retired application must not supersede or depend on an active one. Remove the rules. Each removal makes a new revision of the retired application; the fix deletes the old revisions it creates.' `
+            -Recommendation 'A retired application must not supersede or depend on an active one. Remove the rules. The site ignores a change of a retired application, so each removal reinstates the application, makes the change and retires it again (not for an application that has a deployment). Each removal makes a new revision of the retired application; the fix deletes the old revisions it creates.' `
             -FixScript ($scripts -join "`r`n")
     }
 

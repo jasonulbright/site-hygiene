@@ -97,7 +97,7 @@ The rule is that no active application depends on or supersedes a retired applic
 |---|---|---|
 | SUP-04 | A supersedence rule whose target is retired. | Removes the rule. |
 | DEP-04 | A dependency on a retired application. | Removes the dependency. |
-| APP-07 | A retired application that still supersedes or depends on an active application. | Removes those rules. |
+| APP-07 | A retired application that still supersedes or depends on an active application. | Removes those rules. A retired application is reinstated for the change and retired again. |
 | APP-08 | A superseded application that qualifies for deletion. | Removes the rule of the replacement, then deletes the application. |
 | TSQ-05 | A task sequence installs a retired or superseded application. | None. Edit the task sequence in the console. |
 | TSQ-06 | Stale reference rows: the site returns reference rows of a task sequence that it does not return. | None. |
