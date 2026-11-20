@@ -2,9 +2,13 @@
 
 ## [Unreleased]
 
+## [2026.11.20.0042] - 2026-11-20
+
+## 1 fix: APP-07 on retired applications
+
 ### Fixed
 
-- The APP-07 fix now works on a retired application. The site ignores `Set-CMApplicationSupersedence -RemoveSupersedence` and `Remove-CMDeploymentTypeDependency` for a retired application (no error, no change), so the fix reinstates the application, removes the rule and retires it again in one statement, also when the change fails. The fix refuses a retired application that has a deployment.
+- Fix the APP-07 fix for a retired application.
 
 ## [2026.11.20.0041] - 2026-11-20
 
