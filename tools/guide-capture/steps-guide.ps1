@@ -56,6 +56,24 @@ Section 'fix supersedence dialog' {
   Click-El (Get-El $d 'btnCancel'); Start-Sleep -Seconds 2
   Set-Text (Get-El $win 'txtFilter') ''; Start-Sleep -Milliseconds 600
 }
+Section 'show blockers' {
+  # The window is captured and closed. The first application finding whose list holds at least one object is shot.
+  Invoke-El (Get-El $win 'btnViewFindings'); Start-Sleep -Seconds 1
+  Set-Text (Get-El $win 'txtFilter') 'Application'; Start-Sleep -Seconds 1
+  $shot = $false
+  foreach ($x in (Rows 'gridFindings' | Select-Object -First 25)) {
+    try { Select-El $x } catch { continue }
+    Start-Sleep -Milliseconds 400
+    if (-not (Get-El $win 'btnShowBlockers').Current.IsEnabled) { continue }
+    Click-El (Get-El $win 'btnShowBlockers'); $d = Find-Last 'What Blocks The Delete' 15
+    $sum = Get-ElText (Get-El $d 'txtSummary')
+    if ($sum -match 'blocks the delete') { Start-Sleep -Milliseconds 500; Shot $d 'show-blockers'; $shot = $true }
+    Click-El (Get-El $d 'btnClose'); Start-Sleep -Seconds 1
+    if ($shot) { break }
+  }
+  if (-not $shot) { throw 'No application finding with a blocker on the lab site for the Show Blockers window.' }
+  Set-Text (Get-El $win 'txtFilter') ''; Start-Sleep -Milliseconds 600
+}
 Section 'relationships' {
   Invoke-El (Get-El $win 'btnViewRelationships'); Start-Sleep -Seconds 2; Shot $win 'relationships-inventory'
   $r = Rows 'gridRelationships'; if ($r.Count) { Select-El $r[0]; Start-Sleep -Milliseconds 800; Shot $win 'relationships-detail' }

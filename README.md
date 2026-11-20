@@ -83,6 +83,8 @@ Stable check IDs so findings and reports stay comparable across scans:
 | APP-02 | Error | Retired (expired) applications that still have active deployments |
 | APP-03 | Warning | Superseded applications whose own deployments are still active |
 | APP-05 | Info | Applications that hold revisions other than the current one; the fix deletes the old revisions |
+| APP-07 | Warning | A retired application that still supersedes or depends on an application; the fix removes the rules |
+| APP-08 | Info | A superseded application that nothing but the supersedence of its replacement refers to; the fix removes the rule and deletes the application |
 | PKG-01 | Warning | Legacy packages with no programs, no deployments, and no task sequence references |
 | CNT-01 | Warning | Content that failed on one or more distribution points, with the failed/targeted counts |
 | CNT-02 | Info | Content still distributing more than two days after its last update |
@@ -96,16 +98,17 @@ Stable check IDs so findings and reports stay comparable across scans:
 | DPL-03 | Info | Available deployments old enough to judge with zero installs and nothing in progress |
 | DPL-04 | Warning | Required deployments that target All Systems, All Desktop and Server Clients, All Users, All User Groups, or All Users and User Groups |
 | DPL-05 | Warning | Deployments of a disabled task sequence or a disabled program |
+| DPL-06 | Info | Deployments created more than 365 days ago (Options sets the age); review whether they are still needed, nothing is deleted |
 | COL-10 | Info | One-time maintenance windows that ended in the past |
 | APP-04 | Warning/Info | Deployment-type content sources missing or unreachable, with timed-out probes reported as Unknown at Info |
 | SUP-01 | Error | Supersedence referencing a deleted application |
 | SUP-02 | Error | Circular supersedence chain |
 | SUP-03 | Warning | Superseding application disabled |
-| SUP-04 | Warning | Supersedence target retired or expired |
+| SUP-04 | Warning | Supersedence target retired or expired; the fix removes the rule |
 | DEP-01 | Error | Dependency referencing a deleted application |
 | DEP-02 | Error | Circular dependency |
 | DEP-03 | Warning | Dependency target disabled |
-| DEP-04 | Warning | Dependency target retired or expired |
+| DEP-04 | Warning | Dependency target retired or expired; the fix removes the dependency |
 | DEP-05 | Info | Dependency target reports no packaged content; contentless script deployment types may be intentional |
 | REL-01 | Info | Relationship participants without manufacturer metadata |
 | DEV-01 | Warning/Info | Inactive clients beyond threshold (Info when cleanup tasks will purge them) |
@@ -118,6 +121,8 @@ Stable check IDs so findings and reports stay comparable across scans:
 | TSQ-02 | Warning | Custom boot images / driver packages nothing references |
 | TSQ-03 | Warning | Applications in a task sequence without the setting that lets a task sequence install them |
 | TSQ-04 | Error | Applications in a task sequence with source files and content on no distribution point |
+| TSQ-05 | Warning | A task sequence with a step that installs a retired or superseded application |
+| TSQ-06 | Warning | Stale reference rows: the site returns reference rows of a task sequence that it does not return |
 | UPD-01 | Warning | Software update group over the documented expired-update ratio threshold; superseded presence is reported separately |
 | UPD-03 | Error/Warning/Info | ADR erroring / stale / disabled |
 | UPD-04 | Warning | Software update groups over the limit of 1000 updates in one deployment |

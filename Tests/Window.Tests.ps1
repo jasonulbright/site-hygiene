@@ -126,6 +126,20 @@ Describe 'Window XAML text' {
         ($names | Group-Object | Where-Object Count -gt 1 | ForEach-Object Name) | Should -BeNullOrEmpty
     }
 
+    It 'defines the functions of the dialogs and each button handler at the top level of the script' {
+        # A function that sits inside a button handler exists only after that handler has run once.
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($script:ShellPath, [ref]$null, [ref]$null)
+        $top = @($ast.EndBlock.Statements)
+        foreach ($name in 'Show-SupersedenceFixDialog', 'Show-BlockersDialog') {
+            $found = @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true))
+            $found.Count | Should -Be 1 -Because $name
+            ($top -contains $found[0]) | Should -BeTrue -Because "$name is at the top level"
+        }
+        foreach ($button in 'btnFixSupersedence', 'btnShowBlockers') {
+            $handlers = @($top | Where-Object { $_.Extent.Text -match ('^\$' + $button + '\.Add_Click') })
+            $handlers.Count | Should -Be 1 -Because "$button has one handler at the top level"
+        }
+    }
 
     It 'finds the script look-ups of the window' {
         $script:WindowNames.Count | Should -BeGreaterThan 50

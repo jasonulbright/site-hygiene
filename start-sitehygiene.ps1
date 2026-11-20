@@ -2567,6 +2567,9 @@ $btnFixSupersedence.Add_Click({
         foreach ($row in $script:AllFindings) { if ($row.CheckId -eq 'SUP-01' -and @($outcome.Fixed) -contains [string]$row.SuppressKey) { $row.FixState = 'Fixed' } }
         $gridFindings.Items.Refresh()
         Set-StatusText $(if ($outcome.Failed -eq 0) { 'Supersedence fixed - scan again to confirm.' } else { 'Some references failed - see log.' })
+    }
+    $btnFixSupersedence.IsEnabled = (@(Get-SupersedenceFixSelection).Count -gt 0)
+})
 
 # =============================================================================
 # Show Blockers: what blocks the delete of one application. The list is built from the datasets of the last scan, so
@@ -2660,9 +2663,6 @@ $btnShowBlockers.Add_Click({
     if (-not $row -or -not $script:BlockerData -or -not $script:RelData) { return }
     $name = [string]$row.ObjectName
     Show-BlockersDialog -ModelName ([string]$row.ObjectId) -Name $name
-})
-    }
-    $btnFixSupersedence.IsEnabled = (@(Get-SupersedenceFixSelection).Count -gt 0)
 })
 
 
