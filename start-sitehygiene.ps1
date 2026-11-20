@@ -2324,7 +2324,7 @@ function Show-SupersedenceFixDialog {
                   Controls:ControlsHelper.ContentCharacterCasing="Normal"
                   Content="Also Delete the Old Revisions This Fix Creates"
                   ToolTip="The change makes a new revision of each application. This step deletes the older revisions of the changed applications, so that check APP-05 does not report them. A revision that another object still uses stays."/>
-        <ProgressBar x:Name="barRunning" Grid.Row="3" Height="4" Margin="0,8,0,0" IsIndeterminate="True"/>
+        <ProgressBar x:Name="barRunning" Grid.Row="3" Height="4" Margin="0,8,0,0" IsIndeterminate="True" Visibility="Collapsed"/>
         <DataGrid x:Name="gridPlan" Grid.Row="4" Margin="0,12,0,0" IsReadOnly="True" AutoGenerateColumns="False"
                   CanUserAddRows="False" CanUserDeleteRows="False" SelectionMode="Single" SelectionUnit="FullRow"
                   HeadersVisibility="Column" GridLinesVisibility="Horizontal" RowHeaderWidth="0" FontSize="12"
@@ -2356,6 +2356,8 @@ function Show-SupersedenceFixDialog {
     $txtSummary = $supDlg.FindName('txtSummary')
     $txtDetail  = $supDlg.FindName('txtDetail')
     $barRunning = $supDlg.FindName('barRunning')
+    # The bar is collapsed in the XAML (an indeterminate bar animates for as long as it is visible) and shows while the window reads the plan.
+    $barRunning.Visibility = [System.Windows.Visibility]::Visible
     $gridPlan   = $supDlg.FindName('gridPlan')
     $btnApply   = $supDlg.FindName('btnApply')
     $chkRevisions = $supDlg.FindName('chkRevisions')
