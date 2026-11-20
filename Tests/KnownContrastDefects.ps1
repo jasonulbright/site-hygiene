@@ -24,7 +24,7 @@ function Get-KnownContrastDefect {
             @(
                 'cboRelKind:EnabledText', 'cboRelStatus:EnabledText', 'cboStatus:EnabledText',
                 'cboCategory:EnabledText', 'cboSeverity:EnabledText',
-                'cboTrendMetric:EnabledText', 'cboTrendRange:EnabledText', 'text:Run Fix'
+                'cboTrendMetric:EnabledText', 'cboTrendRange:EnabledText', 'text:Run Fix', 'text:Fix Supersedence'
             )
         }
         'Dialog|dark' {
