@@ -147,6 +147,7 @@ try {
         Copy-Item "$base\ui\out\*" $out -FromSession $session -Recurse -Force
         $log = Join-Path $out 'run.log'
         if (Test-Path $log) { Get-Content $log | Where-Object { $_ -cmatch '^\d\d:\d\d:\d\d\s+ERROR[ :]' } | ForEach-Object { Write-Warning $_; $failed.Add($_) } }
+        Get-Content $log | Where-Object { $_ -match 'TOOLTIP still shown' } | ForEach-Object { Write-Warning $_ }
     }
     # A failed section stops the capture before any guide image is replaced.
     if ($failed.Count) { throw ("The capture failed. No image was replaced.`n" + ($failed -join "`n")) }
