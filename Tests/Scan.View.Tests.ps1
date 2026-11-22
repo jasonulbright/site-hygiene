@@ -29,10 +29,18 @@ BeforeAll {
         if (-not $node) { throw "grid $GridName not found in MainWindow.xaml" }
         $columns = $node.SelectSingleNode('*[contains(local-name(), ''Columns'')]')
         $text = if ($columns) { $columns.OuterXml } else { '' }
-        $paths = @([regex]::Matches($text, '\{Binding\s+(?:Path=)?([A-Za-z_][A-Za-z0-9_]*)(?![A-Za-z0-9_]*=)(?=[,}\s])') | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
+        # One {Binding ...} body at a time (one level of nested braces). A binding to the item of another element is not a row property.
+        $paths = @($(foreach ($m in [regex]::Matches($text, '\{Binding((?:[^{}]|\{[^{}]*\})*)\}')) {
+                $body = $m.Groups[1].Value
+                if ($body -match 'RelativeSource|ElementName|Source=') { continue }
+                if ($body -match '^\s*(?:Path=)?([A-Za-z_][A-Za-z0-9_]*)\s*(?:[,}]|$)') { $Matches[1] }
+                elseif ($body -match 'Path=([A-Za-z_][A-Za-z0-9_]*)') { $Matches[1] }
+            }) | Sort-Object -Unique)
         $paths.Count | Should -BeGreaterThan 0 -Because "the grid $GridName has bound columns"
         $Grid.Items.Count | Should -BeGreaterThan 0 -Because "the grid $GridName needs a row to check"
-        foreach ($path in $paths) { $null -ne $Grid.Items[0].PSObject.Properties[$path] | Should -BeTrue -Because "a column of $GridName binds to $path" }
+        # WPF binds by exact name, so the match is case-sensitive.
+        $names = @($Grid.Items[0].PSObject.Properties.Name)
+        foreach ($path in $paths) { ($names -ccontains $path) | Should -BeTrue -Because "a column of $GridName binds to $path" }
     }
     $wanted = 'Get-SeverityGlyph', 'Get-ComboValue', 'Get-FilteredFindings', 'Get-FilteredRelationshipRows', 'Test-LiveRowMatch',
         'Get-FilteredLiveRows', 'Update-Filter', 'Get-DeploymentGlyph', 'Get-ContentGlyph', 'Get-StatusWordGlyph', 'Get-ClientGlyph',
@@ -224,6 +232,7 @@ Describe 'The refresh result fills the live grids' {
         & $script:RefreshTick
         $shown = switch ($View) { 'DPs' { $gridDPs } 'Deployments' { $gridDeploy } 'Content' { $gridContent } }
         $shown.Items.Count | Should -Be $Count
+        if ($View -eq 'Content') { Assert-GridBinding -Grid $gridContent -GridName 'gridContent' }
         # Only the grid of the active view is filled.
         ($gridDeploy.Items.Count + $gridContent.Items.Count + $gridDPs.Items.Count) | Should -Be $Count
     }
