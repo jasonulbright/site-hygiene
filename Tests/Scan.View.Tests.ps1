@@ -16,6 +16,24 @@ BeforeAll {
     # WPF controls need an STA thread. Windows PowerShell and PowerShell 7 start in STA; a harness that starts MTA must add -STA.
     if ([Threading.Thread]::CurrentThread.GetApartmentState() -ne 'STA') { throw 'These tests create WPF controls and need an STA thread. Start the host with -STA.' }
     $script:ShellPath = Join-Path $script:AppRoot 'start-sitehygiene.ps1'
+
+    # A column binds to a property by name. A renamed or missing property leaves the column blank, with no error.
+    # The check reads the column bindings of the grid from MainWindow.xaml and looks for each name on the first row.
+    [xml]$script:MainXaml = Get-Content -LiteralPath (Join-Path $script:AppRoot 'MainWindow.xaml') -Raw
+    $script:MainXamlNs = New-Object System.Xml.XmlNamespaceManager($script:MainXaml.NameTable)
+    $script:MainXamlNs.AddNamespace('w', 'http://schemas.microsoft.com/winfx/2006/xaml/presentation')
+    $script:MainXamlNs.AddNamespace('x', 'http://schemas.microsoft.com/winfx/2006/xaml')
+    function Assert-GridBinding {
+        param($Grid, [string]$GridName)
+        $node = $script:MainXaml.SelectSingleNode(('//w:DataGrid[@x:Name=''{0}'']' -f $GridName), $script:MainXamlNs)
+        if (-not $node) { throw "grid $GridName not found in MainWindow.xaml" }
+        $columns = $node.SelectSingleNode('*[contains(local-name(), ''Columns'')]')
+        $text = if ($columns) { $columns.OuterXml } else { '' }
+        $paths = @([regex]::Matches($text, '\{Binding\s+(?:Path=)?([A-Za-z_][A-Za-z0-9_]*)(?![A-Za-z0-9_]*=)(?=[,}\s])') | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
+        $paths.Count | Should -BeGreaterThan 0 -Because "the grid $GridName has bound columns"
+        $Grid.Items.Count | Should -BeGreaterThan 0 -Because "the grid $GridName needs a row to check"
+        foreach ($path in $paths) { $null -ne $Grid.Items[0].PSObject.Properties[$path] | Should -BeTrue -Because "a column of $GridName binds to $path" }
+    }
     $wanted = 'Get-SeverityGlyph', 'Get-ComboValue', 'Get-FilteredFindings', 'Get-FilteredRelationshipRows', 'Test-LiveRowMatch',
         'Get-FilteredLiveRows', 'Update-Filter', 'Get-DeploymentGlyph', 'Get-ContentGlyph', 'Get-StatusWordGlyph', 'Get-ClientGlyph',
         'Get-InactiveGlyph', 'Format-DateOrEmpty', 'ConvertTo-DeploymentGridRows', 'ConvertTo-ContentGridRows', 'ConvertTo-DPGridRows',
@@ -100,6 +118,8 @@ Describe 'The scan result fills the Findings and Summary grids' {
         $gridSummary.Items.Count | Should -Be @(Get-HygieneScanSummary -Findings $findings).Count
         $gridSummary.Items.Count | Should -BeGreaterThan 0
         $gridSummary.Items[0].CheckId | Should -Be $script:BgState.Summary[0].CheckId
+        Assert-GridBinding -Grid $gridFindings -GridName 'gridFindings'
+        Assert-GridBinding -Grid $gridSummary -GridName 'gridSummary'
     }
 
     It 'says what the scan found and what it left out, and gives the window back' {
@@ -192,6 +212,7 @@ Describe 'The refresh result fills the live grids' {
         ($script:LogLines -join ' | ') | Should -Match 'Refresh complete: 2 deployments'
         [string]$progressOverlay.Visibility | Should -Be 'Collapsed'
         $btnRefreshAll.IsEnabled | Should -BeTrue
+        Assert-GridBinding -Grid $gridDeploy -GridName 'gridDeploy'
     }
 
     It 'fills the grid of the active view: <View>' -ForEach @(
@@ -212,6 +233,7 @@ Describe 'The refresh result fills the live grids' {
         & $script:RefreshTick
         $gridDPs.Items.Count | Should -Be 1
         $gridDPs.Items[0].DPName | Should -Be 'DP01'
+        Assert-GridBinding -Grid $gridDPs -GridName 'gridDPs'
     }
 
     It 'keeps the grids as they were and says the refresh failed when the background step failed' {
