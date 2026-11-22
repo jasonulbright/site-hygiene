@@ -66,7 +66,8 @@ if (Test-Path -LiteralPath $ledger) {
 }
 '@
 $repo = (Resolve-Path (Join-Path $here '..\..')).Path
-$app = Split-Path $repo -Leaf
+# The lab folder and the task carry the repository name, not the name of the folder that this copy runs from (a worktree name showed in the images).
+$app = 'site-hygiene'
 $images = Join-Path $repo 'docs\images'
 $base = "C:\guide\$app"
 $taskName = "GuideShots-$app"
@@ -146,6 +147,7 @@ try {
         Copy-Item "$base\ui\out\*" $out -FromSession $session -Recurse -Force
         $log = Join-Path $out 'run.log'
         if (Test-Path $log) { Get-Content $log | Where-Object { $_ -cmatch '^\d\d:\d\d:\d\d\s+ERROR[ :]' } | ForEach-Object { Write-Warning $_; $failed.Add($_) } }
+        Get-Content $log | Where-Object { $_ -match 'TOOLTIP still shown' } | ForEach-Object { Write-Warning $_ }
     }
     # A failed section stops the capture before any guide image is replaced.
     if ($failed.Count) { throw ("The capture failed. No image was replaced.`n" + ($failed -join "`n")) }
