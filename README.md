@@ -274,7 +274,7 @@ site-hygiene/
 ```
 
 Files the tool writes beside itself: `SiteHygiene.prefs.json` (scan
-scope, pause, refresh, threshold, alerts, theme),
+scope, pause, SQL options, refresh, threshold, alerts, theme),
 `SiteHygiene.windowstate.json` and the `Logs\` folder.
 
 The AppPackager Suite launcher chooses the site. The tool keeps the site

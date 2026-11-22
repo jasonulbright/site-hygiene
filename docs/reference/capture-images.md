@@ -44,6 +44,7 @@ A second run inside the command does the missing-console test on a copy of the t
 
 - The capture needs an interactive session on the lab computer. A locked session breaks it.
 - The images show the data of the lab site.
+- The capture gives the tool its own data root inside the capture folder, so a run neither reads nor leaves site data in the profile of the lab account.
 
 ## Troubleshooting
 

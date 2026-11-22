@@ -4,7 +4,7 @@ This page lists every folder and file that Site Hygiene writes.
 
 ## What it does
 
-The tool writes the logs and the window state in the folder of the script. It writes the data of a site in the site folder `%LOCALAPPDATA%\AppPackagerData\sites\<SITE>\tools\site-hygiene`. It writes nothing in the registry. A fix that you confirm changes the site.
+The tool writes the logs, the window state and the settings that do not belong to a site in the folder of the script. It writes the data of a site in the site folder `%LOCALAPPDATA%\AppPackagerData\sites\<SITE>\tools\site-hygiene`. It writes nothing in the registry. A fix that you confirm changes the site.
 
 ## When to use it
 

@@ -86,7 +86,13 @@ foreach ($legacyRoot in @((Join-Path $PSScriptRoot 'legacy\mecm-health-dashboard
 # The site (Q-112f): the launcher chooses it. The first start for a site copies the old data of this tool into
 # sites\<SITE>\tools\site-hygiene and keeps the old files. With no site the tool keeps its old paths.
 $script:Site = Resolve-SuiteToolSite -Tool 'site-hygiene' -ToolRoot $PSScriptRoot -LegacyPrefsPath $global:PrefsPath
-$__sitePaths = Get-HygieneSitePath -Site $script:Site -ToolRoot $PSScriptRoot -Create
+try { $__sitePaths = Get-HygieneSitePath -Site $script:Site -ToolRoot $PSScriptRoot -Create }
+catch {
+    # The site folder cannot be created (for example, the data folder is read-only). The tool keeps its old paths.
+    Write-Log ('The site folder was not created: {0}' -f $_.Exception.Message) -Level ERROR -Quiet
+    $script:Site = [pscustomobject]@{ Active = $false; Reason = 'The site folder could not be created. This tool uses its old data location for this session.' }
+    $__sitePaths = Get-HygieneSitePath -Site $script:Site -ToolRoot $PSScriptRoot
+}
 $global:HistoryPath  = $__sitePaths.HistoryPath
 $global:SuppressPath = $__sitePaths.SuppressPath
 $global:LastScanPath = $__sitePaths.LastScanPath
@@ -2692,6 +2698,10 @@ $window.Add_Loaded({
     if ($script:Site.Active) {
         Write-Log ('Site {0}; data in {1}' -f $script:Site.SiteFolder, $script:Site.ToolFolder) -Quiet
         Add-LogLine ('Site {0}; data in sites\{0}\tools\site-hygiene' -f $script:Site.SiteFolder)
+    }
+    if (-not $script:Site.Active -and $script:Site.Reason) {
+        Write-Log ('Site: {0}' -f $script:Site.Reason) -Level WARN -Quiet
+        Add-LogLine 'The site data folder is not in use. This session uses the old data location. The log file has the details.' -Level WARN
     }
     Update-SuppressCount
     $gridSummary.ItemsSource = @(Get-HygieneScanSummary -Findings @())

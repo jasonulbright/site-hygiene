@@ -136,14 +136,18 @@ Describe 'Site Hygiene keeps its data per site' {
 
         It 'writes only below sites\CD2' {
             $ab1Files = Get-OldFileHash -Tool $script:ab1.Site.ToolFolder
+            $oldFolderBefore = Get-OldFileHash -Tool $script:layout.Tool
             $cd2Prefs = @{} + $script:cd2.Prefs
             $cd2Prefs.SMSProvider = 'cd2-sms.example.com'
             $cd2Prefs.SQLServer = 'cd2-sql.example.com'
             Save-HygienePreference -Path $script:cd2.Paths.PrefsPath -Prefs $cd2Prefs -Site $script:cd2.Site | Should -BeTrue
             Save-HygieneScanResult -Findings @([pscustomobject]@{ CheckId = 'APP-01'; Severity = 'Low'; ObjectType = 'Application'; ObjectId = '1'; ObjectName = 'cd2-object'; Evidence = 'x' }) -Path $script:cd2.Paths.LastScanPath
             Add-MetricsHistoryEntry -HistoryPath $script:cd2.Paths.HistoryPath -DeploymentCounts ([pscustomobject]@{ TotalDeployments = 3; FailedDeployments = 0; OverallCompliance = 50 })
+            Save-SuiteSettings -Path $script:cd2.Paths.SuppressPath -Settings @{ Keys = @('APP-01|cd2-object') } | Should -BeTrue
+            $null = New-Item -ItemType Directory -Path $script:cd2.Paths.ReportsDir -Force
+            Set-Content -LiteralPath (Join-Path $script:cd2.Paths.ReportsDir 'SiteHygiene-Findings-cd2.csv') -Value 'Name'
             $cd2Folder = $script:cd2.Site.ToolFolder
-            foreach ($p in $script:cd2.Paths.LastScanPath, $script:cd2.Paths.HistoryPath, (Join-Path $cd2Folder 'prefs.json')) {
+            foreach ($p in $script:cd2.Paths.LastScanPath, $script:cd2.Paths.SuppressPath, $script:cd2.Paths.HistoryPath, (Join-Path $script:cd2.Paths.ReportsDir 'SiteHygiene-Findings-cd2.csv'), (Join-Path $cd2Folder 'prefs.json')) {
                 $p | Should -BeLike (Join-Path $script:data '*\sites\CD2\tools\site-hygiene\*')
                 Test-Path -LiteralPath $p | Should -BeTrue -Because $p
             }
@@ -151,6 +155,10 @@ Describe 'Site Hygiene keeps its data per site' {
             foreach ($k in $ab1Files.Keys) { $now[$k] | Should -Be $ab1Files[$k] -Because $k }
             $now.Count | Should -Be $ab1Files.Count
             foreach ($k in $script:before.Keys | Where-Object { $_ -notlike '*SiteHygiene.prefs.json' }) { (Get-FileHash -LiteralPath $k).Hash | Should -Be $script:before[$k] -Because $k }
+            # Nothing new appears beside the script. Only the old prefs file may change (its global keys).
+            $oldFolderAfter = Get-OldFileHash -Tool $script:layout.Tool
+            @($oldFolderAfter.Keys | Where-Object { -not $oldFolderBefore.ContainsKey($_) }) | Should -BeNullOrEmpty
+            foreach ($k in $oldFolderBefore.Keys | Where-Object { $_ -notlike '*SiteHygiene.prefs.json' }) { $oldFolderAfter[$k] | Should -Be $oldFolderBefore[$k] -Because $k }
             $oldPrefs = Get-Content -LiteralPath (Join-Path $script:layout.Tool 'SiteHygiene.prefs.json') -Raw | ConvertFrom-Json
             $oldPrefs.SiteCode | Should -Be 'AB1'
             $oldPrefs.SMSProvider | Should -Be 'ab1-sms.example.com'
@@ -230,5 +238,7 @@ Describe 'Site Hygiene source builds no site store from the script folder' {
         $script:scriptText.Contains('$txtSiteCode.IsReadOnly = $true') | Should -BeTrue
         $script:scriptText.Contains('The site is chosen in the AppPackager Suite launcher. Restart this tool after you change it.') | Should -BeTrue
         $script:scriptText.Contains('Start-SuiteSiteWatch -Window $window -Site $script:Site') | Should -BeTrue
+        $script:scriptText.IndexOf('Initialize-SuiteFooter') | Should -BeLessThan $script:scriptText.IndexOf('Start-SuiteSiteWatch')
+        $script:scriptText.Contains('$newSite     = $(if ($script:Site.Active) { [string]$global:Prefs.SiteCode }') | Should -BeTrue
     }
 }

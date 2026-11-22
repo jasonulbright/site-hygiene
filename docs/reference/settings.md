@@ -4,7 +4,7 @@ This page lists what Site Hygiene saves and where.
 
 ## What it does
 
-The tool saves its settings in two files. `SiteHygiene.prefs.json` in the folder of the script holds the settings that do not belong to a site. `prefs.json` in the site folder `%LOCALAPPDATA%\AppPackagerData\sites\<SITE>\tools\site-hygiene` holds `SiteCode`, `SMSProvider` and `SQLServer`. The Options dialog writes both files when you select **OK**. The launcher chooses the site, so the tool never changes `SiteCode`. See [Sites](../core/options.md#sites).
+The tool saves its settings in two files. `SiteHygiene.prefs.json` in the folder of the script holds the settings that do not belong to a site. `prefs.json` in the site folder `%LOCALAPPDATA%\AppPackagerData\sites\<SITE>\tools\site-hygiene` holds `SiteCode`, `SMSProvider` and `SQLServer`. The Options dialog writes both files when you select **OK**. When the launcher chose a site, the tool never changes `SiteCode`. See [Sites](../core/options.md#sites).
 
 ## When to use it
 
