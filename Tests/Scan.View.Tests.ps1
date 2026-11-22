@@ -13,6 +13,8 @@ BeforeAll {
     . "$PSScriptRoot\TestHelpers.ps1"
     Import-AppModule
     Add-Type -AssemblyName PresentationFramework
+    # WPF controls need an STA thread. Windows PowerShell and PowerShell 7 start in STA; a harness that starts MTA must add -STA.
+    if ([Threading.Thread]::CurrentThread.GetApartmentState() -ne 'STA') { throw 'These tests create WPF controls and need an STA thread. Start the host with -STA.' }
     $script:ShellPath = Join-Path $script:AppRoot 'start-sitehygiene.ps1'
     $wanted = 'Get-SeverityGlyph', 'Get-ComboValue', 'Get-FilteredFindings', 'Get-FilteredRelationshipRows', 'Test-LiveRowMatch',
         'Get-FilteredLiveRows', 'Update-Filter', 'Get-DeploymentGlyph', 'Get-ContentGlyph', 'Get-StatusWordGlyph', 'Get-ClientGlyph',
@@ -97,6 +99,7 @@ Describe 'The scan result fills the Findings and Summary grids' {
         [int]$gridFindings.Items[1].SeverityGlyph[0] | Should -Be 0x2717
         $gridSummary.Items.Count | Should -Be @(Get-HygieneScanSummary -Findings $findings).Count
         $gridSummary.Items.Count | Should -BeGreaterThan 0
+        $gridSummary.Items[0].CheckId | Should -Be $script:BgState.Summary[0].CheckId
     }
 
     It 'says what the scan found and what it left out, and gives the window back' {
@@ -117,6 +120,7 @@ Describe 'The scan result fills the Findings and Summary grids' {
         $gridFindings.Items.Count | Should -Be 1
         $gridSummary.Items.Count | Should -Be @($script:BgState.Summary).Count
         $gridSummary.Items.Count | Should -BeGreaterThan 0
+        $gridSummary.Items[0].CheckId | Should -Be $script:BgState.Summary[0].CheckId
         $txtDatasetNotes.Text | Should -Be 'All datasets loaded cleanly.'
     }
 
@@ -171,7 +175,7 @@ Describe 'The refresh result fills the live grids' {
             DeploymentData = @(
                 [PSCustomObject]@{ DeploymentId = 'D1'; DeploymentName = 'Office'; DeploymentType = 'Application'; CollectionName = 'All Systems'; Purpose = 'Required'; NumberTargeted = 10; NumberSuccess = 10; NumberErrors = 0; NumberInProgress = 0; NumberUnknown = 0; PercentCompliant = 100 }
                 [PSCustomObject]@{ DeploymentId = 'D2'; DeploymentName = 'Chrome'; DeploymentType = 'Application'; CollectionName = 'Pilot'; Purpose = 'Available'; NumberTargeted = 4; NumberSuccess = 2; NumberErrors = 1; NumberInProgress = 1; NumberUnknown = 0; PercentCompliant = 50 })
-            ContentData = @(); ContentNameMap = @{}
+            ContentData = @([PSCustomObject]@{ PackageID = 'MCM00010'; TotalDPs = 2; InstalledCount = 1; FailedCount = 1; InProgressCount = 0 }); ContentNameMap = @{ MCM00010 = [PSCustomObject]@{ Name = '7-Zip'; Type = 'Application' } }
             DPData = @([PSCustomObject]@{ DPName = 'DP01'; SiteCode = 'MCM'; Status = 'OK'; IsPullDP = $false })
             ClientData = @(); InactiveData = @(); ComponentData = @(); SystemData = @()
             SqlOk = $false
@@ -193,12 +197,14 @@ Describe 'The refresh result fills the live grids' {
     It 'fills the grid of the active view: <View>' -ForEach @(
         @{ View = 'DPs'; Count = 1 }
         @{ View = 'Deployments'; Count = 2 }
-        @{ View = 'Content'; Count = 0 }
+        @{ View = 'Content'; Count = 1 }
     ) {
         $script:ActiveView = $View
         & $script:RefreshTick
         $shown = switch ($View) { 'DPs' { $gridDPs } 'Deployments' { $gridDeploy } 'Content' { $gridContent } }
         $shown.Items.Count | Should -Be $Count
+        # Only the grid of the active view is filled.
+        ($gridDeploy.Items.Count + $gridContent.Items.Count + $gridDPs.Items.Count) | Should -Be $Count
     }
 
     It 'shows the one distribution point of a site with one (a single object is not a list)' {
