@@ -260,6 +260,7 @@ Describe 'Suppression keys and preferences' {
     BeforeEach {
         $global:SuppressPath = Join-Path $TestDrive 'sup.json'
         $global:PrefsPath = Join-Path $TestDrive 'prefs.json'
+        $script:Site = [pscustomobject]@{ Active = $false }
         Remove-Item -LiteralPath $global:SuppressPath, $global:PrefsPath -ErrorAction SilentlyContinue
         Import-SuiteCommonGlobal
     }

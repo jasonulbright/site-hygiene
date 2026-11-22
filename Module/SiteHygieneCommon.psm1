@@ -3998,3 +3998,105 @@ function Test-HygCollectionEvaluationChecks {
             -FixScript '# Per collection: Set-CMCollection -CollectionId <ID> -RefreshSchedule (New-CMSchedule -Start <off-peak time> -RecurInterval Days -RecurCount 1)'
     }
 }
+
+# ---------------------------------------------------------------------------
+# Site data paths and prefs (Q-112f). The window script calls these once at
+# start. A test calls them without a window.
+# ---------------------------------------------------------------------------
+
+function Get-HygieneSiteKey {
+    <#
+    .SYNOPSIS
+        The prefs keys that belong to a site.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Returns the full key list by design.')]
+    [OutputType([string[]])]
+    param()
+    return @('SiteCode', 'SMSProvider', 'SQLServer')
+}
+
+function Get-HygienePreferenceDefault {
+    <#
+    .SYNOPSIS
+        The default prefs of the tool.
+    #>
+    [OutputType([hashtable])]
+    param()
+    return @{
+        DarkMode                  = $true
+        SiteCode                  = ''
+        SMSProvider               = ''
+        SQLServer                 = ''
+        SqlTrustServerCertificate = $true
+        SqlQueryTimeoutSeconds    = 300
+        ScanScopes                = @()
+        ProviderPacingMs          = 0
+        AutoRefreshMinutes        = 15
+        InactiveThresholdDays     = 14
+        DeploymentOldDays         = 365
+        AlertsEnabled             = $true
+        AlertCompliancePct        = 80
+    }
+}
+
+function Get-HygieneSitePath {
+    <#
+    .SYNOPSIS
+        Returns the paths of the site stores of Site Hygiene.
+    .DESCRIPTION
+        With an active site, the last scan, the suppressions, the history and the reports are below
+        sites\<SITE>\tools\site-hygiene. With no site they are the old paths beside the script. The prefs file
+        stays beside the script (it holds the global keys). Returns PrefsPath, LastScanPath, SuppressPath,
+        HistoryPath and ReportsDir. -Create makes the folders that the site paths need.
+    .PARAMETER Site
+        The result of Resolve-SuiteToolSite.
+    .PARAMETER ToolRoot
+        The tool folder (the script folder).
+    #>
+    [OutputType([pscustomobject])]
+    param(
+        $Site,
+        [Parameter(Mandatory)][string]$ToolRoot,
+        [switch]$Create
+    )
+    $root = $ToolRoot.TrimEnd('\', '/')
+    if (-not $Site) { $Site = [pscustomobject]@{ Active = $false } }
+    return [pscustomobject]@{
+        PrefsPath    = Join-Path $root 'SiteHygiene.prefs.json'
+        LastScanPath = Resolve-SuiteToolPath -Site $Site -Name 'lastscan.json' -LegacyPath (Join-Path $root 'SiteHygiene.lastscan.json') -File -Create:$Create
+        SuppressPath = Resolve-SuiteToolPath -Site $Site -Name 'suppressions.json' -LegacyPath (Join-Path $root 'SiteHygiene.suppressions.json') -File -Create:$Create
+        HistoryPath  = Resolve-SuiteToolPath -Site $Site -Name 'history\metrics-history.csv' -LegacyPath (Join-Path $root 'History\metrics-history.csv') -File -Create:$Create
+        ReportsDir   = Resolve-SuiteToolPath -Site $Site -Name 'reports' -LegacyPath (Join-Path $root 'Reports') -Create:$Create
+    }
+}
+
+function Read-HygienePreference {
+    <#
+    .SYNOPSIS
+        Reads the prefs: the site keys from the site, the other keys from the prefs file beside the script.
+    .DESCRIPTION
+        With no active site, the launcher values (SUITE_CM_SITECODE, SUITE_CM_PROVIDER) fill an empty site code and
+        an empty provider. With a site, the site code is the site's code and the launcher environment is not read.
+    #>
+    [OutputType([hashtable])]
+    param([Parameter(Mandatory)][string]$Path, $Site)
+    if (-not $Site) { $Site = [pscustomobject]@{ Active = $false } }
+    $prefs = Read-SuiteToolPrefs -Path $Path -Defaults (Get-HygienePreferenceDefault) -Site $Site -SiteKeys (Get-HygieneSiteKey)
+    if (-not $Site -or -not $Site.Active) {
+        if (-not $prefs.SiteCode -and $env:SUITE_CM_SITECODE) { $prefs.SiteCode = [string]$env:SUITE_CM_SITECODE }
+        if (-not $prefs.SMSProvider -and $env:SUITE_CM_PROVIDER) { $prefs.SMSProvider = [string]$env:SUITE_CM_PROVIDER }
+    }
+    return $prefs
+}
+
+function Save-HygienePreference {
+    <#
+    .SYNOPSIS
+        Saves the prefs: the site keys to the site, the other keys to the prefs file beside the script.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification='Writes the tool prefs files.')]
+    [OutputType([bool])]
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][hashtable]$Prefs, $Site)
+    if (-not $Site) { $Site = [pscustomobject]@{ Active = $false } }
+    return (Save-SuiteToolPrefs -Path $Path -Settings $Prefs -Site $Site -SiteKeys (Get-HygieneSiteKey))
+}

@@ -73,7 +73,7 @@ When **SQL Server** is empty in **Options > Connection**, the two views stay emp
 
 ### Export and copy
 
-1. Select **Export CSV** or **Export HTML**. The tool writes the rows as shown to the `Reports` folder.
+1. Select **Export CSV** or **Export HTML**. The tool writes the rows as shown to the `reports` folder of the site folder. See [Files and logs](../reference/files-and-logs.md).
 2. Select **Copy Summary**. The tool puts a text rollup of the last refresh on the clipboard.
 
 ## Options and settings of this page

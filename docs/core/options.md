@@ -26,16 +26,28 @@ Select **Options** in the sidebar. The dialog opens on the **Connection** page. 
 
 | Field | Meaning |
 |---|---|
-| **Site Code** | The three-character site code, for example `MCM`. |
+| **Site Code** | The three-character site code, for example `MCM`. It is read-only when the launcher chose a site. See [Sites](#sites). |
 | **SMS Provider FQDN** | The server that has the SMS Provider role. The tool uses it for the provider connection of the console module. |
 | **SQL Server (Optional)** | The instance that hosts `CM_<site>`: `FQDN` or `FQDN\Instance`. Blank skips Client Health and Inactive Devices. |
 | **Trust the SQL Server Certificate** | On by default. The connection stays encrypted, but the server certificate is not validated. Clear it when this computer trusts the certificate. |
 
 ![The Connection page with values](../images/options-connection.png)
 
+### Sites
+
+The AppPackager Suite launcher chooses the site. Site Hygiene keeps its data for each site in `%LOCALAPPDATA%\AppPackagerData\sites\<SITE>\tools\site-hygiene`, for example `sites\AB1\tools\site-hygiene` and `sites\CD2\tools\site-hygiene`. The folder holds the last scan, the suppressions, the metrics history, the reports and the values of **Site Code**, **SMS Provider FQDN** and **SQL Server (Optional)**. The theme and the window place are not site data and stay beside the script.
+
+1. Choose the site in the launcher.
+2. Start Site Hygiene. The **Site Code** field shows the site and is read-only. Its tooltip is `The site is chosen in the AppPackager Suite launcher. Restart this tool after you change it.`
+3. When you change the site in the launcher while Site Hygiene is open, the window keeps its site. The footer shows `The launcher now uses site CD2. This window keeps site AB1 until you restart it.` Restart the tool to use the new site.
+
+![The Connection page when the launcher chose the site](../images/options-connection-site.png)
+
+The first start after an update copies the old data from the folder of the script into the site folder. The copy is checked and the old files stay where they are. A start with no site chosen uses the old files beside the script.
+
 ### Site in the footer
 
-The footer of the main window shows the site on the right, for example `Site MCM`, a middle dot, and `cm01.contoso.com`. It shows `Site not set` while the site code or the provider is empty. The footer is read-only. Select the site text to open Options. You change the site code and the provider only here.
+The footer of the main window shows the site on the right, for example `Site MCM`, a middle dot, and `cm01.contoso.com`. It shows `Site not set` while the site code or the provider is empty. The footer is read-only. Select the site text to open Options. You change the provider and the SQL Server here. You change the site code in the launcher.
 
 ### Scan
 

@@ -118,7 +118,7 @@ A **stale reference** is a reference row of a task sequence that the site does n
 ### Export the findings
 
 1. Select **Export CSV** or **Export HTML**. The tool writes the rows that the filters show.
-2. In the Save As dialog, keep the name or type a new name. The folder is `Reports` beside the script. The name is `SiteHygiene-Findings-<date>-<time>`.
+2. In the Save As dialog, keep the name or type a new name. The folder is `reports` in the site folder, for example `sites\AB1\tools\site-hygiene\reports`. With no site chosen it is `Reports` beside the script. The name is `SiteHygiene-Findings-<date>-<time>`.
 3. Select **Save**. The log shows `Exported CSV:` and the path.
 
 ![The window after an export](../images/findings-exported.png)

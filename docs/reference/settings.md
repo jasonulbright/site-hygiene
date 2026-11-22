@@ -4,7 +4,7 @@ This page lists what Site Hygiene saves and where.
 
 ## What it does
 
-The tool saves its settings in `SiteHygiene.prefs.json` in the folder of the script. The Options dialog writes the file when you select **OK**.
+The tool saves its settings in two files. `SiteHygiene.prefs.json` in the folder of the script holds the settings that do not belong to a site. `prefs.json` in the site folder `%LOCALAPPDATA%\AppPackagerData\sites\<SITE>\tools\site-hygiene` holds `SiteCode`, `SMSProvider` and `SQLServer`. The Options dialog writes both files when you select **OK**. The launcher chooses the site, so the tool never changes `SiteCode`. See [Sites](../core/options.md#sites).
 
 ## When to use it
 
@@ -18,7 +18,7 @@ None.
 
 | Key | Option | Default |
 |---|---|---|
-| `SiteCode` | **Site Code** | Empty. |
+| `SiteCode` | **Site Code** (read-only when a site is chosen) | Empty. |
 | `SMSProvider` | **SMS Provider FQDN** | Empty. |
 | `SQLServer` | **SQL Server (Optional)** | Empty. |
 | `SqlTrustServerCertificate` | **Trust the SQL Server Certificate** | `true`. |
@@ -37,7 +37,7 @@ None.
 ### Reset the settings
 
 1. Close the tool.
-2. Delete `SiteHygiene.prefs.json` and `SiteHygiene.windowstate.json`.
+2. Delete `SiteHygiene.prefs.json` and `SiteHygiene.windowstate.json`. To reset the settings of one site, also delete `prefs.json` in its site folder.
 3. Move the files of a retired ConfigMgr Health Dashboard install out of `legacy\mecm-health-dashboard` and out of the sibling `mecm-health-dashboard` folder. The tool imports them at the start and fills the empty settings from them. Keep them out until the tool has saved its default settings.
 4. Start the tool. The window of the first start shows.
 

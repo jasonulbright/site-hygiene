@@ -188,9 +188,9 @@ unchanged.
   References**, deletes the old revisions of the changed applications
   (a check box, on by default) and runs the check again on them. A New column flags findings first seen this scan;
   resolved findings are logged, with the comparison baseline kept in
-  `SiteHygiene.lastscan.json`. Suppress and
+  `lastscan.json` in the site folder. Suppress and
   Unsuppress (multi-select) hide accepted findings from future scans;
-  keys persist in `SiteHygiene.suppressions.json` and a toggle shows the
+  keys persist in `suppressions.json` in the site folder and a toggle shows the
   suppressed set.
 - **Relationships** - every supersedence and dependency relationship
   from the last scan. The **Inventory** tab lists each one, healthy rows
@@ -223,7 +223,7 @@ session never polls on its own. **Pause Auto-Refresh** holds it.
 | **Client Health** | SQL `v_CH_ClientSummary` joined to `v_R_System` |
 | **Inactive Devices** | SQL, devices past the inactivity threshold set in Options |
 | **Site Health** | `SMS_ComponentSummarizer` and `SMS_SiteSystemSummarizer` |
-| **Trends** | `History\metrics-history.csv`: one row of counts per completed refresh, 180 days kept |
+| **Trends** | `history\metrics-history.csv` in the site folder: one row of counts per completed refresh, 180 days kept |
 
 Status is a glyph in the first column: check for OK, warning sign for
 warning or in progress, cross for failed or critical, ellipsis for
@@ -253,7 +253,7 @@ On Findings the report carries evidence, recommendation, and fix script
 per finding and the HTML color-codes severity. On Relationships and the
 Live views the report is the grid as shown; on Trends it is the charted
 series. **Copy Summary** on a Live view puts a plain-text rollup of the
-last refresh on the clipboard. Files land under `Reports/` by default.
+last refresh on the clipboard. Files land in the `reports` folder of the site folder by default.
 
 ## Project Structure
 
@@ -267,19 +267,22 @@ site-hygiene/
 |  +- SiteHygieneCommon.psd1                 # Module manifest
 |  +- SiteHygieneCommon.psm1                 # Check engine (data prefetch + pure checks + exports)
 |  \- SiteHygieneLive.psm1                   # Live queries, metrics history, table export
-+- History/                                  # metrics-history.csv, one row per completed refresh
 +- Logs/                                     # Session logs (per-run) and SiteHygiene-alerts.log
-+- Reports/                                  # CSV / HTML exports
 +- CHANGELOG.md
 +- LICENSE
 \- README.md
 ```
 
-Files the tool writes beside itself: `SiteHygiene.prefs.json` (site,
-provider, SQL server, scan scope, pause, refresh, threshold, alerts),
-`SiteHygiene.windowstate.json`, `SiteHygiene.suppressions.json`,
-`SiteHygiene.lastscan.json`, `History\metrics-history.csv`, and the
-`Logs\` and `Reports\` folders.
+Files the tool writes beside itself: `SiteHygiene.prefs.json` (scan
+scope, pause, refresh, threshold, alerts, theme),
+`SiteHygiene.windowstate.json` and the `Logs\` folder.
+
+The AppPackager Suite launcher chooses the site. The tool keeps the site
+code, the SMS Provider and the SQL Server, the last scan, the
+suppressions, the metrics history and the reports per site in
+`%LOCALAPPDATA%\AppPackagerData\sites\<SITE>\tools\site-hygiene`. The first
+start after an update copies the old files into that folder and keeps
+them. A window that is open keeps its site until you restart it.
 
 ## Safety
 
