@@ -6,6 +6,7 @@ Measured 2026-11-07 with `Invoke-Checks.ps1` (Pester 5.7.1, PSScriptAnalyzer 1.2
 |---|---|---|
 | Tests | 181 | 889 as run by CI on both hosts (790 pass, 99 skip: the contract tests need the ConfigMgr console and run on a machine that has it) |
 | Module coverage | 81.4% (3016 of 3705 commands) | 98.3% of 3753 commands |
+| View data | `Scan.View.Tests.ps1` | The rows that reach the controls, counted on real WPF controls that are not shown: the timer handler of the scan fills the Findings and Summary grids (also the New mark, one finding, no finding, a failed scan), and the handler of the refresh fills the live grids |
 | Lab steps | none | 22 (`Tests/Lab`) |
 
 Run: `.\Invoke-Checks.ps1` (lint, tests, coverage floor 80%). It runs in CI on both hosts (`.github/workflows/checks.yml`).
