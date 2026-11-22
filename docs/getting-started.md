@@ -21,7 +21,7 @@ Use it to find unused applications and packages, dead collections, stale deploym
 
 ### Start the tool
 
-1. Extract the release zip to a folder that you can write to. The tool saves its settings, logs and reports in that folder.
+1. Extract the release zip to a folder that you can write to. The tool saves its logs, its window state and its general settings in that folder. It saves the data of each site, such as reports and history, in `%LOCALAPPDATA%\AppPackagerData\sites\<SITE>\tools\site-hygiene`. See [Sites](core/options.md#sites).
 2. Right-click `start-sitehygiene.ps1` and select **Run with PowerShell**. Or run this command:
 
 ```powershell

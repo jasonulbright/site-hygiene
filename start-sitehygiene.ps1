@@ -69,52 +69,47 @@ $script:AppVersion = [string](Import-PowerShellDataFile -LiteralPath $__modulePa
 $script:ToolLogPath = Join-Path $__txDir ('SiteHygiene-{0}.log' -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
 Initialize-Logging -LogPath $script:ToolLogPath
 
-$global:PrefsPath   = Join-Path $PSScriptRoot 'SiteHygiene.prefs.json'
-$global:HistoryPath = Join-Path $PSScriptRoot 'History\metrics-history.csv'
+$__oldPaths = Get-HygieneSitePath -Site ([pscustomobject]@{ Active = $false }) -ToolRoot $PSScriptRoot
+$global:PrefsPath = $__oldPaths.PrefsPath
+$global:HistoryPath = $__oldPaths.HistoryPath
 
 # A retired ConfigMgr Health Dashboard install leaves its settings and
 # history either where the suite installer parked them or in the sibling
 # folder of a side-by-side layout. Import fills gaps only, before the
-# preferences are read.
+# site is resolved, so the first start for a site copies the imported files too.
 foreach ($legacyRoot in @((Join-Path $PSScriptRoot 'legacy\mecm-health-dashboard'), (Join-Path (Split-Path $PSScriptRoot -Parent) 'mecm-health-dashboard'))) {
     if (Test-Path -LiteralPath $legacyRoot) {
         $null = Import-HygieneLegacyDashboardState -LegacyRoot $legacyRoot -PrefsPath $global:PrefsPath -HistoryPath $global:HistoryPath
     }
 }
 
+# The site (Q-112f): the launcher chooses it. The first start for a site copies the old data of this tool into
+# sites\<SITE>\tools\site-hygiene and keeps the old files. With no site the tool keeps its old paths.
+$script:Site = Resolve-SuiteToolSite -Tool 'site-hygiene' -ToolRoot $PSScriptRoot -LegacyPrefsPath $global:PrefsPath
+try { $__sitePaths = Get-HygieneSitePath -Site $script:Site -ToolRoot $PSScriptRoot -Create }
+catch {
+    # The site folder cannot be created (for example, the data folder is read-only). The tool keeps its old paths.
+    Write-Log ('The site folder was not created: {0}' -f $_.Exception.Message) -Level ERROR -Quiet
+    $script:Site = [pscustomobject]@{ Active = $false; Reason = 'The site folder could not be created. This tool uses its old data location for this session.' }
+    $__sitePaths = Get-HygieneSitePath -Site $script:Site -ToolRoot $PSScriptRoot
+}
+$global:HistoryPath  = $__sitePaths.HistoryPath
+$global:SuppressPath = $__sitePaths.SuppressPath
+$global:LastScanPath = $__sitePaths.LastScanPath
+$script:ReportsDir   = $__sitePaths.ReportsDir
+
 function Get-ShPreferences {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Returns the full preferences hashtable by design.')]
     param()
-    return Read-SuiteSettings -Path $global:PrefsPath -Defaults @{
-        DarkMode              = $true
-        SiteCode              = ''
-        SMSProvider           = ''
-        SQLServer             = ''
-        SqlTrustServerCertificate = $true
-        SqlQueryTimeoutSeconds = 300
-        ScanScopes            = @()
-        ProviderPacingMs      = 0
-        AutoRefreshMinutes    = 15
-        InactiveThresholdDays = 14
-        DeploymentOldDays     = 365
-        AlertsEnabled         = $true
-        AlertCompliancePct    = 80
-    }
+    return Read-HygienePreference -Path $global:PrefsPath -Site $script:Site
 }
 function Save-ShPreferences {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Writes the full preferences hashtable by design.')]
     param([Parameter(Mandatory)][hashtable]$Prefs)
-    $null = Save-SuiteSettings -Path $global:PrefsPath -Settings $Prefs
+    $null = Save-HygienePreference -Path $global:PrefsPath -Prefs $Prefs -Site $script:Site
 }
 $global:Prefs = Get-ShPreferences
 
-# The suite launcher hands its site code and provider to each tool it starts.
-# A value saved in this tool wins; the launcher value fills an empty one.
-if (-not $global:Prefs.SiteCode    -and $env:SUITE_CM_SITECODE) { $global:Prefs.SiteCode    = [string]$env:SUITE_CM_SITECODE }
-if (-not $global:Prefs.SMSProvider -and $env:SUITE_CM_PROVIDER) { $global:Prefs.SMSProvider = [string]$env:SUITE_CM_PROVIDER }
-
-$global:SuppressPath = Join-Path $PSScriptRoot 'SiteHygiene.suppressions.json'
-$global:LastScanPath = Join-Path $PSScriptRoot 'SiteHygiene.lastscan.json'
 function Get-ShSuppressedKeys {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification='Returns the full suppression key set by design.')]
     param()
@@ -1839,7 +1834,7 @@ function Show-ExportSaveDialog {
     $sfd = New-Object Microsoft.Win32.SaveFileDialog
     $sfd.Filter = $(if ($Extension -eq 'csv') { 'CSV files (*.csv)|*.csv' } else { 'HTML files (*.html)|*.html' })
     $sfd.FileName = ('SiteHygiene-{0}-{1}.{2}' -f $Name, (Get-Date -Format 'yyyyMMdd-HHmmss'), $Extension)
-    $reportsDir = Join-Path $PSScriptRoot 'Reports'
+    $reportsDir = $script:ReportsDir
     if (-not (Test-Path -LiteralPath $reportsDir)) { New-Item -ItemType Directory -Path $reportsDir -Force | Out-Null }
     $sfd.InitialDirectory = $reportsDir
     if ($sfd.ShowDialog() -eq $true) { return $sfd.FileName }
@@ -2160,6 +2155,11 @@ function Show-OptionsDialog {
     $btnCancel          = $dlg.FindName('btnCancel')
 
     $txtSiteCode.Text    = [string]$global:Prefs.SiteCode
+    if ($script:Site.Active) {
+        # The launcher chooses the site (Q-112f). The field shows it and does not change it.
+        $txtSiteCode.IsReadOnly = $true
+        $txtSiteCode.ToolTip = 'The site is chosen in the AppPackager Suite launcher. Restart this tool after you change it.'
+    }
     $txtSmsProvider.Text = [string]$global:Prefs.SMSProvider
     $txtSqlServer.Text   = [string]$global:Prefs.SQLServer
     $chkSqlTrustCert.IsChecked = [bool]$global:Prefs.SqlTrustServerCertificate
@@ -2212,7 +2212,7 @@ function Show-OptionsDialog {
         # scanned without revisiting this dialog.
         $global:Prefs['ScanScopes'] = $(if ($checked.Count -eq $scopeBoxes.Count) { @() } else { $checked })
         $global:Prefs['ProviderPacingMs'] = $pacing
-        $newSite     = ([string]$txtSiteCode.Text).Trim()
+        $newSite     = $(if ($script:Site.Active) { [string]$global:Prefs.SiteCode } else { ([string]$txtSiteCode.Text).Trim() })
         $newProvider = ([string]$txtSmsProvider.Text).Trim()
         $newSql      = ([string]$txtSqlServer.Text).Trim()
         $changed = ($newSite -ne [string]$global:Prefs.SiteCode) -or ($newProvider -ne [string]$global:Prefs.SMSProvider) -or ($newSql -ne [string]$global:Prefs.SQLServer)
@@ -2694,6 +2694,15 @@ $window.Add_Loaded({
     try { [void](Initialize-SuiteFooter -Window $window -StatusName 'txtStatus' -OnOpenOptions { Show-OptionsDialog }) }
     catch { Write-Log ('Footer: {0}' -f $_.Exception.Message) -Level ERROR -Quiet; Add-LogLine 'The footer failed. The log file has the details.' }
     Sync-FooterSite
+    $null = Start-SuiteSiteWatch -Window $window -Site $script:Site
+    if ($script:Site.Active) {
+        Write-Log ('Site {0}; data in {1}' -f $script:Site.SiteFolder, $script:Site.ToolFolder) -Quiet
+        Add-LogLine ('Site {0}; data in sites\{0}\tools\site-hygiene' -f $script:Site.SiteFolder)
+    }
+    if (-not $script:Site.Active -and $script:Site.Reason) {
+        Write-Log ('Site: {0}' -f $script:Site.Reason) -Level WARN -Quiet
+        Add-LogLine 'The site data folder is not in use. This session uses the old data location. The log file has the details.' -Level WARN
+    }
     Update-SuppressCount
     $gridSummary.ItemsSource = @(Get-HygieneScanSummary -Findings @())
     Add-LogLine 'Site Hygiene ready. Set the site code and the SMS Provider in Options, then select Scan or Refresh All.'

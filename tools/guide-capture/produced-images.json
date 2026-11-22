@@ -1,5 +1,5 @@
 {
-  "Count": 51,
+  "Count": 52,
   "Images": [
     "after-unsuppress.png",
     "auto-refresh-paused.png",
@@ -32,6 +32,7 @@
     "options-about.png",
     "options-alerts.png",
     "options-connection-empty.png",
+    "options-connection-site.png",
     "options-connection.png",
     "options-live.png",
     "options-scan.png",

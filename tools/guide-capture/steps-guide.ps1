@@ -119,4 +119,5 @@ Section 'filters' {
   Pick 'cboSeverity' 'Warning'; Shot $win 'findings-severity-warning'
 }
 Section 'persist' { Invoke-El (Get-El $win 'btnViewSummary'); Start-Sleep -Milliseconds 600; Invoke-El (Get-El $win 'Close'); Start-Sleep -Seconds 4; $win = Start-App 'start-sitehygiene.ps1' 'Site Hygiene'; Shot $win 'start-reopen' }
+Section 'site options' { $win = Find-Top 'Site Hygiene' 10; Invoke-El (Get-El $win 'btnOptions'); $d = Find-Last 'Options' 10; Shot $d 'options-connection-site'; Invoke-El (Get-El $d 'btnCancel'); Start-Sleep -Seconds 1 }
 Stop-App 'start-sitehygiene.ps1'

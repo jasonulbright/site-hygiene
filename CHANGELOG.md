@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Keep reports, history and site settings per site under the data folder.
+
 ## [2026.11.20.0042] - 2026-11-20
 
 ## 1 fix: APP-07 on retired applications

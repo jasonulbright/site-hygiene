@@ -3,6 +3,8 @@ $ErrorActionPreference = 'Stop'
 # Every path sits under the Base folder of this app, so that a capture of another app on the same lab computer is never touched.
 $OutDir = Join-Path $Base 'ui\out'; New-Item -ItemType Directory $OutDir -Force | Out-Null
 $appDir = Join-Path $Base $App
+# The app keeps its site data below the data root. The capture gives it a data root inside the capture folder, so that a run never reads or leaves data in the profile of the lab account.
+$env:APP_PACKAGER_DATA_ROOT = Join-Path $Base 'data'
 # Record this runner in the ledger, so that the capture tool stops it by process id and never by a command-line pattern.
 $me = Get-Process -Id $PID
 ('{0}|{1}' -f $me.Id, $me.StartTime.Ticks) | Add-Content -LiteralPath (Join-Path $PSScriptRoot 'run.pids')

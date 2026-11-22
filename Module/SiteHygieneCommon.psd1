@@ -133,6 +133,13 @@
         'Export-HygieneTableHtml'
         'New-HygieneLiveSummaryText'
         'Import-HygieneLegacyDashboardState'
+
+        # Site data (Q-112f)
+        'Get-HygieneSiteKey'
+        'Get-HygienePreferenceDefault'
+        'Get-HygieneSitePath'
+        'Read-HygienePreference'
+        'Save-HygienePreference'
     )
 
     CmdletsToExport   = @()
