@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2026.11.22.0043] - 2026-11-22
+
 ### Changed
 
 - Keep reports, history and site settings per site under the data folder.
