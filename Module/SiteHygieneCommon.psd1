@@ -13,6 +13,8 @@
 
         # Catalog / configuration
         'Get-HygieneCheckCatalog'
+        'Format-HygErrorText'
+        'Write-HygFailureDetail'
         'Get-HygieneDefaultThresholds'
         'New-HygieneFinding'
 
