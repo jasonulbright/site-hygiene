@@ -3066,8 +3066,49 @@ function Invoke-HygieneFix {
     }
     catch {
         Write-Log ("Fix FAILED [{0}] {1}: {2}" -f $Finding.CheckId, $Finding.ObjectName, $_.Exception.Message) -Level ERROR -Quiet
+        Write-HygFailureDetail -ErrorRecord $_ -Context ("Fix [{0}] {1}: {2}" -f $Finding.CheckId, $Finding.ObjectName, $fixScript)
         return [pscustomobject]@{ Success = $false; Output = ''; ErrorMessage = $_.Exception.Message }
     }
+}
+
+function Format-HygErrorText {
+    <#
+    .SYNOPSIS
+        The whole account of an error as lines: the context, every exception of the chain with its type and message, the error id and the failing statement.
+    #>
+    param(
+        [Parameter(Mandatory)][System.Management.Automation.ErrorRecord]$ErrorRecord,
+        [string]$Context = ''
+    )
+    $parts = New-Object System.Collections.Generic.List[string]
+    if ($Context) { $parts.Add('Failure context: ' + $Context) }
+    $depth = 0
+    $e = $ErrorRecord.Exception
+    while ($null -ne $e -and $depth -lt 8) {
+        $parts.Add((@('Exception', 'Inner exception')[[int]($depth -gt 0)]) + ': ' + $e.GetType().FullName + ': ' + (([string]$e.Message) -replace '\s+', ' '))
+        $e = $e.InnerException
+        $depth++
+    }
+    if ($ErrorRecord.FullyQualifiedErrorId) { $parts.Add('Error id: ' + [string]$ErrorRecord.FullyQualifiedErrorId) }
+    $info = $ErrorRecord.InvocationInfo
+    if ($info -and $info.Line) { $parts.Add('Statement: ' + ([string]$info.Line).Trim()) }
+    return $parts.ToArray()
+}
+
+function Write-HygFailureDetail {
+    <#
+    .SYNOPSIS
+        Writes the whole account of a failed fix to the log file.
+
+    .DESCRIPTION
+        A message in the window that says "the log file has the details" is true only when these lines are in the file. The lines go to the
+        file only (-Quiet), so the log pane of the window stays readable. They hold names, identifiers and provider messages, never a password.
+    #>
+    param(
+        [Parameter(Mandatory)][System.Management.Automation.ErrorRecord]$ErrorRecord,
+        [string]$Context = ''
+    )
+    foreach ($line in @(Format-HygErrorText -ErrorRecord $ErrorRecord -Context $Context)) { Write-Log $line -Level ERROR -Quiet }
 }
 
 # ---------------------------------------------------------------------------
@@ -3231,20 +3272,47 @@ function ConvertTo-HygApplicationDocument {
     return [string]$serializer::SerializeToString($Application, $true)
 }
 
+function Resolve-HygConsoleModule {
+    <#
+    .SYNOPSIS
+        The console folder and version of the loaded ConfigurationManager module that belongs to the folder of the serializer.
+
+    .DESCRIPTION
+        The console keeps the serializer in its bin folder. A module that PowerShell loads on its own (a cmdlet name looked up before an
+        import) is the one in bin\ConfigurationManager, one folder below the serializer; an explicit import of bin\ConfigurationManager.psd1
+        has the bin folder itself. When no module belongs to the serializer, the folder of the first module is reported.
+    #>
+    param(
+        [AllowEmptyCollection()][object[]]$Module = @(),
+        [AllowEmptyString()][string]$AssemblyFolder = ''
+    )
+    $result = [pscustomobject]@{ Folder = ''; Version = '' }
+    foreach ($candidate in $Module) {
+        $base = [string]$candidate.ModuleBase
+        $folder = $base
+        if ($base -and (Split-Path -Path $base -Leaf) -eq 'ConfigurationManager' -and (Split-Path -Path $base -Parent) -eq $AssemblyFolder) { $folder = Split-Path -Path $base -Parent }
+        if (-not $result.Folder -or $folder -eq $AssemblyFolder) { $result.Folder = $folder; $result.Version = [string]$candidate.Version }
+        if ($folder -eq $AssemblyFolder) { break }
+    }
+    return $result
+}
+
 function Get-HygSerializerInfo {
     <#
     .SYNOPSIS
         Where the serializer of application documents was loaded from, and where the ConfigurationManager module (the console) is.
     #>
     $serializer = 'Microsoft.ConfigurationManagement.ApplicationManagement.Serialization.SccmSerializer' -as [type]
-    $module = Get-Module -Name ConfigurationManager | Select-Object -First 1
+    $modules = @(Get-Module -Name ConfigurationManager)
     $info = [ordered]@{ Loaded = [bool]$serializer; AssemblyFolder = ''; AssemblyVersion = ''; ConsoleFolder = ''; ConsoleVersion = '' }
     if ($serializer) {
         $path = [string]$serializer.Assembly.Location
         $info.AssemblyFolder = $(if ($path) { Split-Path -Path $path -Parent } else { '' })
         $info.AssemblyVersion = $(if ($path) { [string](Get-Item -LiteralPath $path).VersionInfo.FileVersion } else { '' })
     }
-    if ($module) { $info.ConsoleFolder = [string]$module.ModuleBase; $info.ConsoleVersion = [string]$module.Version }
+    $console = Resolve-HygConsoleModule -Module $modules -AssemblyFolder $info.AssemblyFolder
+    $info.ConsoleFolder = $console.Folder
+    $info.ConsoleVersion = $console.Version
     return [pscustomobject]$info
 }
 
@@ -3388,9 +3456,32 @@ function Remove-HygBrokenSupersedence {
             foreach ($r in $groupRows) { $results.Add([pscustomobject]@{ Row = $r; Result = 'Skipped'; Message = 'Stopped before this application.' }) }
             continue
         }
+        $reinstated = $false
+        $step = 'Get-CMApplication -ModelName ' + $group.Name
         try {
             $app = Get-CMApplication -ModelName $group.Name -ErrorAction Stop
             if (-not $app) { throw 'The application is no longer in the site.' }
+            # A retired application cannot be changed: the site accepts the write, keeps the old document and returns no error, and the
+            # read-back then differs. The application is reinstated for a moment, changed and retired again (the retire runs in the finally
+            # block, also when the change fails). An application with a deployment is not reinstated: it would deploy while it is active.
+            if ([bool]$app.IsExpired) {
+                $deployed = $false
+                foreach ($name in 'IsDeployed', 'NumberOfDeployments') {
+                    $prop = $app.PSObject.Properties[$name]
+                    if ($null -ne $prop -and $null -ne $prop.Value -and [int]$prop.Value -gt 0) { $deployed = $true }
+                }
+                if ($deployed) {
+                    $why = 'The application is retired and has a deployment. A retired application cannot be changed, so the fix reinstates it for a moment, and it does not do that while a deployment exists: delete the deployment first (check APP-02). Nothing was changed.'
+                    Write-Log ('Supersedence repair skipped [{0}] ({1}): {2}' -f $label, $group.Name, $why) -Level WARN
+                    foreach ($r in $groupRows) { $results.Add([pscustomobject]@{ Row = $r; Result = 'Skipped'; Message = $why }) }
+                    continue
+                }
+                $step = 'Resume-CMApplication ' + $group.Name + ' (reinstate the retired application to change it)'
+                Resume-CMApplication -InputObject $app -ErrorAction Stop
+                $reinstated = $true
+                $step = 'Get-CMApplication -ModelName ' + $group.Name + ' after the reinstate'
+                $app = Get-CMApplication -ModelName $group.Name -ErrorAction Stop
+            }
             $original = [string]$app.SDMPackageXML
             $live = @(Find-HygBrokenSupersedenceRule -SdmPackageXml $original -Exists $exists)
             $todo = New-Object System.Collections.Generic.List[object]
@@ -3417,18 +3508,21 @@ function Remove-HygBrokenSupersedence {
                 }
             }
             if ($removedIds.Count -eq 0) { throw 'The rule was not found in the application document.' }
+            $step = 'ConvertTo-HygApplicationDocument (serialize the edited document)'
             $edited = ConvertTo-HygApplicationDocument -Application $object
 
             # Nothing but the removed rules may differ. Otherwise the document is not written.
             $before = @(Get-HygDocumentDifference -Before $original -After $edited -RemovedRuleId $removedIds.ToArray())
             if ($before.Count -gt 0) {
-                Write-Log ('Supersedence repair refused [{0}]: the edited document differs from the original in more than the broken rules. Nothing was changed.' -f $label) -Level ERROR
+                Write-Log ('Supersedence repair refused [{0}] ({1}): the edited document differs from the original in more than the broken rules. Nothing was changed. First differences: {2}' -f $label, $group.Name, (($before | Select-Object -First 5) -join ' | ')) -Level ERROR
                 foreach ($r in $todo) { $results.Add([pscustomobject]@{ Row = $r; Result = 'Failed'; Message = 'The edited document differs from the original in more than the broken rules, so nothing was changed.'; Detail = ($before | Select-Object -First 5) -join ' | ' }) }
                 continue
             }
 
+            $step = 'Write the application document of ' + $group.Name + ' (IResultObject.Put)'
             $app.SDMPackageXML = $edited
             [void]$app.Put()
+            $step = 'Get-CMApplication -ModelName ' + $group.Name + ' after the write'
 
             # Read the application again: it must read back, and it must be the original without the removed rules.
             $after = Get-CMApplication -ModelName $group.Name -ErrorAction Stop
@@ -3436,7 +3530,7 @@ function Remove-HygBrokenSupersedence {
             try { [void](Read-HygApplicationDocument -Xml ([string]$after.SDMPackageXML)); $readBack = @(Get-HygDocumentDifference -Before $original -After ([string]$after.SDMPackageXML) -RemovedRuleId $removedIds.ToArray()) }
             catch { $readBack = @('the document did not read back') }
             if ($readBack.Count -gt 0) {
-                Write-Log ('Supersedence repair FAILED [{0}]: the application did not read back as the original without the broken rules.' -f $label) -Level ERROR
+                Write-Log ('Supersedence repair FAILED [{0}] ({1}): the application did not read back as the original without the broken rules. First differences: {2}' -f $label, $group.Name, (($readBack | Select-Object -First 5) -join ' | ')) -Level ERROR
                 foreach ($r in $todo) { $results.Add([pscustomobject]@{ Row = $r; Result = 'Failed'; Message = 'The application did not read back as the original without the broken rules. Check it in the console.'; Detail = ($readBack | Select-Object -First 5) -join ' | ' }) }
                 continue
             }
@@ -3458,10 +3552,30 @@ function Remove-HygBrokenSupersedence {
             if ($note) { Write-Log ('Supersedence repair [{0}]: {1}' -f $label, $note) }
         }
         catch {
-            Write-Log ('Supersedence repair FAILED [{0}]' -f $label) -Level ERROR
+            # The whole account goes to the log file: the application, the call that ran, every exception of the chain, the error id and the stack.
+            Write-Log ('Supersedence repair FAILED [{0}] ({1}) at: {2}' -f $label, $group.Name, $step) -Level ERROR
+            Write-HygFailureDetail -ErrorRecord $_ -Context ('Supersedence repair [{0}] ({1}) at: {2}' -f $label, $group.Name, $step)
             foreach ($r in $groupRows) {
                 if (-not ($results | Where-Object { $_.Row.RuleId -eq $r.RuleId -and $_.Row.ApplicationModelName -eq $r.ApplicationModelName })) {
                     $results.Add([pscustomobject]@{ Row = $r; Result = 'Failed'; Message = 'The change failed. The log file has the details.'; Detail = [string]$_.Exception.Message })
+                }
+            }
+        }
+        finally {
+            if ($reinstated) {
+                $step = 'Suspend-CMApplication ' + $group.Name + ' (retire the application again)'
+                try {
+                    Suspend-CMApplication -InputObject (Get-CMApplication -ModelName $group.Name -ErrorAction Stop) -ErrorAction Stop
+                    $again = Get-CMApplication -ModelName $group.Name -ErrorAction Stop
+                    if (-not $again -or -not [bool]$again.IsExpired) { throw 'The application did not read back as retired.' }
+                }
+                catch {
+                    Write-Log ('Supersedence repair FAILED [{0}] ({1}) at: {2}' -f $label, $group.Name, $step) -Level ERROR
+                    Write-HygFailureDetail -ErrorRecord $_ -Context ('Supersedence repair [{0}] ({1}) at: {2}' -f $label, $group.Name, $step)
+                    foreach ($r in $groupRows) {
+                        $row = $results | Where-Object { $_.Row.RuleId -eq $r.RuleId -and $_.Row.ApplicationModelName -eq $r.ApplicationModelName } | Select-Object -First 1
+                        if ($row) { $row.Result = 'Failed'; $row.Message = 'The fix reinstated the retired application to change it and could not retire it again. Retire the application again in the ConfigMgr console. The log file has the details.' }
+                    }
                 }
             }
         }

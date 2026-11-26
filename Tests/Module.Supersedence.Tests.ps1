@@ -5,7 +5,7 @@
 BeforeAll {
     . "$PSScriptRoot\TestHelpers.ps1"
     Import-AppModule
-    $script:Stubs = New-CmStub -Name 'Get-CMApplication', 'Get-CMApplicationRevisionHistory', 'Remove-CMApplicationRevisionHistory'
+    $script:Stubs = New-CmStub -Name 'Get-CMApplication', 'Get-CMApplicationRevisionHistory', 'Remove-CMApplicationRevisionHistory', 'Resume-CMApplication', 'Suspend-CMApplication'
 
     $script:NsD = 'http://schemas.microsoft.com/SystemCenterConfigurationManager/2009/AppMgmtDigest'
     $script:NsR = 'http://schemas.microsoft.com/SystemsCenterConfigurationManager/2009/06/14/Rules'
@@ -193,6 +193,20 @@ Describe 'Test-HygSerializerInfo' {
     It 'accepts the serializer of the console: same folder, same major and minor version' {
         Test-HygSerializerInfo -Info ([pscustomobject]@{ Loaded = $true; AssemblyFolder = 'C:\Console\bin'; AssemblyVersion = '5.2603.1044.1000'; ConsoleFolder = 'C:\Console\bin'; ConsoleVersion = '5.2603.1035.1000' }) | Should -BeNullOrEmpty
     }
+    It 'takes the module that PowerShell loaded from bin\ConfigurationManager as the console of the serializer in bin' {
+        InModuleScope SiteHygieneCommon {
+            $auto = [pscustomobject]@{ ModuleBase = 'C:\Console\bin\ConfigurationManager'; Version = [version]'5.2603.1035.1000' }
+            $explicit = [pscustomobject]@{ ModuleBase = 'C:\Console\bin'; Version = [version]'5.2603.1035.1000' }
+            foreach ($loaded in @($auto), @($explicit), @($auto, $explicit)) {
+                $found = Resolve-HygConsoleModule -Module $loaded -AssemblyFolder 'C:\Console\bin'
+                $found.Folder | Should -Be 'C:\Console\bin'
+                $found.Version | Should -Be '5.2603.1035.1000'
+            }
+            # A module folder elsewhere still does not match the serializer.
+            (Resolve-HygConsoleModule -Module @([pscustomobject]@{ ModuleBase = 'D:\Other\ConfigurationManager'; Version = [version]'5.2603.1.0' }) -AssemblyFolder 'C:\Console\bin').Folder | Should -Not -Be 'C:\Console\bin'
+        }
+    }
+
     It 'refuses a serializer from another folder, of another version, or not loaded' {
         Test-HygSerializerInfo -Info ([pscustomobject]@{ Loaded = $true; AssemblyFolder = 'C:\Other'; AssemblyVersion = '5.2603.1.0'; ConsoleFolder = 'C:\Console\bin'; ConsoleVersion = '5.2603.1.0' }) | Should -Match 'another folder'
         Test-HygSerializerInfo -Info ([pscustomobject]@{ Loaded = $true; AssemblyFolder = 'C:\Console\bin'; AssemblyVersion = '5.2509.1.0'; ConsoleFolder = 'C:\Console\bin'; ConsoleVersion = '5.2603.1.0' }) | Should -Match 'differs'
@@ -209,15 +223,20 @@ Describe 'Remove-HygBrokenSupersedence' {
         $script:rules = @(@{ Id = 'DTRule_gone'; Models = @('S/Application_gone') }, @{ Id = 'DTRule_here'; Models = @('S/Application_here') })
         $script:fail = $false
         $script:extra = $false
+        $script:retired = $false
+        $script:deployed = $false
+        $script:calls = [System.Collections.ArrayList]::new()
         $script:serializerOk = $true
         $script:apps = @{ 'S/Application_here' = (New-SupApp -Model 'S/Application_here' -Name 'Here') }
         $script:logged = [System.Collections.ArrayList]::new()
         Mock Write-Log { [void]$script:logged.Add([string]$Message) } -ModuleName SiteHygieneCommon
         Mock Get-HygSerializerInfo { [pscustomobject]@{ Loaded = $true; AssemblyFolder = 'C:\C'; AssemblyVersion = '5.2603.1.0'; ConsoleFolder = $(if ($script:serializerOk) { 'C:\C' } else { 'D:\X' }); ConsoleVersion = '5.2603.9.0' } } -ModuleName SiteHygieneCommon
         Mock Get-CMApplication {
-            if ($ModelName -eq 'S/Application_new') { $a = New-SupApp -Model 'S/Application_new' -Name 'New App' -Xml (New-SupXml -Rules $script:rules) -CI 5; $a.CIVersion = 2 + $script:putCount; $a }
+            if ($ModelName -eq 'S/Application_new') { $a = New-SupApp -Model 'S/Application_new' -Name 'New App' -Xml (New-SupXml -Rules $script:rules) -CI 5; $a.CIVersion = 2 + $script:putCount; $a.IsExpired = $script:retired; $a | Add-Member -NotePropertyName IsDeployed -NotePropertyValue $script:deployed -Force; $a }
             elseif ($ModelName -and $script:apps.ContainsKey($ModelName)) { $script:apps[$ModelName] }
         } -ModuleName SiteHygieneCommon
+        Mock Resume-CMApplication { [void]$script:calls.Add('Resume'); $script:retired = $false } -ModuleName SiteHygieneCommon
+        Mock Suspend-CMApplication { [void]$script:calls.Add('Suspend'); $script:retired = $true } -ModuleName SiteHygieneCommon
         Mock Get-CMApplicationRevisionHistory { foreach ($v in 1, 2, 3) { [pscustomobject]@{ CIVersion = $v } } } -ModuleName SiteHygieneCommon
         Mock Remove-CMApplicationRevisionHistory {
             [void]$script:revisionCalls.Add($Revision)
@@ -308,6 +327,53 @@ Describe 'Remove-HygBrokenSupersedence' {
         $r.Success | Should -BeFalse
         $r.Failed | Should -Be 1
         $script:putCount | Should -Be 0
+    }
+
+    It 'reinstates a retired application, changes it and retires it again' {
+        $script:retired = $true
+        $r = Remove-HygBrokenSupersedence -Plan $script:plan
+        $r.Success | Should -BeTrue -Because ($r.Message + ' / ' + (@($r.Results | ForEach-Object { $_.Result + ': ' + $_.Message }) -join '; '))
+        $r.Removed | Should -Be 1
+        @($script:calls) | Should -Be @('Resume', 'Suspend')
+        $script:retired | Should -BeTrue
+        $script:putCount | Should -Be 1
+    }
+
+    It 'retires the application again also when the change fails' {
+        $script:retired = $true
+        $script:fail = $true
+        $r = Remove-HygBrokenSupersedence -Plan $script:plan
+        $r.Success | Should -BeFalse
+        @($script:calls) | Should -Be @('Resume', 'Suspend')
+        $script:retired | Should -BeTrue
+    }
+
+    It 'does not reinstate a retired application that has a deployment and names the reason' {
+        $script:retired = $true
+        $script:deployed = $true
+        $r = Remove-HygBrokenSupersedence -Plan $script:plan
+        $r.Removed | Should -Be 0
+        $r.Skipped | Should -Be 1
+        $r.Results[0].Message | Should -Match 'retired and has a deployment'
+        $r.Results[0].Message | Should -Match 'APP-02'
+        $script:calls.Count | Should -Be 0
+        $script:putCount | Should -Be 0
+        ($script:logged -join ' ') | Should -Match 'retired and has a deployment'
+    }
+
+    It 'does not reinstate an active application' {
+        $null = Remove-HygBrokenSupersedence -Plan $script:plan
+        $script:calls.Count | Should -Be 0
+    }
+
+    It 'logs the application, the call and the exception of a failed change, so that the log file has the details' {
+        $script:fail = $true
+        $null = Remove-HygBrokenSupersedence -Plan $script:plan
+        ($script:logged -join "`n") | Should -Match 'FAILED \[New App\] \(S/Application_new\) at: ConvertTo-HygApplicationDocument'
+        $text = $script:logged -join "`n"
+        $text | Should -Match 'Failure context: Supersedence repair \[New App\] \(S/Application_new\) at: ConvertTo-HygApplicationDocument'
+        $text | Should -Match 'Exception: System\.Management\.Automation\.RuntimeException: The write was refused\.'
+        $text | Should -Match 'Error id: '
     }
 
     It 'writes one log line for each change with the names of the application and the deployment type only' {

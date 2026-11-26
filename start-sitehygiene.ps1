@@ -833,7 +833,7 @@ $btnRunFix.Add_Click({
             }
             $State.Results = $results
         }
-        catch { $State.ErrorDetail = $_.Exception.Message; $State.ErrorMsg = 'An error occurred. The log file has the details.' }
+        catch { $State.ErrorDetail = (@(Format-HygErrorText -ErrorRecord $_) -join ' | '); $State.ErrorMsg = 'An error occurred. The log file has the details.' }
         finally { $State.Done = $true }
     }).AddArgument([string]$global:Prefs.SiteCode).AddArgument([string]$global:Prefs.SMSProvider).AddArgument($findings).AddArgument($script:BgState)
 
@@ -953,7 +953,7 @@ function Invoke-Scan {
             # The datasets that answer what blocks the delete of an application; no query is added for them.
             $State.BlockerData = [pscustomobject]@{ Applications = @($data.Applications); Deployments = @($data.Deployments); TaskSequences = @($data.TaskSequences) }
         }
-        catch { $State.ErrorDetail = $_.Exception.Message; $State.ErrorMsg = 'An error occurred. The log file has the details.' }
+        catch { $State.ErrorDetail = (@(Format-HygErrorText -ErrorRecord $_) -join ' | '); $State.ErrorMsg = 'An error occurred. The log file has the details.' }
         finally { $State.Done = $true }
     }).AddArgument($siteCode).AddArgument($smsProvider).AddArgument($script:BgState).AddArgument([string[]]$scopes).AddArgument($pacing).AddArgument($deploymentOldDays)
 
@@ -1663,7 +1663,7 @@ function Invoke-RefreshAll {
                 SiteCounts       = $siteCounts
             }
         }
-        catch { $State.ErrorDetail = $_.Exception.Message; $State.ErrorMsg = 'An error occurred. The log file has the details.' }
+        catch { $State.ErrorDetail = (@(Format-HygErrorText -ErrorRecord $_) -join ' | '); $State.ErrorMsg = 'An error occurred. The log file has the details.' }
         finally { $State.Done = $true }
     }).AddArgument($siteCode).AddArgument($smsProvider).AddArgument($sqlServer).AddArgument($threshold).AddArgument($script:BgState).AddArgument($trustSql).AddArgument($sqlTimeout)
 
@@ -2417,7 +2417,7 @@ function Show-SupersedenceFixDialog {
             if (-not (Connect-CMSite -SiteCode $SiteCode -SMSProvider $SmsProvider)) { $State.ErrorMsg = ('Failed to connect to site {0} (SMS Provider {1}).' -f $SiteCode, $SmsProvider); return }
             $State.Plan = Get-HygSupersedencePlan -Target $Targets
         }
-        catch { $State.ErrorMsg = 'The plan could not be read. The log file has the details.'; Write-Log ('Fix Supersedence plan failed: {0}' -f $_.Exception.Message) -Level ERROR -Quiet }
+        catch { $State.ErrorMsg = 'The plan could not be read. The log file has the details.'; Write-Log ('Fix Supersedence plan failed: {0}' -f (@(Format-HygErrorText -ErrorRecord $_) -join ' | ')) -Level ERROR -Quiet }
         finally { $State.Done = $true }
     }
     $applyScript = {
@@ -2427,7 +2427,7 @@ function Show-SupersedenceFixDialog {
             $changed = @($State.Result.Results | Where-Object { $_.Result -eq 'Removed' } | ForEach-Object { $_.Row.ApplicationModelName } | Select-Object -Unique)
             if ($changed.Count -gt 0) { $State.Recheck = Test-HygSupersedenceRecheck -ApplicationModelName $changed }
         }
-        catch { $State.ErrorMsg = 'The fix stopped with an error. The log file has the details.'; Write-Log ('Fix Supersedence failed: {0}' -f $_.Exception.Message) -Level ERROR -Quiet }
+        catch { $State.ErrorMsg = 'The fix stopped with an error. The log file has the details.'; Write-Log ('Fix Supersedence failed: {0}' -f (@(Format-HygErrorText -ErrorRecord $_) -join ' | ')) -Level ERROR -Quiet }
         finally { $State.Done = $true }
     }
 

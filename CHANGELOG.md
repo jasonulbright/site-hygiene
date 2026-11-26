@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Remove a broken supersedence rule of a retired application: the fix reinstates it, edits it, retires it again.
+- Name the exact reason when a retired application with a deployment keeps its broken supersedence rule.
+- Write the full failure to the log file when a fix fails: step, every exception, error id.
+
 ## [2026.11.22.0043] - 2026-11-22
 
 ### Changed
