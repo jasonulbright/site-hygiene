@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2026.11.25.0044] - 2026-11-25
+
 ### Fixed
 
 - Remove a broken supersedence rule of a retired application: the fix reinstates it, edits it, retires it again.
